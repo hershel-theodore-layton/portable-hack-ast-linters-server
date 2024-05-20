@@ -1,13 +1,13 @@
 #!/bin/sh
 
-VAR="./.var/portable-hack-ast-linters-monolithic-checker"
-RESOURCE_NAME="portable-hack-ast-linters-monolithic-checker-bundled.resource"
+VAR="./.var/portable-hack-ast-linters-server"
+RESOURCE_NAME="portable-hack-ast-linters-server-bundled.resource"
 RESOURCE="$(find . -type f -name "$RESOURCE_NAME" | head -n 1)"
 PORT_NUMBER=10641
 TRUSTS_RESOURCE=No
 
 print_help_text() {
-  echo "Documentation can be found at https://github.com/hershel-theodore-layton/portable-hack-ast-linters-monolithic-checker/blob/master/README.md"
+  echo "Documentation can be found at https://github.com/hershel-theodore-layton/portable-hack-ast-linters-server/blob/master/README.md"
   echo "This script will do the following steps:"
   echo "  * Find the PhaLinters bundle"
   echo "  * Compile a repo auth hhbc file if it is missing or out of date"
@@ -58,7 +58,7 @@ if [ ! -f .hhconfig ]; then
     exit 1
 fi
 
-if [ ! -f .var/portable-hack-ast-linters-monolithic-checker/hhvm.hhbc ]; then
+if [ ! -f .var/portable-hack-ast-linters-server/hhvm.hhbc ]; then
   compile_repo_auth
 fi
 
@@ -72,7 +72,7 @@ fi
 hhvm -m server -p "$PORT_NUMBER" \
   -vServer.AllowRunAsRoot=1 \
   -dhhvm.repo.authoritative=true \
-  -dhhvm.repo.path=/mnt/project/.var/portable-hack-ast-linters-monolithic-checker/hhvm.hhbc \
-  -dhhvm.server.global_document=bin/portable-hack-ast-linters-monolithic-checker-bundled.resource \
+  -dhhvm.repo.path=/mnt/project/.var/portable-hack-ast-linters-server/hhvm.hhbc \
+  -dhhvm.server.global_document=bin/portable-hack-ast-linters-server-bundled.resource \
   -dhhvm.jit_retranslate_all_request=5 \
   "-dhhvm.php_file.extensions[resource]=1"

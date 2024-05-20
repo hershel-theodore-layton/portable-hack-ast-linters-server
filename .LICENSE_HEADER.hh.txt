@@ -1,1 +1,1 @@
-/** portable-hack-ast-linters-monolithic-checker is MIT licensed, see /LICENSE. */
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */

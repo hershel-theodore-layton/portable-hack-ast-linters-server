@@ -1,5 +1,5 @@
-/** portable-hack-ast-linters-monolithic-checker is MIT licensed, see /LICENSE. */
-namespace HTL\PortableHackAstLintersMonolithicChecker;
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLintersServer;
 
 use namespace HH\Lib\Vec;
 use namespace HTL\PhaLinters;
@@ -28,7 +28,7 @@ function encode_errors_as_vscode_compatible_json(
           'path' => $path,
           'message' => $e->getLinterNameWithoutNamespaceAndLinter(),
           'range' => $$,
-          'source' => 'Portable Hack AST Linters Monolithic Checker',
+          'source' => 'Portable Hack AST Linters Server',
           'relatedInformation' => vec[shape(
             'location' => shape(
               'range' => $$,

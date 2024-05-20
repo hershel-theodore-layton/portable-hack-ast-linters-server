@@ -1,5 +1,5 @@
 {
-  "name": "hershel-theodore-layton/portable-hack-ast-linters-monolithic-checker",
+  "name": "hershel-theodore-layton/portable-hack-ast-linters-server",
   "description": "A non-Hack distribution of PhaLinters to allow HTL packages to use portable-hack-ast-linters without circular dependencies.",
   "license": "MIT",
   "require": {
@@ -8,15 +8,9 @@
     "hershel-theodore-layton/portable-hack-ast-extras": "dev-master",
     "hershel-theodore-layton/portable-hack-ast-linters": "dev-master"
   },
-  "bin": [
-    "bin/start.sh"
-  ],
+  "bin": ["bin/start.sh"],
   "scripts": {
-    "post-install-cmd": [
-      ".github/workflows/prepare-environment.sh"
-    ],
-    "post-update-cmd": [
-      ".github/workflows/prepare-environment.sh"
-    ]
+    "post-install-cmd": [".github/workflows/prepare-environment.sh"],
+    "post-update-cmd": [".github/workflows/prepare-environment.sh"]
   }
 }

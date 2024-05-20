@@ -1,5 +1,5 @@
-/** portable-hack-ast-linters-monolithic-checker is MIT licensed, see /LICENSE. */
-namespace HTL\PortableHackAstLintersMonolithicChecker;
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLintersServer;
 
 use namespace HH\Lib\{C, Dict, File};
 use namespace HTL\{Pha, PhaLinters};

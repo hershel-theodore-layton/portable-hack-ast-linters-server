@@ -1,6 +1,6 @@
 ///// src/all_files.hack /////
-/** portable-hack-ast-linters-monolithic-checker is MIT licensed, see /LICENSE. */
-namespace HTL\PortableHackAstLintersMonolithicChecker{
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLintersServer{
 use namespace HH\Lib\{Keyset, Str, Vec};
 use function glob;
 
@@ -24,8 +24,8 @@ function all_files(
 }
 }
 ///// src/all_linters.hack /////
-/** portable-hack-ast-linters-monolithic-checker is MIT licensed, see /LICENSE. */
-namespace HTL\PortableHackAstLintersMonolithicChecker{
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLintersServer{
 use namespace HTL\PhaLinters;
 
 function all_linters(string $license_header)[]: vec<LintFunction> {
@@ -83,8 +83,8 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
 }
 }
 ///// src/lib/LintFunction.hack /////
-/** portable-hack-ast-linters-monolithic-checker is MIT licensed, see /LICENSE. */
-namespace HTL\PortableHackAstLintersMonolithicChecker{
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLintersServer{
 use namespace HTL\{Pha, PhaLinters};
 
 type LintFunction = (function(
@@ -96,8 +96,8 @@ type LintFunction = (function(
 )[]: vec<PhaLinters\LintError>);
 }
 ///// src/lib/encode_errors_as_human_readable_text.hack /////
-/** portable-hack-ast-linters-monolithic-checker is MIT licensed, see /LICENSE. */
-namespace HTL\PortableHackAstLintersMonolithicChecker{
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLintersServer{
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\PhaLinters;
 
@@ -117,8 +117,8 @@ function encode_errors_as_human_readable_text(
 }
 }
 ///// src/lib/encode_errors_as_vscode_compatible_json.hack /////
-/** portable-hack-ast-linters-monolithic-checker is MIT licensed, see /LICENSE. */
-namespace HTL\PortableHackAstLintersMonolithicChecker{
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLintersServer{
 use namespace HH\Lib\Vec;
 use namespace HTL\PhaLinters;
 use const JSON_UNESCAPED_SLASHES, JSON_UNESCAPED_UNICODE;
@@ -146,7 +146,7 @@ function encode_errors_as_vscode_compatible_json(
           'path' => $path,
           'message' => $e->getLinterNameWithoutNamespaceAndLinter(),
           'range' => $$,
-          'source' => 'Portable Hack AST Linters Monolithic Checker',
+          'source' => 'Portable Hack AST Linters Server',
           'relatedInformation' => vec[shape(
             'location' => shape(
               'range' => $$,
@@ -165,8 +165,8 @@ function encode_errors_as_vscode_compatible_json(
 }
 }
 ///// src/lib/lint_all_files.hack /////
-/** portable-hack-ast-linters-monolithic-checker is MIT licensed, see /LICENSE. */
-namespace HTL\PortableHackAstLintersMonolithicChecker{
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLintersServer{
 use namespace HH\Lib\{C, Dict, File};
 use namespace HTL\{Pha, PhaLinters};
 
@@ -199,8 +199,8 @@ async function lint_all_files_async(
 }
 }
 ///// src/lib/lint_hack_code.hack /////
-/** portable-hack-ast-linters-monolithic-checker is MIT licensed, see /LICENSE. */
-namespace HTL\PortableHackAstLintersMonolithicChecker{
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLintersServer{
 use namespace HH\Lib\Vec;
 use namespace HTL\{Pha, PhaLinters};
 
@@ -223,8 +223,8 @@ function lint_hack_code(
 }
 }
 ///// src/lib/snif_license_header_async.hack /////
-/** portable-hack-ast-linters-monolithic-checker is MIT licensed, see /LICENSE. */
-namespace HTL\PortableHackAstLintersMonolithicChecker{
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLintersServer{
 use namespace HH\Lib\{C, File, IO};
 use function glob, is_file, is_readable;
 
@@ -249,8 +249,8 @@ async function snif_license_header_async(
 }
 }
 ///// src/main.hack /////
-/** portable-hack-ast-linters-monolithic-checker is MIT licensed, see /LICENSE. */
-namespace HTL\PortableHackAstLintersMonolithicChecker{
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLintersServer{
 use namespace HH;
 use namespace HH\Lib\{C, IO, Str};
 use namespace HTL\Pha;

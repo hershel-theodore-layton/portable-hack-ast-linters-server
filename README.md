@@ -1,4 +1,4 @@
-# portable-hack-ast-linters-monolithic-checker
+# portable-hack-ast-linters-server
 
 _A non-Hack distribution of PhaLinters to allow HTL packages to use portable-hack-ast-linters without circular dependencies._
 
@@ -24,7 +24,7 @@ _A non-Hack distribution of PhaLinters to allow HTL packages to use portable-hac
 ### CLI
 
 This distribution of [PhaLinters](https://github.com/hershel-theodore-layton/portable-hack-ast-linters)
-can be spawned using the `vendor/bin/hershel-theodore-layton/portable-hack-ast-linters-monolithic-checker/start.sh` script.
+can be spawned using the `vendor/bin/hershel-theodore-layton/portable-hack-ast-linters-server/start.sh` script.
 In the examples below `$START_SH` should expand to the script path above.
 
 ```SH
@@ -35,20 +35,20 @@ $START_SH -h
 # Hosts the http server on port 10641, or the port specified with `-p`.
 $START_SH
 
-# AFK setup which builds and runs the first portable-hack-ast-monolithic-checker-bundle.resource
+# AFK setup which builds and runs the first portable-hack-ast-server-bundle.resource
 # Skips the trust prompt, should only be used if you trust every file in the directory.
 $START_SH -t
 
 # AFK setup, point $START_SH to a bundle, skips the prompt.
 # Recommended setup for CI pipelines
-$START_SH -b "vendor/hershel-theodore-layton/portable-hack-ast-monolithic-checker/bin/portable-hack-ast-monolithic-checker-bundle.resource"
+$START_SH -b "vendor/hershel-theodore-layton/portable-hack-ast-server/bin/portable-hack-ast-server-bundle.resource"
 ```
 
 When running interactively, you may see the following prompt:
 
 ```
 Found the following resource file.
-./path/to/portable-hack-ast-linters-monolithic-checker-bundled.resource
+./path/to/portable-hack-ast-linters-server-bundled.resource
 If you trust the resource above, type 'I trust this resource' to build and run it.
 ```
 
@@ -90,7 +90,7 @@ If you want to test the bundle, use the following command:
 
 ```SH
 ./build.sh && bin/start.sh -p 8080 \
--b bin/portable-hack-ast-linters-monolithic-checker-bundled.resource
+-b bin/portable-hack-ast-linters-server-bundled.resource
 ```
 
 This will rebuild, recompile and start the lint-server.
