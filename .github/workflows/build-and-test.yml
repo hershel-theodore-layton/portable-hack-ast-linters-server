@@ -1,4 +1,6 @@
 name: Continuous Integration
+env:
+ COMPOSER: composer-with-dependencies.json
 on:
   push:
   pull_request:
@@ -28,4 +30,3 @@ jobs:
           hhvm: ${{matrix.hhvm}}
           skip_lint: true
           skip_tests: true
-          COMPOSER: composer-with-dependencies.json
