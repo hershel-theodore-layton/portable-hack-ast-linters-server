@@ -6,7 +6,7 @@
     "hhvm": "^4.128"
   },
   "bin": [
-    "bin/start.sh"
+    "bin/pha-linters-server.sh"
   ],
   "scripts": {
     "post-install-cmd": [

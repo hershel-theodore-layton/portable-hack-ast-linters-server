@@ -24,24 +24,24 @@ _A non-Hack distribution of PhaLinters to allow HTL packages to use portable-hac
 ### CLI
 
 This distribution of [PhaLinters](https://github.com/hershel-theodore-layton/portable-hack-ast-linters)
-can be spawned using the `vendor/bin/hershel-theodore-layton/portable-hack-ast-linters-server/start.sh` script.
-In the examples below `$START_SH` should expand to the script path above.
+can be spawned using the `vendor/bin/pha-linters-server.sh` script.
+In the examples below `$SERVER_SH` should expand to the script path above.
 
 ```SH
 # Print help text and exit
-$START_SH -h
+$SERVER_SH -h
 
 # Interactive setup, scan for the bundle and prompts you to trust it.
 # Hosts the http server on port 10641, or the port specified with `-p`.
-$START_SH
+$SERVER_SH
 
 # AFK setup which builds and runs the first portable-hack-ast-server-bundle.resource
 # Skips the trust prompt, should only be used if you trust every file in the directory.
-$START_SH -t
+$SERVER_SH -t
 
-# AFK setup, point $START_SH to a bundle, skips the prompt.
+# AFK setup, point $SERVER_SH to a bundle, skips the prompt.
 # Recommended setup for CI pipelines
-$START_SH -b "vendor/hershel-theodore-layton/portable-hack-ast-server/bin/portable-hack-ast-server-bundle.resource"
+$SERVER_SH -b "vendor/hershel-theodore-layton/portable-hack-ast-server/bin/portable-hack-ast-server-bundle.resource"
 ```
 
 When running interactively, you may see the following prompt:
@@ -89,7 +89,7 @@ hhvm -m server -p 8080 -vServer.AllowRunAsRoot=1 -dhhvm.server.global_document=s
 If you want to test the bundle, use the following command:
 
 ```SH
-./build.sh && bin/start.sh -p 8080 \
+./build.sh && bin/pha-linters-server.sh -p 8080 \
 -b bin/portable-hack-ast-linters-server-bundled.resource
 ```
 

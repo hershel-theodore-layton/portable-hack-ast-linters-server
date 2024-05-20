@@ -8,7 +8,7 @@
     "hershel-theodore-layton/portable-hack-ast-extras": "dev-master",
     "hershel-theodore-layton/portable-hack-ast-linters": "dev-master"
   },
-  "bin": ["bin/start.sh"],
+  "bin": ["bin/pha-linters-server.sh"],
   "scripts": {
     "post-install-cmd": [".github/workflows/prepare-environment.sh"],
     "post-update-cmd": [".github/workflows/prepare-environment.sh"]
