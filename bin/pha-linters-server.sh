@@ -72,7 +72,7 @@ fi
 hhvm -m server -p "$PORT_NUMBER" \
   -vServer.AllowRunAsRoot=1 \
   -dhhvm.repo.authoritative=true \
-  -dhhvm.repo.path=/mnt/project/.var/portable-hack-ast-linters-server/hhvm.hhbc \
-  -dhhvm.server.global_document=bin/portable-hack-ast-linters-server-bundled.resource \
+  -dhhvm.repo.path=.var/portable-hack-ast-linters-server/hhvm.hhbc \
+  "-dhhvm.server.global_document=""$RESOURCE""" \
   -dhhvm.jit_retranslate_all_request=5 \
   "-dhhvm.php_file.extensions[resource]=1"
