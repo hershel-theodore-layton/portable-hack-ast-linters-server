@@ -3,7 +3,7 @@
   "description": "A non-Hack distribution of PhaLinters to allow HTL packages to use portable-hack-ast-linters without circular dependencies.",
   "license": "MIT",
   "require": {
-    "hhvm": "^4.102"
+    "hhvm": "^4.128"
   },
   "bin": [
     "bin/start.sh"

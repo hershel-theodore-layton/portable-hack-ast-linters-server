@@ -1,6 +1,6 @@
 name: Continuous Integration
 env:
- COMPOSER: composer-with-dependencies.json
+  COMPOSER: composer-with-dependencies.json
 on:
   push:
   pull_request:
@@ -16,7 +16,6 @@ jobs:
       matrix:
         os: [ubuntu]
         hhvm:
-          - "4.102"
           - "4.128"
           - "4.153"
           - "4.168"
