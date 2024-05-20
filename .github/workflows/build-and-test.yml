@@ -28,3 +28,4 @@ jobs:
           hhvm: ${{matrix.hhvm}}
           skip_lint: true
           skip_tests: true
+          COMPOSER: composer-with-dependencies.json
