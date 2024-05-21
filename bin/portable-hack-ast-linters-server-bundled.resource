@@ -1481,7 +1481,10 @@ function camel_cased_methods_underscored_functions_linter(
       !Regex\matches($name, re'/^[a-z0-9_]+$/') &&
       !$is_factory_func($decl, $name),
     ($name, $decl) ==> {
-      return !Str\starts_with($name, '__') &&
+      return !C\any(
+        vec['__', 'test_', 'provide_'],
+        $prefix ==> Str\starts_with($name, $prefix),
+      ) &&
         !Regex\matches($name, re'/^[a-z][a-zA-Z0-9]*$/') &&
         !$is_factory_func($decl, $name);
     },
