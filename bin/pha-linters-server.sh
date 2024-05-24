@@ -83,7 +83,7 @@ if [ -f "$VAR/www.pid" ]; then
   fi
 
   echo "Previous server is different, replacing it."
-  kill "$PID"
+  kill "$PID" && rm "$var/www.pid"
 fi
 
 hhvm -m server -p "$PORT_NUMBER" \
