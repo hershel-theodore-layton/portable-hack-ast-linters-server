@@ -831,8 +831,8 @@ function create_name_resolver(
   ?keyset<string> $auto_imported_functions = null,
   ?keyset<string> $auto_imported_types = null,
 )[]: Resolver {
-  $auto_imported_functions = _Private\AUTO_IMPORTED_FUNCTIONS;
-  $auto_imported_types = _Private\AUTO_IMPORTED_TYPES;
+  $auto_imported_functions ??= _Private\AUTO_IMPORTED_FUNCTIONS;
+  $auto_imported_types ??= _Private\AUTO_IMPORTED_TYPES;
 
   $is_const = create_token_matcher($script, KIND_CONST);
   $is_function = create_token_matcher($script, KIND_FUNCTION);
