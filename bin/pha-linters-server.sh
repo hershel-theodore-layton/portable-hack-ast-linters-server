@@ -5,6 +5,7 @@ RESOURCE_NAME="portable-hack-ast-linters-server-bundled.resource"
 RESOURCE="$(find . -type f -name "$RESOURCE_NAME" | head -n 1)"
 PORT_NUMBER=10641
 TRUSTS_RESOURCE=No
+HAS_CHANGED=No
 
 print_help_text() {
   echo "Documentation can be found at https://github.com/hershel-theodore-layton/portable-hack-ast-linters-server/blob/master/README.md"
@@ -19,6 +20,7 @@ print_help_text() {
 }
 
 compile_repo_auth() {
+  HAS_CHANGED=Yes
   mkdir -p "$VAR" 2> /dev/null
 
   if [ "$TRUSTS_RESOURCE" != "Yes" ]; then
@@ -70,6 +72,18 @@ NEW_SHA="$(sha1sum "$RESOURCE")"
 
 if [ "$OLD_SHA" != "$NEW_SHA" ]; then
   compile_repo_auth
+fi
+
+if [ -f "$VAR/www.pid" ]; then
+  PID="$(cat $VAR/www.pid)"
+  
+  if [ "$HAS_CHANGED" = "No" ]; then
+    echo "Previous server is identical, nothing to do."
+    exit
+  fi
+
+  echo "Previous server is different, replacing it."
+  kill "$PID"
 fi
 
 hhvm -m server -p "$PORT_NUMBER" \
