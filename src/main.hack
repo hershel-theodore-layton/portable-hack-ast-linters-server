@@ -2,7 +2,7 @@
 namespace HTL\PhaLintersServer;
 
 use namespace HH;
-use namespace HH\Lib\{C, IO, Str};
+use namespace HH\Lib\{C, IO, Str, Vec};
 use namespace HTL\Pha;
 use function dirname, file_exists;
 
@@ -62,13 +62,13 @@ async function main_async(): Awaitable<void> {
       await $output->writeAllAsync(
         encode_errors_as_human_readable_text($lint_errors),
       );
-      break;
+      exit(C\is_empty(Vec\flatten($lint_errors)) ? 0 : 1);
 
     case 'vscode-json':
       await $output->writeAllAsync(
         encode_errors_as_vscode_compatible_json($lint_errors),
       );
-      break;
+      exit(C\is_empty(Vec\flatten($lint_errors)) ? 0 : 1);
 
     default:
       await $output->writeAllAsync(
