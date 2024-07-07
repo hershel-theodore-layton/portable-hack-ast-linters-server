@@ -19,5 +19,6 @@ function lint_hack_code(
     $lint_functions,
     $l ==> $l($script, $syntax_index, $token_index, $resolver, $pragma_map),
   )
-    |> Vec\flatten($$);
+    |> Vec\flatten($$)
+    |> Vec\filter($$, $e ==> !$e->isIgnored());
 }
