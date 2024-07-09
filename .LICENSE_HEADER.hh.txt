@@ -1,1 +1,0 @@
-/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */

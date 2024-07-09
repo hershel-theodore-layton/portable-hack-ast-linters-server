@@ -3,4 +3,6 @@ src/ export-ignore
 tests/ export-ignore
 .hhconfig export-ignore
 .hhvmconfig.hdf export-ignore
-hhast-lint.json export-ignore
+build.sh export-ignore
+composer.with-dependencies.json export-ignore
+composer.4.102.json export-ignore

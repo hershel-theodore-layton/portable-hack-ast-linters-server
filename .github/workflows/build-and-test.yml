@@ -9,7 +9,7 @@ on:
     - cron: "14 19 * * *"
 jobs:
   build:
-    name: HHVM ${{matrix.hhvm}} - ${{matrix.os}}
+    name: HHVM ${{matrix.hhvm}}
     strategy:
       # Run tests on all OS's and HHVM versions, even if one fails
       fail-fast: false
