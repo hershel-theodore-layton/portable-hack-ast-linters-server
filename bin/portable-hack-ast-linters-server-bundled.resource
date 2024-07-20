@@ -861,17 +861,20 @@ function create_name_resolver(
   $get_function_name = create_member_accessor($script, MEMBER_FUNCTION_NAME);
   $get_namespace_body = create_member_accessor($script, MEMBER_NAMESPACE_BODY);
   $get_namespace_declarations =
-    create_member_accessor($script, MEMBER_NAMESPACE_DECLARATIONS);
+    create_member_accessor($script, MEMBER_NAMESPACE_DECLARATIONS)
+    |> returns_syntax($$);
   $get_namespace_group_use_prefix =
     create_member_accessor($script, MEMBER_NAMESPACE_GROUP_USE_PREFIX);
   $get_namespace_header =
-    create_member_accessor($script, MEMBER_NAMESPACE_HEADER);
+    create_member_accessor($script, MEMBER_NAMESPACE_HEADER)
+    |> returns_syntax($$);
   $get_namespace_name = create_member_accessor($script, MEMBER_NAMESPACE_NAME);
   $get_namespace_use_clauses = create_member_accessor(
     $script,
     MEMBER_NAMESPACE_USE_CLAUSES,
     MEMBER_NAMESPACE_GROUP_USE_CLAUSES,
-  );
+  )
+    |> returns_syntax($$);
   $get_namespace_use_alias =
     create_member_accessor($script, MEMBER_NAMESPACE_USE_ALIAS);
   $get_namespace_use_name =
@@ -909,7 +912,6 @@ function create_name_resolver(
       }
 
       $make_use_infos_for_kind = ($kind) ==> $get_namespace_use_clauses($use)
-        |> as_syntax($$)
         |> list_get_items_of_children($script, $$)
         |> Vec\map($$, as_syntax<>)
         |> Vec\map(
@@ -955,16 +957,13 @@ function create_name_resolver(
       |> Vec\map($$, $n ==> {
         $scope = $get_namespace_body($n)
           |> $is_namespace_body($$)
-            ? as_syntax($$)
-              |> $get_namespace_declarations($$)
-              |> as_syntax($$)
+            ? as_syntax($$) |> $get_namespace_declarations($$)
             : $declaration_list;
 
         $uses = node_get_children($script, $scope)
           |> Vec\filter($$, $is_namespace_use_or_group_use_declaration);
 
         $name = $get_namespace_header($n)
-          |> as_syntax($$)
           |> $get_namespace_name($$)
           |> node_get_code_compressed($script, $$).'\\';
 
@@ -1147,15 +1146,18 @@ function create_pragma_map(
     create_syntax_matcher($script, KIND_EXPRESSION_STATEMENT);
 
   $get_function_call_arguments =
-    create_member_accessor($script, MEMBER_FUNCTION_CALL_ARGUMENT_LIST);
+    create_member_accessor($script, MEMBER_FUNCTION_CALL_ARGUMENT_LIST)
+    |> returns_syntax($$);
   $get_function_call_receiver =
     create_member_accessor($script, MEMBER_FUNCTION_CALL_RECEIVER);
   $get_constructor_arguments =
-    create_member_accessor($script, MEMBER_CONSTRUCTOR_CALL_ARGUMENT_LIST);
+    create_member_accessor($script, MEMBER_CONSTRUCTOR_CALL_ARGUMENT_LIST)
+    |> returns_syntax($$);
   $get_constructor_type =
     create_member_accessor($script, MEMBER_CONSTRUCTOR_CALL_TYPE);
   $get_vec_members =
-    create_member_accessor($script, MEMBER_VECTOR_INTRINSIC_MEMBERS);
+    create_member_accessor($script, MEMBER_VECTOR_INTRINSIC_MEMBERS)
+    |> returns_syntax($$);
 
   $parse_arguments = $node_list ==>
     list_get_items_of_children($script, $node_list)
@@ -1179,14 +1181,11 @@ function create_pragma_map(
     $effects = Vec\map(
       $pragmas,
       $p ==> $get_constructor_arguments($p)
-        |> as_syntax($$)
         |> list_get_items_of_children($script, $$)
         |> Vec\map(
           $$,
-          $vec ==> as_syntax($vec)
-            |> $get_vec_members($$)
-            |> as_syntax($$)
-            |> $parse_arguments($$),
+          $vec ==>
+            as_syntax($vec) |> $get_vec_members($$) |> $parse_arguments($$),
         ),
     );
 
@@ -1223,9 +1222,7 @@ function create_pragma_map(
 
     $effects = Vec\map(
       $pragmas,
-      $p ==> $get_function_call_arguments($p)
-        |> as_syntax($$)
-        |> $parse_arguments($$),
+      $p ==> $get_function_call_arguments($p) |> $parse_arguments($$),
     );
 
     return _Private\three_way_zip(
@@ -1648,7 +1645,6 @@ function dont_create_forwarding_lambdas_linter(
   $is_function_call_expression =
     Pha\create_syntax_matcher($script, Pha\KIND_FUNCTION_CALL_EXPRESSION);
   $is_inout = Pha\create_token_matcher($script, Pha\KIND_INOUT);
-  $is_missing = Pha\create_syntax_matcher($script, Pha\KIND_MISSING);
   $is_name_or_var = Pha\create_matcher(
     $script,
     vec[Pha\KIND_QUALIFIED_NAME, Pha\KIND_VARIABLE_SYNTAX],
@@ -1665,7 +1661,8 @@ function dont_create_forwarding_lambdas_linter(
     Pha\create_syntax_matcher($script, Pha\KIND_VARIABLE_SYNTAX);
 
   $get_argument_list =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CALL_ARGUMENT_LIST);
+    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CALL_ARGUMENT_LIST)
+    |> Pha\returns_syntax($$);
   $get_function_receiver =
     Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CALL_RECEIVER);
   $get_lambda_async =
@@ -1673,7 +1670,8 @@ function dont_create_forwarding_lambdas_linter(
   $get_lambda_body =
     Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_BODY);
   $get_lambda_parameters =
-    Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_PARAMETERS);
+    Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_PARAMETERS)
+    |> Pha\returns_syntax($$);
   $get_lambda_return_type =
     Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_TYPE);
   $get_lambda_signature =
@@ -1694,8 +1692,8 @@ function dont_create_forwarding_lambdas_linter(
     Pha\create_member_accessor($script, Pha\MEMBER_SCOPE_RESOLUTION_QUALIFIER);
 
   $is_typed_lambda = ($sig, $parameters) ==>
-    C\any($parameters, $p ==> !$is_missing($get_parameter_type($p))) ||
-    !$is_missing($get_lambda_return_type($sig));
+    C\any($parameters, $p ==> !Pha\is_missing($get_parameter_type($p))) ||
+    !Pha\is_missing($get_lambda_return_type($sig));
 
   $convert_parameters = $parameters ==> Vec\map(
     $parameters,
@@ -1708,11 +1706,11 @@ function dont_create_forwarding_lambdas_linter(
         |> $is_dot_dot_dot($$)
           ? Support\CallingCovention::VARIADIC
           : (
-              !$is_missing($get_parameter_call_convention($p))
+              !Pha\is_missing($get_parameter_call_convention($p))
                 ? Support\CallingCovention::INOUT
                 : Support\CallingCovention::PLAIN
             ),
-      'has_default' => !$is_missing($get_parameter_default_value($p)),
+      'has_default' => !Pha\is_missing($get_parameter_default_value($p)),
     ),
   );
 
@@ -1732,13 +1730,13 @@ function dont_create_forwarding_lambdas_linter(
         )
       )
     ) {
-      return $get_argument_list($call) |> Pha\as_syntax($$);
+      return $get_argument_list($call);
     }
 
     return Pha\NIL;
   };
 
-  $get_argument_list = ($lambda) ==> {
+  $get_argument_list = $lambda ==> {
     $body = $get_lambda_body($lambda);
 
     if (!Pha\is_syntax($body)) {
@@ -1747,7 +1745,7 @@ function dont_create_forwarding_lambdas_linter(
 
     $body = Pha\as_syntax($body);
 
-    if ($is_missing($get_lambda_async($lambda))) {
+    if (Pha\is_missing($get_lambda_async($lambda))) {
       return $extract_qualifying_argument_list($body);
     }
 
@@ -1774,7 +1772,6 @@ function dont_create_forwarding_lambdas_linter(
 
     $sig = Pha\as_syntax($sig);
     $parameters = $get_lambda_parameters($sig)
-      |> Pha\as_syntax($$)
       |> Pha\list_get_items_of_children($script, $$)
       |> Vec\map($$, Pha\as_syntax<>);
 
@@ -1789,7 +1786,7 @@ function dont_create_forwarding_lambdas_linter(
     return $convert_parameters($parameters);
   };
 
-  $get_arguments = ($argument_list) ==> Vec\map(
+  $get_arguments = $argument_list ==> Vec\map(
     Pha\list_get_items_of_children($script, $argument_list),
     $a ==> {
       $first_token = Support\get_first_token($script, $a);
@@ -2004,13 +2001,13 @@ function group_use_statement_alphabetization_linter(
   $linter = __FUNCTION__;
 
   $get_clauses =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_GROUP_USE_CLAUSES);
+    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_GROUP_USE_CLAUSES)
+    |> Pha\returns_syntax($$);
 
   $get_use_name =
     Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_NAME);
 
   $get_uses_to_be_sorted = $group_use ==> $get_clauses($group_use)
-    |> Pha\as_syntax($$)
     |> Pha\list_get_items_of_children($script, $$);
 
   return Pha\index_get_nodes_by_kind(
@@ -2081,7 +2078,8 @@ function group_use_statements_linter(
   $get_grouped_prefix =
     Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_GROUP_USE_PREFIX);
   $get_clauses =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_CLAUSES);
+    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_CLAUSES)
+    |> Pha\returns_syntax($$);
   $get_clause_name =
     Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_NAME);
 
@@ -2130,7 +2128,6 @@ function group_use_statements_linter(
         $uses,
         $u ==> Pha\as_syntax($u)
           |> $get_clauses($$)
-          |> Pha\as_syntax($$)
           |> Pha\list_get_items_of_children($script, $$),
       )
         |> Vec\flatten($$)
@@ -2253,7 +2250,7 @@ function must_use_braces_for_control_flow_linter(
     Pha\MEMBER_WHILE_BODY,
   );
 
-  $is_braceless = ($node) ==>
+  $is_braceless = $node ==>
     $get_body($node) |> !$is_compound_statement_or_if_statement($$);
 
   return Vec\concat(
@@ -2307,7 +2304,8 @@ function namespace_private_symbol_linter(
     Pha\create_syntax_matcher($script, Pha\KIND_QUALIFIED_NAME);
 
   $get_namespace_header =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_HEADER);
+    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_HEADER)
+    |> Pha\returns_syntax($$);
   $get_namespace_name =
     Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_NAME);
 
@@ -2345,7 +2343,6 @@ function namespace_private_symbol_linter(
         }
 
         $namespace_prefix = $get_namespace_header($nearest_namespace)
-          |> Pha\as_syntax($$)
           |> $get_namespace_name($$)
           |> Pha\resolve_name($resolver, $script, $$)
           |> Str\split($$, '\\')
@@ -2419,7 +2416,7 @@ function namespace_private_use_clause_linter(
   if ($current_namespace is null) {
     $namespace_prefix = '';
   } else {
-    $name = Pha\as_syntax($current_namespace) |> $get_namespace_name($$);
+    $name = $get_namespace_name($current_namespace);
 
     if ($is_name($name)) {
       $namespace_prefix =
@@ -2572,9 +2569,7 @@ function no_empty_statements_linter(
 
   $expression_is_empty = $node ==> {
     while ($is_parenthesized_expression($node)) {
-      $node = Pha\as_syntax($node)
-        |> $get_parenthesized_expression_expression($$)
-        |> Pha\as_syntax($$);
+      $node = $get_parenthesized_expression_expression(Pha\as_syntax($node));
     }
 
     return $is_always_empty_expression($node) ||
@@ -2584,7 +2579,6 @@ function no_empty_statements_linter(
           $node
           |> Pha\as_syntax($$)
           |> $get_binop_operator($$)
-          |> Pha\as_token($$)
           |> !$is_side_effecty_operator($$)
         )
       );
@@ -2631,7 +2625,8 @@ function no_final_method_in_final_classes_linter(
   $get_method_function_decl = Pha\create_member_accessor(
     $script,
     Pha\MEMBER_METHODISH_FUNCTION_DECL_HEADER,
-  );
+  )
+    |> Pha\returns_syntax($$);
   $get_function_modifiers =
     Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_MODIFIERS);
   $get_function_name =
@@ -2646,7 +2641,6 @@ function no_final_method_in_final_classes_linter(
       $$,
       $method ==> (
         $get_method_function_decl($method)
-        |> Pha\as_syntax($$)
         |> $get_function_modifiers($$)
         |> $any_child_is_final($$)
       ) &&
@@ -2662,9 +2656,7 @@ function no_final_method_in_final_classes_linter(
       $f ==> LintError::create(
         $script,
         $pragma_map,
-        $get_method_function_decl($f)
-          |> Pha\as_syntax($$)
-          |> $get_function_name($$),
+        $get_method_function_decl($f) |> $get_function_name($$),
         $linter,
         'Remove the final keyword. The surrounding class is already final.',
       ),
@@ -2752,7 +2744,7 @@ function no_php_equality_linter(
   $get_operator =
     Pha\create_member_accessor($script, Pha\MEMBER_BINARY_OPERATOR);
 
-  $binop_is_php_equals = ($binop) ==>
+  $binop_is_php_equals = $binop ==>
     $get_operator($binop) |> $is_php_equals($$);
 
   return Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_BINARY_EXPRESSION)
@@ -2852,7 +2844,8 @@ function prefer_require_once_linter(
 
   $is_require_once = Pha\create_token_matcher($script, Pha\KIND_REQUIRE_ONCE);
   $get_require_keyword =
-    Pha\create_member_accessor($script, Pha\MEMBER_INCLUSION_REQUIRE);
+    Pha\create_member_accessor($script, Pha\MEMBER_INCLUSION_REQUIRE)
+    |> Pha\returns_token($$);
 
   return
     Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_INCLUSION_EXPRESSION)
@@ -2867,7 +2860,7 @@ function prefer_require_once_linter(
         $linter,
         Str\format(
           'Use require_once instead of %s.',
-          Pha\token_get_text($script, Pha\as_token($n)),
+          Pha\token_get_text($script, $n),
         ),
       ),
     );
@@ -2938,13 +2931,13 @@ function shout_case_enum_members_linter(
   $linter = __FUNCTION__;
 
   $get_enumerator =
-    Pha\create_member_accessor($script, Pha\MEMBER_ENUMERATOR_NAME);
+    Pha\create_member_accessor($script, Pha\MEMBER_ENUMERATOR_NAME)
+    |> Pha\returns_token($$);
 
   return Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_ENUMERATOR)
     |> Vec\filter(
       $$,
       $e ==> $get_enumerator($e)
-        |> Pha\as_token($$)
         |> Pha\token_get_text($script, $$)
         |> Str\uppercase($$) !== $$,
     )
@@ -3152,7 +3145,8 @@ function unused_variable_linter(
   $get_method_decl_header = Pha\create_member_accessor(
     $script,
     Pha\MEMBER_METHODISH_FUNCTION_DECL_HEADER,
-  );
+  )
+    |> Pha\returns_syntax($$);
   $get_func_decl_header_modifiers =
     Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_MODIFIERS);
   $get_lambda_signature =
@@ -3170,12 +3164,12 @@ function unused_variable_linter(
   );
 
   $is_assignment_expression = $node ==> $is_binary_expression($node) &&
-    $is_assignment_operator($get_binop_operator($node) |> Pha\as_token($$));
+    $is_assignment_operator($get_binop_operator($node));
 
   $is_promoted_contructor_parameter = (Pha\Token $token) ==>
     Pha\node_get_syntax_ancestors($script, $token)
     |> C\find($$, $is_parameter_declaration)
-    |> $$ is nonnull && Pha\is_token($get_parameter_visibility($$));
+    |> $$ is nonnull && !Pha\is_missing($get_parameter_visibility($$));
 
   // Assignments to members are not local to the function.
   // This assignment should be classified as a use of `$v`: `$v->prop = 0`.
@@ -3189,11 +3183,11 @@ function unused_variable_linter(
   $inout_scopes = Pha\index_get_nodes_by_kind($token_index, Pha\KIND_INOUT)
     |> Vec\map(
       $$,
-      $i ==> Pha\node_get_parent($script, $i)
+      $i ==> Pha\token_get_parent($script, $i)
         |> !$is_parameter_declaration($$)
           ? null
           : shape(
-              'name' => $get_parameter_name(Pha\as_syntax($$))
+              'name' => $get_parameter_name($$)
                 |> Pha\node_get_code_compressed($script, $$),
               'scope' =>
                 C\findx(Pha\node_get_ancestors($script, $$), $is_scope),
@@ -3325,7 +3319,6 @@ function unused_variable_linter(
     return $is_interface($get_class_keyword($classish)) ||
       C\any(
         $get_method_decl_header($owner)
-          |> Pha\as_syntax($$)
           |> $get_func_decl_header_modifiers($$)
           |> Pha\node_get_children($script, $$),
         $is_abstract,
@@ -3386,10 +3379,8 @@ function use_statement_with_as_linter(
 )[]: vec<LintError> {
   $linter = __FUNCTION__;
 
-  $is_missing = Pha\create_syntax_matcher($script, Pha\KIND_MISSING);
-
   $get_as = Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_AS);
-  $has_as = $n ==> $get_as($n) |> !$is_missing($$);
+  $has_as = $n ==> $get_as($n) |> !Pha\is_missing($$);
 
   return
     Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_USE_CLAUSE)
@@ -3468,16 +3459,14 @@ function use_statement_without_kind_linter(
 )[]: vec<LintError> {
   $linter = __FUNCTION__;
 
-  $is_missing = Pha\create_syntax_matcher($script, Pha\KIND_MISSING);
-
   $get_kind = Pha\create_member_accessor(
     $script,
     Pha\MEMBER_NAMESPACE_USE_KIND,
     Pha\MEMBER_NAMESPACE_GROUP_USE_KIND,
   );
 
-  $kind_is_missing = ($use_clause) ==>
-    $get_kind($use_clause) |> $is_missing($$);
+  $kind_is_missing = $use_clause ==>
+    $get_kind($use_clause) |> Pha\is_missing($$);
 
   return Vec\concat(
     Pha\index_get_nodes_by_kind(
@@ -3600,7 +3589,8 @@ function concat_merge_or_union_expression_can_be_simplified_linter(
   $linter = __FUNCTION__;
 
   $get_argument_list =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CALL_ARGUMENT_LIST);
+    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CALL_ARGUMENT_LIST)
+    |> Pha\returns_syntax($$);
   $get_call_receiver =
     Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CALL_RECEIVER);
 
@@ -3631,7 +3621,7 @@ function concat_merge_or_union_expression_can_be_simplified_linter(
       }
 
       return $get_argument_list($call)
-        |> Pha\list_get_items_of_children($script, Pha\as_syntax($$))
+        |> Pha\list_get_items_of_children($script, $$)
         |> C\count($$) === 1 && !$is_decorated_expression($$[0]);
     })
     |> Vec\map(
@@ -3740,7 +3730,7 @@ function count_expression_can_be_simplified_linter(
   };
 
   $get_error = ($parent, $call) ==> {
-    $replace_with = ($function_name) ==> Pha\patches($script, Pha\patch_node(
+    $replace_with = $function_name ==> Pha\patches($script, Pha\patch_node(
       $parent,
       Str\format(
         '%s(%s)',
@@ -3900,7 +3890,8 @@ function getter_method_could_have_a_context_list_linter(
   $get_method_decl_header = Pha\create_member_accessor(
     $script,
     Pha\MEMBER_METHODISH_FUNCTION_DECL_HEADER,
-  );
+  )
+    |> Pha\returns_syntax($$);
   $get_method_body =
     Pha\create_member_accessor($script, Pha\MEMBER_METHODISH_FUNCTION_BODY);
   $get_return_expression =
@@ -3908,16 +3899,15 @@ function getter_method_could_have_a_context_list_linter(
 
   $is_compound_statement =
     Pha\create_syntax_matcher($script, Pha\KIND_COMPOUND_STATEMENT);
-  $is_missing = Pha\create_syntax_matcher($script, Pha\KIND_MISSING);
   $is_return_statement =
     Pha\create_syntax_matcher($script, Pha\KIND_RETURN_STATEMENT);
 
   return
     Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_METHODISH_DECLARATION)
     |> Vec\filter($$, $m ==> {
-      $header = $get_method_decl_header($m) |> Pha\as_syntax($$);
+      $header = $get_method_decl_header($m);
 
-      if (!$is_missing($get_function_contexts($header))) {
+      if (!Pha\is_missing($get_function_contexts($header))) {
         return false;
       }
 
@@ -3973,12 +3963,101 @@ function getter_method_could_have_a_context_list_linter(
           Pha\patch_node(
             $method_decl_header
               |> $get_method_decl_header($$)
-              |> Pha\as_syntax($$)
               |> $get_function_contexts($$),
             '[]',
             shape('trivia' => Pha\RetainTrivia::BOTH),
           ),
         ),
+      ),
+    );
+}
+}
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/lambda_parameter_list_parentheses_can_be_removed_linter.hack /////
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLinters{
+use namespace HH\Lib\{C, Vec};
+use namespace HTL\Pha;
+
+function lambda_parameter_list_parentheses_can_be_removed_linter(
+  Pha\Script $script,
+  Pha\SyntaxIndex $syntax_index,
+  Pha\TokenIndex $_,
+  Pha\Resolver $_,
+  Pha\PragmaMap $pragma_map,
+)[]: vec<LintError> {
+  $linter = __FUNCTION__;
+
+  $is_decorated_expression =
+    Pha\create_syntax_matcher($script, Pha\KIND_DECORATED_EXPRESSION);
+
+  $get_colon = Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_COLON);
+  $get_contexts =
+    Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_CONTEXTS);
+  $get_parameters =
+    Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_PARAMETERS)
+    |> Pha\returns_syntax($$);
+
+  $get_parameter_attribute =
+    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_ATTRIBUTE);
+  $get_parameter_call_conv =
+    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_CALL_CONVENTION);
+  $get_parameter_default_value =
+    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_DEFAULT_VALUE);
+  $get_parameter_name =
+    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_NAME);
+  $get_parameter_readonly =
+    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_READONLY);
+  $get_parameter_type =
+    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_TYPE);
+
+  return Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_LAMBDA_SIGNATURE)
+    |> Vec\filter($$, $sig ==> {
+      $params = $get_parameters($sig)
+        |> Pha\list_get_items_of_children($script, $$);
+
+      if (C\count($params) !== 1) {
+        return false;
+      }
+
+      $param = Pha\as_syntax($params[0]);
+
+      if (
+        C\any(
+          vec[
+            $get_parameter_attribute,
+            $get_parameter_call_conv,
+            $get_parameter_default_value,
+            $get_parameter_readonly,
+            $get_parameter_type,
+          ],
+          $getter ==> !Pha\is_missing($getter($param)),
+        )
+      ) {
+        return false;
+      }
+
+      if ($get_parameter_name($param) |> $is_decorated_expression($$)) {
+        return false;
+      }
+
+      return
+        Pha\is_missing($get_colon($sig)) && Pha\is_missing($get_contexts($sig));
+    })
+    |> Vec\map(
+      $$,
+      $sig ==> LintError::createWithPatches(
+        $script,
+        $pragma_map,
+        $sig,
+        $linter,
+        'The parentheses around this lambda parameter are redundant and can be removed.',
+        Pha\patches($script, Pha\patch_node(
+          $sig,
+          $get_parameters($sig)
+            |> Pha\list_get_items_of_children($script, $$)[0]
+            |> Pha\node_get_code($script, $$),
+          shape('trivia' => Pha\RetainTrivia::BOTH),
+        )),
       ),
     );
 }
@@ -4083,11 +4162,14 @@ function variable_name_must_be_lowercase_linter(
   $get_methodish_declaration_header = Pha\create_member_accessor(
     $script,
     Pha\MEMBER_METHODISH_FUNCTION_DECL_HEADER,
-  );
+  )
+    |> Pha\returns_syntax($$);
   $get_parameter_list =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_PARAMETER_LIST);
+    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_PARAMETER_LIST)
+    |> Pha\returns_syntax($$);
   $get_parameter_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_NAME);
+    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_NAME)
+    |> Pha\returns_token($$);
   $get_parameter_visibility =
     Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_VISIBILITY);
 
@@ -4117,15 +4199,12 @@ function variable_name_must_be_lowercase_linter(
 
       // __construct(private typename $camelCase) { validate($camelCase); }
       return $get_methodish_declaration_header($method_decl)
-        |> Pha\as_syntax($$)
         |> $get_parameter_list($$)
-        |> Pha\as_syntax($$)
         |> Pha\list_get_items_of_children($script, $$)
         |> !C\any($$, $param ==> {
           $param = Pha\as_syntax($param);
-          $param_name = $get_parameter_name($param)
-            |> Pha\as_token($$)
-            |> Pha\token_get_text($script, $$);
+          $param_name =
+            $get_parameter_name($param) |> Pha\token_get_text($script, $$);
           return $param_name === $var_name &&
             !Pha\is_missing($get_parameter_visibility($param));
         });
@@ -4256,10 +4335,10 @@ function enforce_naming(
     Pha\create_syntax_matcher($script, Pha\KIND_FUNCTION_DECLARATION);
 
   $get_function_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_NAME);
+    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_NAME)
+    |> Pha\returns_token($$);
 
   $get_function_name_as_text = $decl ==> $get_function_name($decl)
-    |> Pha\as_token($$)
     |> Pha\token_get_text($script, $$)
     |> C\reduce($allowed_suffixes, Str\strip_suffix<>, $$);
 
@@ -4330,7 +4409,8 @@ function get_flattened_namespace_uses(
     $script,
     Pha\MEMBER_NAMESPACE_USE_CLAUSES,
     Pha\MEMBER_NAMESPACE_GROUP_USE_CLAUSES,
-  );
+  )
+    |> Pha\returns_syntax($$);
   $get_clause_name =
     Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_NAME);
 
@@ -4360,7 +4440,6 @@ function get_flattened_namespace_uses(
         $uses,
         $u ==> Pha\as_syntax($u)
           |> $get_clauses($$)
-          |> Pha\as_syntax($$)
           |> Pha\list_get_items_of_children($script, $$),
       )
         |> Vec\flatten($$)
@@ -4376,7 +4455,6 @@ function get_flattened_namespace_uses(
       $v ==> Vec\map($v, $u ==> {
         $prefix = $parse_group_prefix($u);
         return $get_clauses($u)
-          |> Pha\as_syntax($$)
           |> Pha\list_get_items_of_children($script, $$)
           |> Vec\map(
             $$,
@@ -7994,8 +8072,9 @@ function create_matcher(
 }
 
 /**
- * A useful utility when dealing with code that intends to be polymorphic over
- * multiple Syntax nodes.
+ * An alternative to `syntax_member($script, $node, $member)`.
+ * This version returns a callable that takes `$node`.
+ * It can also pick the "right" member to create on the fly polymorphism.
  *
  * ```
  * $get_clauses = create_member_accessor($script, dict[
@@ -8006,6 +8085,9 @@ function create_matcher(
  * $namespace_use_or_group_use_declaration = ...;
  * $clauses = $get_clauses($namespace_use_or_group_use_declaration);
  * ```
+ *
+ * If you are always selecting Syntaxes, @see `returns_syntax`.
+ * If you are always selecting Tokens, @see `returns_token`.
  */
 function create_member_accessor(
   Script $script,
@@ -8852,6 +8934,40 @@ function patches_combine_without_conflict_resolution(
     |> _Private\patch_set_hide($$);
 }
 
+/**
+ * Integrate a cast on the return value into the callable.
+ * Commonly used in combination with `create_member_accessor`. 
+ * @example
+ * ```
+ * $get_function_name =
+ *   Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CALL_ARGUMENT_LIST)
+ *   |> returns_syntax($$);
+ * ```
+ * hackfmt-ignore
+ */
+function returns_syntax<T>(
+  (function(T)[]: NillableNode) $func,
+)[]: (function(T)[]: Syntax) {
+  return $x ==> $func($x) |> as_syntax($$);
+}
+
+/**
+ * Integrate a cast on the return value into the callable.
+ * Commonly used in combination with `create_member_accessor`. 
+ * @example
+ * ```
+ * $get_binop_operator =
+ *   Pha\create_member_accessor($script, Pha\MEMBER_BINARY_OPERATOR)
+ *   |> returns_token($$);
+ * ```
+ * hackfmt-ignore
+ */
+function returns_token<T>(
+  (function(T)[]: NillableNode) $func,
+)[]: (function(T)[]: Token) {
+  return $x ==> $func($x) |> as_token($$);
+}
+
 function script_get_syntaxes(Script $script)[]: vec<Syntax> {
   $tu = _Private\translation_unit_reveal($script);
   return $tu->getSourceOrder()
@@ -8978,6 +9094,11 @@ function syntax_get_parent(Script $script, Syntax $node)[]: Syntax {
   return node_get_parent($script, $node) |> _Private\syntax_from_node($$);
 }
 
+/**
+ * @see `create_member_accessor`, which is preferred over this function.
+ *      `syntax_member` rediscovers offsets with each invocation.
+ *      `create_member_accessor` precomputes offsets string comparisons.
+ */
 function syntax_member(Script $script, Syntax $node, Member $member)[]: Node {
   $ii = 0;
 
