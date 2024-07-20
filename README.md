@@ -64,10 +64,10 @@ This is accomplished by publishing an empty `composer.json` file.
 
 When developing this bundle, you must select the composer file with dependencies.
 Set the [`COMPOSER`](https://getcomposer.org/doc/03-cli.md#composer) environment
-variable to `composer-with-dependencies.json`.
+variable to `composer.dev.json`.
 
 ```SH
-COMPOSER=composer-with-dependencies.json composer update
+COMPOSER=composer.dev.json composer update
 ```
 
 This will install the dependencies, whereas `composer update` without the
