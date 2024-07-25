@@ -35,6 +35,7 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
     PhaLinters\async_function_and_method_linter<>,
     PhaLinters\camel_cased_methods_underscored_functions_linter<>,
     PhaLinters\concat_merge_or_union_expression_can_be_simplified_linter<>,
+    PhaLinters\context_list_must_be_explicit_linter<>,
     PhaLinters\count_expression_can_be_simplified_linter<>,
     PhaLinters\dont_await_in_a_loop_linter<>,
     PhaLinters\dont_create_forwarding_lambdas_linter<>,
@@ -912,7 +913,7 @@ function create_name_resolver(
         $prefix = '';
       }
 
-      $make_use_infos_for_kind = ($kind) ==> $get_namespace_use_clauses($use)
+      $make_use_infos_for_kind = $kind ==> $get_namespace_use_clauses($use)
         |> list_get_items_of_children($script, $$)
         |> Vec\map($$, as_syntax<>)
         |> Vec\map(
@@ -3653,6 +3654,60 @@ function concat_merge_or_union_expression_can_be_simplified_linter(
     );
 }
 }
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/context_list_must_be_explicit_linter.hack /////
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLinters{
+use namespace HH\Lib\Vec;
+use namespace HTL\Pha;
+
+function context_list_must_be_explicit_linter(
+  Pha\Script $script,
+  Pha\SyntaxIndex $syntax_index,
+  Pha\TokenIndex $_,
+  Pha\Resolver $_,
+  Pha\PragmaMap $pragma_map,
+)[]: vec<LintError> {
+  $linter = __FUNCTION__;
+
+  $get_contexts = Pha\create_member_accessor(
+    $script,
+    Pha\MEMBER_FUNCTION_CONTEXTS,
+    Pha\MEMBER_CLOSURE_CONTEXTS,
+  );
+
+  return Vec\concat(
+    Pha\index_get_nodes_by_kind(
+      $syntax_index,
+      Pha\KIND_FUNCTION_DECLARATION_HEADER,
+    ),
+    Pha\index_get_nodes_by_kind(
+      $syntax_index,
+      Pha\KIND_CLOSURE_TYPE_SPECIFIER, //
+    ),
+  )
+    |> Vec\filter($$, $func ==> Pha\is_missing($get_contexts($func)))
+    |> Vec\map(
+      $$,
+      $func ==> LintError::createWithPatches(
+        $script,
+        $pragma_map,
+        $func,
+        $linter,
+        'This function implicitly uses `[defaults]`. '.
+        'If this is intentional, please specify as such. '.
+        'If not, please provide a more restrictive context list.',
+        Pha\patches(
+          $script,
+          Pha\patch_node(
+            $get_contexts($func),
+            '[defaults]',
+            shape('trivia' => Pha\RetainTrivia::BOTH),
+          ),
+        ),
+      ),
+    );
+}
+}
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/count_expression_can_be_simplified_linter.hack /////
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 namespace HTL\PhaLinters{
@@ -6205,13 +6260,16 @@ use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
 
 final class PatchSet {
+  private vec<Replacement> $replacements;
+
   public function __construct(
     private string $beforeText,
-    private vec<Replacement> $replacements,
+    vec<Replacement> $replacements,
   )[] {
-    $sorted = Vec\sort_by($replacements, $r ==> $r->getStartOffset());
-    $shifted = Vec\drop($sorted, 1);
-    $with_next = Vec\zip($sorted, $shifted);
+    $this->replacements =
+      Vec\sort_by($replacements, $r ==> $r->getStartOffset());
+    $shifted = Vec\drop($this->replacements, 1);
+    $with_next = Vec\zip($this->replacements, $shifted);
 
     foreach ($with_next as list($cur, $next)) {
       if (Pha\source_range_overlaps($cur->getRange(), $next->getRange())) {
