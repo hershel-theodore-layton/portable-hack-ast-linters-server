@@ -7,7 +7,7 @@ use namespace HTL\Pha;
 use function dirname, file_exists;
 
 <<__EntryPoint>>
-async function main_async(): Awaitable<void> {
+async function main_async()[defaults]: Awaitable<void> {
   if (file_exists(dirname(__DIR__).'/.hhvmconfig.hdf')) {
     $project_root = dirname(__DIR__);
   } else {

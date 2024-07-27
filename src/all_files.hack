@@ -8,7 +8,7 @@ function all_files(
   string $project_root,
   keyset<string> $base_directories,
   int $directory_search_depth,
-): keyset<string> {
+)[defaults]: keyset<string> {
   return Vec\map(
     $base_directories,
     $dir ==> Vec\range(0, $directory_search_depth)

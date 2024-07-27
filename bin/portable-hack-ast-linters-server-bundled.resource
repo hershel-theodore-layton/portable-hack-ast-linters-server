@@ -8,7 +8,7 @@ function all_files(
   string $project_root,
   keyset<string> $base_directories,
   int $directory_search_depth,
-): keyset<string> {
+)[defaults]: keyset<string> {
   return Vec\map(
     $base_directories,
     $dir ==> Vec\range(0, $directory_search_depth)
@@ -177,7 +177,7 @@ async function lint_all_files_async(
   vec<LintFunction> $lint_functions,
   keyset<string> $base_directories,
   int $directory_search_depth = 60,
-): Awaitable<dict<string, vec<PhaLinters\LintError>>> {
+)[defaults]: Awaitable<dict<string, vec<PhaLinters\LintError>>> {
   $paths = all_files($project_root, $base_directories, $directory_search_depth);
   $files = await Dict\map_async($paths, async $p ==> {
     $file = File\open_read_only($p);
@@ -233,7 +233,7 @@ use function glob, is_file, is_readable;
 
 async function snif_license_header_async(
   string $project_root,
-): Awaitable<?string> {
+)[defaults]: Awaitable<?string> {
   $path = C\find<string>(
     Vec\concat(
       glob($project_root.'/src/*.hack'),
@@ -263,7 +263,7 @@ use namespace HTL\Pha;
 use function dirname, file_exists;
 
 <<__EntryPoint>>
-async function main_async(): Awaitable<void> {
+async function main_async()[defaults]: Awaitable<void> {
   if (file_exists(dirname(__DIR__).'/.hhvmconfig.hdf')) {
     $project_root = dirname(__DIR__);
   } else {

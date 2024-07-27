@@ -9,7 +9,7 @@ async function lint_all_files_async(
   vec<LintFunction> $lint_functions,
   keyset<string> $base_directories,
   int $directory_search_depth = 60,
-): Awaitable<dict<string, vec<PhaLinters\LintError>>> {
+)[defaults]: Awaitable<dict<string, vec<PhaLinters\LintError>>> {
   $paths = all_files($project_root, $base_directories, $directory_search_depth);
   $files = await Dict\map_async($paths, async $p ==> {
     $file = File\open_read_only($p);
