@@ -17,6 +17,7 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
     PhaLinters\dont_discard_new_expressions_linter<>,
     PhaLinters\dont_use_asio_join_linter<>,
     PhaLinters\final_or_abstract_classes_linter<>,
+    PhaLinters\generated_file_may_not_be_modified_manually_linter<>,
     PhaLinters\getter_method_could_have_a_context_list_linter<>,
     PhaLinters\group_use_statement_alphabetization_linter<>,
     PhaLinters\group_use_statements_linter<>,

@@ -42,6 +42,7 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
     PhaLinters\dont_discard_new_expressions_linter<>,
     PhaLinters\dont_use_asio_join_linter<>,
     PhaLinters\final_or_abstract_classes_linter<>,
+    PhaLinters\generated_file_may_not_be_modified_manually_linter<>,
     PhaLinters\getter_method_could_have_a_context_list_linter<>,
     PhaLinters\group_use_statement_alphabetization_linter<>,
     PhaLinters\group_use_statements_linter<>,
@@ -3922,6 +3923,33 @@ function count_expression_can_be_simplified_linter(
     );
 }
 }
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/generated_file_may_not_be_modified_manually_linter.hack /////
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLinters{
+use namespace HTL\Pha;
+
+function generated_file_may_not_be_modified_manually_linter(
+  Pha\Script $script,
+  Pha\SyntaxIndex $_,
+  Pha\TokenIndex $_,
+  Pha\Resolver $_,
+  Pha\PragmaMap $pragma_map,
+)[]: vec<LintError> {
+  $linter = __FUNCTION__;
+
+  $digest = Support\extract_digest($script, $pragma_map);
+
+  return $digest is null || $digest['embedded'] === $digest['hashed']
+    ? vec[]
+    : vec[LintError::create(
+      $script,
+      $pragma_map,
+      Pha\SCRIPT_NODE,
+      $linter,
+      'This file was generated with a code generator and should not be edited by hand.',
+    )];
+}
+}
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/getter_method_could_have_a_context_list_linter.hack /////
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 namespace HTL\PhaLinters{
@@ -4136,7 +4164,7 @@ function pragma_could_not_be_parsed_linter(
   return $pragma_map->getAllPragmas()
     |> Vec\filter(
       $$,
-      $p ==> $p[2][0]
+      $p ==> idx($p[2], 0, '')
         |> Str\trim($$, '"\'')
         |> $$ === 'PhaLinters' || $$ === 'HTL\PhaLinters',
     )
@@ -4144,7 +4172,12 @@ function pragma_could_not_be_parsed_linter(
       $$,
       $t ==> Vec\drop($t[2], 1)
         |> Vec\map($$, $str ==> Str\trim($str, '"\''))
-        |> C\find($$, $str ==> !Str\starts_with($str, 'fixme:')) is nonnull,
+        |> C\find(
+          $$,
+          $str ==> !(
+            Str\starts_with($str, 'digest:') || Str\starts_with($str, 'fixme:')
+          ),
+        ) is nonnull,
     )
     |> Vec\map(
       $$,
@@ -4153,7 +4186,7 @@ function pragma_could_not_be_parsed_linter(
         $pragma_map,
         $p[0],
         $linter,
-        'Your version of PhaLinters only supports fixme:linter_name',
+        'Your version of PhaLinters only supports digest:hash and fixme:linter_name',
       ),
     );
 
@@ -4419,6 +4452,45 @@ function enforce_naming(
   );
 }
 }
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/extract_digest.hack /////
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLinters\Support{
+use namespace HH\Lib\{C, Str};
+use namespace HTL\Pha;
+use function sha1;
+
+function extract_digest(
+  Pha\Script $script,
+  Pha\PragmaMap $pragma_map,
+)[]: ?shape('pragma' => Pha\Syntax, 'embedded' => string, 'hashed' => string) {
+  list($pragma, $digest) = $pragma_map->getAllPragmas()
+    |> C\find(
+      $$,
+      $p ==> C\count($p[2]) === 2 &&
+        (
+          Str\trim($p[2][0], '"\'')
+          |> $$ === 'PhaLinters' || $$ === 'HTL\\PhaLinters'
+        ) &&
+        (Str\trim($p[2][1], '"\'') |> Str\starts_with($$, 'digest:')),
+    )
+    |> $$ is nonnull
+      ? tuple(
+          $$[0],
+          Str\trim($$[2][1], '"\'') |> Str\strip_prefix($$, 'digest:'),
+        )
+      : tuple(null, '');
+
+  if ($pragma is null) {
+    return null;
+  }
+
+  return Pha\node_get_code($script, Pha\SCRIPT_NODE)
+    |> Str\replace($$, $digest, '')
+    |> sha1($$)
+    |> Str\slice($$, 0, 20)
+    |> shape('pragma' => $pragma, 'embedded' => $digest, 'hashed' => $$);
+}
+}
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/get_first_token.hack /////
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 namespace HTL\PhaLinters\Support{
@@ -4541,6 +4613,37 @@ function get_last_token(
         |> C\find($$, Pha\is_token<>) ?? Pha\NIL
       : $node,
   );
+}
+}
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/insert_digest.hack /////
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLinters\Support{
+use namespace HH\Lib\{Str};
+use namespace HTL\Pha;
+
+function insert_digest(
+  Pha\Script $script,
+  Pha\PragmaMap $pragma_map,
+)[]: string {
+  $example = "<<file: Pragmas(vec['PhaLinters', 'digest:'])>>";
+  $digest = extract_digest($script, $pragma_map);
+
+  invariant(
+    $digest is nonnull,
+    'The source should contain a pragma attribute with an empty digest, got none. Example: %s',
+    $example,
+  );
+  invariant(
+    $digest['embedded'] === '',
+    'The embedded pragma directive should not specify a digest, got %s. Example: %s',
+    $digest['embedded'],
+    $example,
+  );
+
+  return Pha\node_get_code($script, $digest['pragma'])
+    |> Str\replace($$, 'digest:', 'digest:'.$digest['hashed'])
+    |> Pha\patches($script, Pha\patch_node($digest['pragma'], $$))
+    |> Pha\patches_apply($$);
 }
 }
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/is_assignment_operator.hack /////
