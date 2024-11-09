@@ -6,6 +6,7 @@ name: Continuous Integration
 on:
   push:
   pull_request:
+  workflow_dispatch:
   schedule:
     # Run every day at 7:14PM
     - cron: "14 19 * * *"
