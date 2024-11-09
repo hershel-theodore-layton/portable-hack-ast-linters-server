@@ -36,6 +36,7 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
     PhaLinters\prefer_require_once_linter<>,
     PhaLinters\prefer_single_quoted_string_literals_linter<>,
     PhaLinters\shout_case_enum_members_linter<>,
+    PhaLinters\solitary_escape_sequences_should_be_disambiguated_linter<>,
     PhaLinters\unreachable_code_linter<>,
     PhaLinters\unused_pipe_variable_linter<>,
     PhaLinters\unused_use_clause_linter<>,
@@ -56,6 +57,14 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
 
   $linters[] = ($script, $_, $_, $_, $pragma_map) ==>
     PhaLinters\license_header_linter($script, $pragma_map, $license_header);
+
+  $linters[] = ($script, $syntax_index, $_, $_, $pragma_map) ==>
+    PhaLinters\shape_type_additional_field_intent_should_be_explicit_linter(
+      $script,
+      $syntax_index,
+      $pragma_map,
+      '/*_*/',
+    );
 
   return $linters;
 }

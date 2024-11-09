@@ -61,6 +61,7 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
     PhaLinters\prefer_require_once_linter<>,
     PhaLinters\prefer_single_quoted_string_literals_linter<>,
     PhaLinters\shout_case_enum_members_linter<>,
+    PhaLinters\solitary_escape_sequences_should_be_disambiguated_linter<>,
     PhaLinters\unreachable_code_linter<>,
     PhaLinters\unused_pipe_variable_linter<>,
     PhaLinters\unused_use_clause_linter<>,
@@ -81,6 +82,14 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
 
   $linters[] = ($script, $_, $_, $_, $pragma_map) ==>
     PhaLinters\license_header_linter($script, $pragma_map, $license_header);
+
+  $linters[] = ($script, $syntax_index, $_, $_, $pragma_map) ==>
+    PhaLinters\shape_type_additional_field_intent_should_be_explicit_linter(
+      $script,
+      $syntax_index,
+      $pragma_map,
+      '/*_*/',
+    );
 
   return $linters;
 }
@@ -1633,8 +1642,10 @@ function dont_create_forwarding_lambdas_linter(
   Pha\TokenIndex $_,
   Pha\Resolver $_,
   Pha\PragmaMap $pragma_map,
-  shape(?'no_error_for_lambdas_with_typed_parameters_or_return' => bool)
-    $options = shape(),
+  shape(
+    ?'no_error_for_lambdas_with_typed_parameters_or_return' => bool,
+    // @closed-shape
+  ) $options = shape(),
 )[]: vec<LintError> {
   $linter = __FUNCTION__;
 
@@ -1887,12 +1898,18 @@ function dont_discard_new_expressions_linter(
     )
     |> Vec\map(
       $$,
-      $stmt ==> LintError::create(
+      $stmt ==> LintError::createWithPatches(
         $script,
         $pragma_map,
         $stmt,
         $linter,
         'You are ignoring the new object. Please use it or assign it to `$_`.',
+        Pha\patches($script, Pha\patch_node(
+          $stmt,
+          '$_ = '.
+          Pha\node_get_code_without_leading_or_trailing_trivia($script, $stmt),
+          shape('trivia' => Pha\RetainTrivia::BOTH),
+        )),
       ),
     );
 }
@@ -1962,7 +1979,7 @@ function final_or_abstract_classes_linter(
     Pha\create_member_accessor($script, Pha\MEMBER_CLASSISH_NAME);
   $get_class_keyword =
     Pha\create_member_accessor($script, Pha\MEMBER_CLASSISH_KEYWORD);
-  $get_method_modifiers =
+  $get_classish_modifiers =
     Pha\create_member_accessor($script, Pha\MEMBER_CLASSISH_MODIFIERS);
 
   return
@@ -1971,19 +1988,25 @@ function final_or_abstract_classes_linter(
       $$,
       $c ==> $is_class($get_class_keyword($c)) &&
         (
-          $get_method_modifiers($c)
+          $get_classish_modifiers($c)
           |> Pha\node_get_children($script, $$)
           |> !C\any($$, $is_abstract_or_final)
         ),
     )
     |> Vec\map(
       $$,
-      $c ==> LintError::create(
+      $c ==> LintError::createWithPatches(
         $script,
         $pragma_map,
         $get_class_name($c),
         $linter,
         'Classes should be abstract or final.',
+        Pha\patches($script, Pha\patch_node(
+          $c,
+          'final '.
+          Pha\node_get_code_without_leading_or_trailing_trivia($script, $c),
+          shape('trivia' => Pha\RetainTrivia::BOTH),
+        )),
       ),
     );
 }
@@ -2013,6 +2036,32 @@ function group_use_statement_alphabetization_linter(
   $get_uses_to_be_sorted = $group_use ==> $get_clauses($group_use)
     |> Pha\list_get_items_of_children($script, $$);
 
+  $autofix = $group_use ==> {
+    $old_order = $get_uses_to_be_sorted($group_use);
+    $new_order = Vec\sort_by(
+      $old_order,
+      $c ==> Pha\as_syntax($c)
+        |> $get_use_name($$)
+        |> Pha\node_get_code_compressed($script, $$),
+    );
+    return Vec\zip($old_order, $new_order)
+      |> Vec\map(
+        $$,
+        $tuple ==> vec[
+          Pha\patch_node(
+            $tuple[0],
+            Pha\node_get_code_without_leading_or_trailing_trivia(
+              $script,
+              $tuple[1],
+            ),
+            shape('trivia' => Pha\RetainTrivia::BOTH),
+          ),
+        ],
+      )
+      |> Vec\flatten($$)
+      |> Pha\patches($script, ...$$);
+  };
+
   return Pha\index_get_nodes_by_kind(
     $syntax_index,
     Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
@@ -2024,18 +2073,19 @@ function group_use_statement_alphabetization_linter(
           $$,
           $clause ==> Pha\as_syntax($clause)
             |> $get_use_name($$)
-            |> Pha\node_get_code($script, $$),
+            |> Pha\node_get_code_compressed($script, $$),
         )
         |> !C\is_sorted($$),
     )
     |> Vec\map(
       $$,
-      $group_use ==> LintError::create(
+      $group_use ==> LintError::createWithPatches(
         $script,
         $pragma_map,
         $group_use,
         $linter,
         'Group use clauses should be sorted alphabetically.',
+        $autofix($group_use),
       ),
     );
 }
@@ -2202,23 +2252,30 @@ function license_header_linter(
   $is_markup_section =
     Pha\create_syntax_matcher($script, Pha\KIND_MARKUP_SECTION);
 
-  return Pha\node_get_first_childx($script, Pha\SCRIPT_NODE)
+  $first_thing = Pha\node_get_first_childx($script, Pha\SCRIPT_NODE)
     |> Pha\node_get_children($script, $$)
-    |> C\findx($$, $n ==> !$is_markup_section($n))
-    |> Pha\node_get_descendants($script, $$)
+    |> C\findx($$, $n ==> !$is_markup_section($n));
+
+  return Pha\node_get_descendants($script, $first_thing)
     |> C\any(
       $$,
       $n ==> Pha\is_trivium($n) &&
         Str\contains(Pha\node_get_code($script, $n), $expected_license_header),
     )
       ? vec[]
-      : vec[LintError::create(
+      : vec[LintError::createWithPatches(
         $script,
         $pragma_map,
         C\firstx($$),
         $linter,
         'Expected the find your license header at the top of this file: '.
         $expected_license_header,
+        Pha\patches($script, Pha\patch_node(
+          $first_thing,
+          $expected_license_header.
+          "\n".
+          Pha\node_get_code($script, $first_thing),
+        )),
       )];
 }
 }
@@ -2267,12 +2324,18 @@ function must_use_braces_for_control_flow_linter(
     |> Vec\filter($$, $is_braceless)
     |> Vec\map(
       $$,
-      $n ==> LintError::create(
+      $n ==> LintError::createWithPatches(
         $script,
         $pragma_map,
         $n,
         $linter,
         'Use curly braces {} for control flow.',
+        Pha\patches($script, Pha\patch_node(
+          $get_body($n),
+          $get_body($n)
+            |> Pha\node_get_code($script, $$)
+            |> "{\n ".$$.'}',
+        )),
       ),
     );
 }
@@ -2471,22 +2534,27 @@ use namespace HTL\Pha;
 
 function no_elseif_linter(
   Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
+  Pha\SyntaxIndex $_,
+  Pha\TokenIndex $token_index,
   Pha\Resolver $_,
   Pha\PragmaMap $pragma_map,
 )[]: vec<LintError> {
   $linter = __FUNCTION__;
 
   return Vec\map(
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_ELSEIF_CLAUSE),
-    $f ==> LintError::create(
+    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_ELSEIF),
+    $f ==> LintError::createWithPatches(
       $script,
       $pragma_map,
       $f,
       $linter,
       'Use else if instead of elseif. '.
       'This syntax will be removed in a future version of hhvm.',
+      Pha\patches($script, Pha\patch_node(
+        $f,
+        'else if',
+        shape('trivia' => Pha\RetainTrivia::BOTH),
+      )),
     ),
   );
 }
@@ -2494,7 +2562,7 @@ function no_elseif_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/no_empty_statements_linter.hack /////
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 namespace HTL\PhaLinters{
-use namespace HH\Lib\Vec;
+use namespace HH\Lib\{Str, Vec};
 use namespace HTL\Pha;
 
 function no_empty_statements_linter(
@@ -2593,13 +2661,22 @@ function no_empty_statements_linter(
     |> Vec\filter($$, $expression_is_empty)
     |> Vec\map(
       $$,
-      $expr ==> LintError::create(
+      $expr ==> LintError::createWithPatches(
         $script,
         $pragma_map,
         $expr,
         $linter,
         'You are not using the result of this expression. '.
         'You can silence this warning by assigning it to `$_`.',
+        Pha\node_get_code_without_leading_or_trailing_trivia($script, $expr)
+          // a `;` is an empty statement, but `$_ = ;` is not a valid statement.
+          |> Str\trim($$) !== ''
+            ? Pha\patches($script, Pha\patch_node(
+              $expr,
+              '$_ = '.$$,
+              shape('trivia' => Pha\RetainTrivia::BOTH),
+            ))
+            : null,
       ),
     );
 }
@@ -2656,12 +2733,24 @@ function no_final_method_in_final_classes_linter(
     )
     |> Vec\map(
       $$,
-      $f ==> LintError::create(
+      $f ==> LintError::createWithPatches(
         $script,
         $pragma_map,
         $get_method_function_decl($f) |> $get_function_name($$),
         $linter,
         'Remove the final keyword. The surrounding class is already final.',
+        Pha\patches(
+          $script,
+          $get_method_function_decl($f)
+            |> $get_function_modifiers($$)
+            |> Pha\node_get_children($script, $$)
+            |> C\findx($$, $is_final)
+            |> Pha\patch_node(
+              $$,
+              '',
+              shape('trivia' => Pha\RetainTrivia::LEADING),
+            ),
+        ),
       ),
     );
 }
@@ -2731,36 +2820,36 @@ use namespace HTL\Pha;
 
 function no_php_equality_linter(
   Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
+  Pha\SyntaxIndex $_,
+  Pha\TokenIndex $token_index,
   Pha\Resolver $_,
   Pha\PragmaMap $pragma_map,
 )[]: vec<LintError> {
   $linter = __FUNCTION__;
 
-  $is_php_equals = Pha\create_token_matcher(
-    $script,
-    Pha\KIND_EQUAL_EQUAL,
-    Pha\KIND_EXCLAMATION_EQUAL,
-  );
+  $is_eq = Pha\create_token_matcher($script, Pha\KIND_EQUAL_EQUAL);
 
-  $get_operator =
-    Pha\create_member_accessor($script, Pha\MEMBER_BINARY_OPERATOR);
-
-  $binop_is_php_equals = $binop ==>
-    $get_operator($binop) |> $is_php_equals($$);
-
-  return Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_BINARY_EXPRESSION)
-    |> Vec\filter($$, $binop_is_php_equals)
+  return Vec\concat(
+    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_EQUAL_EQUAL),
+    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_EXCLAMATION_EQUAL),
+  )
     |> Vec\map(
       $$,
-      $n ==> LintError::create(
+      $n ==> LintError::createWithPatches(
         $script,
         $pragma_map,
         $n,
         $linter,
         'Do not use `==` or `!=`. '.
         'The behaviors of these operators are difficult to explain.',
+        Pha\patches(
+          $script,
+          Pha\patch_node(
+            $n,
+            $is_eq($n) ? '===' : '!==',
+            shape('trivia' => Pha\RetainTrivia::BOTH),
+          ),
+        ),
       ),
     );
 }
@@ -2856,7 +2945,7 @@ function prefer_require_once_linter(
     |> Vec\filter($$, $require_token ==> !$is_require_once($require_token))
     |> Vec\map(
       $$,
-      $n ==> LintError::create(
+      $n ==> LintError::createWithPatches(
         $script,
         $pragma_map,
         Pha\node_get_parent($script, $n),
@@ -2864,6 +2953,14 @@ function prefer_require_once_linter(
         Str\format(
           'Use require_once instead of %s.',
           Pha\token_get_text($script, $n),
+        ),
+        Pha\patches(
+          $script,
+          Pha\patch_node(
+            $n,
+            'require_once',
+            shape('trivia' => Pha\RetainTrivia::BOTH),
+          ),
         ),
       ),
     );
@@ -2895,6 +2992,7 @@ function prefer_single_quoted_string_literals_linter(
     '\\v', // vertical tab
     '\\x', // hex
     "'", // single quote,
+    '\$', // anti-variable interpolation
     '\\0', '\\1', '\\2', '\\3', '\\4', '\\5', '\\6', '\\7' // octal
   ];
 
@@ -2902,18 +3000,36 @@ function prefer_single_quoted_string_literals_linter(
     $token_index,
     Pha\KIND_DOUBLE_QUOTED_STRING_LITERAL,
   )
-    |> Vec\filter($$, $t ==> {
-      $text = Pha\token_get_text($script, $t);
-      return !C\any($escape_sequences, $e ==> Str\contains($text, $e));
-    })
     |> Vec\map(
       $$,
-      $t ==> LintError::create(
+      $t ==> shape(
+        'node' => $t,
+        'contents' => Pha\token_get_text($script, $t)
+          |> Str\strip_prefix($$, '"')
+          |> Str\strip_suffix($$, '"'),
+      ),
+    )
+    |> Vec\filter(
+      $$,
+      $shape ==>
+        !C\any($escape_sequences, $e ==> Str\contains($shape['contents'], $e)),
+    )
+    |> Vec\map(
+      $$,
+      $shape ==> LintError::createWithPatches(
         $script,
         $pragma_map,
-        $t,
+        $shape['node'],
         $linter,
         'This could be a single quoted string.',
+        Pha\patches(
+          $script,
+          Pha\patch_node(
+            $shape['node'],
+            "'".$shape['contents']."'",
+            shape('trivia' => Pha\RetainTrivia::BOTH),
+          ),
+        ),
       ),
     );
 }
@@ -3357,12 +3473,19 @@ function unused_variable_linter(
   return Vec\filter($assignments, $is_unused)
     |> Vec\map(
       $$,
-      $a ==> LintError::create(
+      $a ==> LintError::createWithPatches(
         $script,
         $pragma_map,
         Pha\token_get_parent($script, $a['var']),
         $linter,
         'This variable is unused.',
+        Pha\patches($script, Pha\patch_node(
+          $a['var'],
+          Pha\token_get_text($script, $a['var'])
+            |> Str\strip_prefix($$, '$')
+            |> '$_'.$$,
+          shape('trivia' => Pha\RetainTrivia::BOTH),
+        )),
       ),
     );
 }
@@ -4161,6 +4284,62 @@ function pragma_could_not_be_parsed_linter(
 )[]: vec<LintError> {
   $linter = __FUNCTION__;
 
+  $is_attribute_specification = Pha\create_syntax_matcher(
+    $script,
+    Pha\KIND_FILE_ATTRIBUTE_SPECIFICATION,
+    Pha\KIND_OLD_ATTRIBUTE_SPECIFICATION,
+  );
+  $is_call_expression =
+    Pha\create_syntax_matcher($script, Pha\KIND_FUNCTION_CALL_EXPRESSION);
+
+  $get_attributes = Pha\create_member_accessor(
+    $script,
+    Pha\MEMBER_FILE_ATTRIBUTE_SPECIFICATION_ATTRIBUTES,
+    Pha\MEMBER_OLD_ATTRIBUTE_SPECIFICATION_ATTRIBUTES,
+  )
+    |> Pha\returns_syntax($$);
+  $get_constructor_call_argument_list = Pha\create_member_accessor(
+    $script,
+    Pha\MEMBER_CONSTRUCTOR_CALL_ARGUMENT_LIST,
+  )
+    |> Pha\returns_syntax($$);
+
+  $create_autofix = $pragma ==> {
+    if ($is_call_expression($pragma)) {
+      $parent = Pha\node_get_parent($script, $pragma);
+      return Pha\patch_node(
+        $parent,
+        '',
+        shape('trivia' => Pha\RetainTrivia::NEITHER),
+      );
+    }
+
+    $noop_patch = Pha\patch_node($pragma, Pha\node_get_code($script, $pragma));
+
+    $has_exactly_one_argument = $get_constructor_call_argument_list($pragma)
+      |> Pha\list_get_items_of_children($script, $$)
+      |> C\count($$) === 1;
+
+    if (!$has_exactly_one_argument) {
+      return $noop_patch;
+    }
+
+    $specification = Pha\node_get_syntax_ancestors($script, $pragma)
+      |> C\findx($$, $is_attribute_specification);
+
+    $is_exclusively_a_pragma = $get_attributes($specification)
+      |> Pha\list_get_items_of_children($script, $$)
+      |> C\count($$) === 1;
+
+    return $is_exclusively_a_pragma
+      ? Pha\patch_node(
+          $specification,
+          '',
+          shape('trivia' => Pha\RetainTrivia::LEADING),
+        )
+      : Pha\patch_node(Pha\node_get_parent($script, $pragma), '');
+  };
+
   return $pragma_map->getAllPragmas()
     |> Vec\filter(
       $$,
@@ -4181,12 +4360,13 @@ function pragma_could_not_be_parsed_linter(
     )
     |> Vec\map(
       $$,
-      $p ==> LintError::create(
+      $p ==> LintError::createWithPatches(
         $script,
         $pragma_map,
         $p[0],
         $linter,
         'Your version of PhaLinters only supports digest:hash and fixme:linter_name',
+        Pha\patches($script, $create_autofix($p[0])),
       ),
     );
 
@@ -4222,6 +4402,143 @@ function pragma_prefix_unknown_linter(
         'This pragma prefix is not known. '.
         'Known prefixes: '.
         Str\join($known_pragma_prefixes, ', '),
+      ),
+    );
+}
+}
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/shape_type_additional_field_intent_should_be_explicit_linter.hack /////
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLinters{
+use namespace HH\Lib\{C, Str, Vec};
+use namespace HTL\Pha;
+
+function shape_type_additional_field_intent_should_be_explicit_linter(
+  Pha\Script $script,
+  Pha\SyntaxIndex $syntax_index,
+  Pha\PragmaMap $pragma_map,
+  string $closed_shape_marker,
+)[]: vec<LintError> {
+  $linter = __FUNCTION__;
+
+  $get_shape_fields =
+    Pha\create_member_accessor($script, Pha\MEMBER_SHAPE_TYPE_FIELDS)
+    |> Pha\returns_syntax($$);
+  $get_shape_left_paren =
+    Pha\create_member_accessor($script, Pha\MEMBER_SHAPE_TYPE_LEFT_PAREN);
+  $get_shape_right_paren =
+    Pha\create_member_accessor($script, Pha\MEMBER_SHAPE_TYPE_RIGHT_PAREN);
+  $get_shape_ellipsis =
+    Pha\create_member_accessor($script, Pha\MEMBER_SHAPE_TYPE_ELLIPSIS);
+
+  return
+    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_SHAPE_TYPE_SPECIFIER)
+    |> Vec\filter($$, $shape ==> {
+      if (!Pha\is_missing($get_shape_ellipsis($shape))) {
+        return false;
+      }
+
+      $right_paren = $get_shape_right_paren($shape);
+
+      $token_before_right_paren = $get_shape_fields($shape)
+        |> Pha\node_get_children($script, $$)
+        |> C\last($$)
+        |> $$ is nonnull
+          ? Support\get_last_token($script, $$)
+          : $get_shape_left_paren($shape);
+
+      return !C\any(
+        vec[$token_before_right_paren, $right_paren],
+        $x ==> Pha\node_get_code($script, $x)
+          |> Str\contains($$, $closed_shape_marker),
+      );
+    })
+    |> Vec\map(
+      $$,
+      $shape ==> LintError::createWithPatches(
+        $script,
+        $pragma_map,
+        $shape,
+        $linter,
+        'The intent of whether this shape accepts additional fields is not expliticly expressed. '.
+        'If you intended to accept these fields, and any number of unspecified fields, '.
+        'add `, ...` after the last field. If you can not want to accept additional fields, add '.
+        $closed_shape_marker.
+        ' before the closing parenthesis.',
+        Pha\patches(
+          $script,
+          Pha\patch_node(
+            $get_shape_right_paren($shape),
+            $closed_shape_marker.
+            "\n".
+            Pha\node_get_code($script, $get_shape_right_paren($shape)),
+            shape('trivia' => Pha\RetainTrivia::NEITHER),
+          ),
+        ),
+      ),
+    );
+}
+}
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/solitary_escape_sequences_should_be_disambiguated_linter.hack /////
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLinters{
+use namespace HH\Lib\{C, Str, Vec};
+use namespace HTL\Pha;
+
+function solitary_escape_sequences_should_be_disambiguated_linter(
+  Pha\Script $script,
+  Pha\SyntaxIndex $_,
+  Pha\TokenIndex $token_index,
+  Pha\Resolver $_,
+  Pha\PragmaMap $pragma_map,
+)[]: vec<LintError> {
+  $linter = __FUNCTION__;
+
+  $escape_chars = keyset['e', 'f', 't', 'r', 'n', 'u', 'v', 'x'];
+
+  return Pha\index_get_nodes_by_kind(
+    $token_index,
+    Pha\KIND_SINGLE_QUOTED_STRING_LITERAL,
+  )
+    |> Vec\map(
+      $$,
+      $str ==> shape(
+        'node' => $str,
+        'contents' => Pha\token_get_text($script, $str)
+          |> Str\strip_prefix($$, "'")
+          |> Str\strip_suffix($$, "'"),
+      ),
+    )
+    |> Vec\filter($$, $shape ==> {
+      $contents = $shape['contents'];
+      return Str\length($contents) === 2 &&
+        $contents[0] === '\\' &&
+        (
+          C\contains_key($escape_chars, $contents[1]) ||
+          \ctype_digit($contents[1])
+        );
+    })
+    |> Vec\map(
+      $$,
+      $shape ==> LintError::createWithPatches(
+        $script,
+        $pragma_map,
+        $shape['node'],
+        $linter,
+        'This string literal represents the literal text '.
+        $shape['contents'].
+        '. The escape sequence is not evaluated. This string could be confused '.
+        'for a character literal (which evaluates the escape sequence) by '.
+        'developers with experience in another language with C heritage. To '.
+        'avoid this confusion, please add a leading backslash to make this '.
+        'string visually distinct from character literals from other languages.',
+        Pha\patches(
+          $script,
+          Pha\patch_node(
+            $shape['node'],
+            "'".Str\replace($shape['contents'], '\\', '\\\\')."'",
+            shape('trivia' => Pha\RetainTrivia::BOTH),
+          ),
+        ),
       ),
     );
 }
@@ -4344,6 +4661,7 @@ type TUnusedVariableLinterUsage = shape(
   'scopes' => vec<Pha\Syntax>,
   'var' => Pha\Token,
   'var_name' => string,
+  // @closed-shape
 );
 }
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/TUnusedVariableLinterUsageAfterShadowing.hack /////
@@ -4356,6 +4674,7 @@ type TUnusedVariableLinterAfterShadowing = shape(
   'owners' => vec<Pha\Syntax>,
   'var' => Pha\Token,
   'var_name' => string,
+  // @closed-shape
 );
 }
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/UseKind.hack /////
@@ -4462,7 +4781,12 @@ use function sha1;
 function extract_digest(
   Pha\Script $script,
   Pha\PragmaMap $pragma_map,
-)[]: ?shape('pragma' => Pha\Syntax, 'embedded' => string, 'hashed' => string) {
+)[]: ?shape(
+  'pragma' => Pha\Syntax,
+  'embedded' => string,
+  'hashed' => string,
+  // @closed-shape
+) {
   list($pragma, $digest) = $pragma_map->getAllPragmas()
     |> C\find(
       $$,
@@ -8682,6 +9006,37 @@ function node_get_code_compressed(
   }
 }
 
+function node_get_code_without_leading_or_trailing_trivia(
+  Script $script,
+  NillableNode $node,
+)[]: string {
+  if ($node === NIL) {
+    return '';
+  }
+
+  $node = _Private\cast_away_nil($node);
+
+  $nodes = node_get_descendants($script, $node) ?: vec[$node];
+  $first = C\find($nodes, $n ==> node_is_token_text_trivium($script, $n));
+
+  if ($first is null) {
+    return '';
+  }
+
+  $end =
+    _Private\find_lastx($nodes, $n ==> node_is_token_text_trivium($script, $n))
+    |> _Private\node_get_next_trivium($script, $$)
+    |> $$ !== NIL
+      ? _Private\cast_away_nil($$)
+        |> _Private\trivium_get_source_byte_offset($$)
+      : null;
+
+  return _Private\trivium_from_node($first)
+    |> _Private\trivium_get_source_byte_offset($$)
+    |> _Private\source_range_hide(tuple($$, $end))
+    |> _Private\translation_unit_reveal($script)->cutSourceRange($$);
+}
+
 /**
  * Descendants are returned in source order.
  */
@@ -9025,6 +9380,20 @@ function node_get_syntax_ancestors(
   }
 
   return $out;
+}
+
+function node_is_token_text_trivium(
+  Script $script,
+  NillableNode $node,
+)[]: bool {
+  if (!is_trivium($node)) {
+    return false;
+  }
+
+  return _Private\cast_away_nil($node)
+    |> node_get_parent($script, $$)
+    |> _Private\token_from_node($$)
+    |> token_get_text_trivium($script, $$) === $node;
 }
 
 function patch_node(
