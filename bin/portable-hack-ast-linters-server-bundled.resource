@@ -132,7 +132,7 @@ function encode_errors_as_human_readable_text(
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 namespace HTL\PhaLintersServer{
 use namespace HH\Lib\Vec;
-use namespace HTL\PhaLinters;
+use namespace HTL\{Pha, PhaLinters};
 use const JSON_UNESCAPED_SLASHES, JSON_UNESCAPED_UNICODE;
 
 function encode_errors_as_vscode_compatible_json(
@@ -144,28 +144,29 @@ function encode_errors_as_vscode_compatible_json(
     ($path, $errs) ==> Vec\map(
       $errs,
       $e ==> shape(
-        'start' => shape(
-          'line' => $e->getPosition()->getStartLine(),
-          'character' => $e->getPosition()->getStartColumn(),
-        ),
-        'end' => shape(
-          'line' => $e->getPosition()->getEndLine(),
-          'character' => $e->getPosition()->getEndColumn(),
-        ),
-      )
-        |> shape(
-          'severity' => 2,
-          'path' => $path,
-          'message' => $e->getLinterNameWithoutNamespaceAndLinter(),
-          'range' => $$,
-          'source' => 'Portable Hack AST Linters Server',
-          'relatedInformation' => vec[shape(
-            'location' => shape(
-              'range' => $$,
+        'severity' => 2,
+        'path' => $path,
+        'message' => $e->getLinterNameWithoutNamespaceAndLinter(),
+        'range' => to_vscode_range($e->getPosition()),
+        'source' => 'Portable Hack AST Linters Server',
+        'relatedInformation' => vec[shape(
+          'location' => shape(
+            'range' => to_vscode_range($e->getPosition()),
+          ),
+          'message' => $e->getDescription(),
+        )],
+        'autofix' => $e->getPatches()
+          |> $$ is null
+            ? vec[]
+            : Pha\_Private\patch_set_reveal($$)->getReplacements()
+          |> Vec\map(
+            $$,
+            $r ==> shape(
+              'range' => to_vscode_range($r->getPosition()),
+              'replaceWith' => $r->getText(),
             ),
-            'message' => $e->getDescription(),
-          )],
-        ),
+          ),
+      ),
     ),
   )
     |> Vec\flatten($$)
@@ -262,6 +263,28 @@ async function snif_license_header_async(
 
   $br = new IO\BufferedReader($file);
   return await $br->readUntilAsync('*/');
+}
+}
+///// src/lib/to_vscode_range.hack /////
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLintersServer{
+use namespace HTL\Pha;
+
+function to_vscode_range(Pha\LineAndColumnNumbers $x)[]: shape(
+  'start' => shape('line' => int, 'character' => int /*_*/),
+  'end' => shape('line' => int, 'character' => int /*_*/),
+  /*_*/
+) {
+  return shape(
+    'start' => shape(
+      'line' => $x->getStartLine(),
+      'character' => $x->getStartColumn(),
+    ),
+    'end' => shape(
+      'line' => $x->getEndLine(),
+      'character' => $x->getEndColumn(),
+    ),
+  );
 }
 }
 ///// src/main.hack /////
@@ -6643,8 +6666,10 @@ final class PatchNode {
 
   public function toReplacement(Script $script)[]: Replacement {
     if ($this->retainTrivia === Pha\RetainTrivia::NEITHER) {
+      $source_range = Pha\node_get_source_range($script, $this->node);
       return new Replacement(
-        Pha\node_get_source_range($script, $this->node),
+        Pha\source_range_to_line_and_column_numbers($script, $source_range),
+        $source_range,
         $this->text,
       );
     }
@@ -6676,7 +6701,13 @@ final class PatchNode {
     $end = Pha\node_get_source_range($script, $end_node)
       |> source_range_reveal($$)[1];
 
-    return new Replacement(source_range_hide(tuple($start, $end)), $this->text);
+    $source_range = source_range_hide(tuple($start, $end));
+
+    return new Replacement(
+      Pha\source_range_to_line_and_column_numbers($script, $source_range),
+      $source_range,
+      $this->text,
+    );
   }
 }
 }
@@ -6760,11 +6791,18 @@ final class PatchSet {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/Replacement.hack /////
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 namespace HTL\Pha\_Private{
+use namespace HTL\Pha;
+
 final class Replacement {
   public function __construct(
+    private Pha\LineAndColumnNumbers $lineAndColumnNumbers,
     private SourceRange $range,
     private string $text,
   )[] {}
+
+  public function getPosition()[]: Pha\LineAndColumnNumbers {
+    return $this->lineAndColumnNumbers;
+  }
 
   public function getEndOffset()[]: ?SourceByteOffset {
     return $this->range |> source_range_reveal($$)[1];
@@ -7311,12 +7349,14 @@ namespace HTL\Pha\_Private{
 type ReadyToSerializeContext = shape(
   'context' => dict<arraykey, mixed>,
   'context_hash' => string,
+  ...
 );
 
 type ReadyToSerializeScript = shape(
   'script' => dict<arraykey, mixed>,
   'context' => dict<arraykey, mixed>,
   'context_hash' => string,
+  ...
 );
 }
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/Script.hack /////
@@ -9399,7 +9439,7 @@ function node_is_token_text_trivium(
 function patch_node(
   Node $node,
   string $replacement,
-  shape(?'trivia' => RetainTrivia) $options = shape(),
+  shape(?'trivia' => RetainTrivia /*_*/) $options = shape(),
 )[]: Patch {
   return new _Private\PatchNode(
     $node,

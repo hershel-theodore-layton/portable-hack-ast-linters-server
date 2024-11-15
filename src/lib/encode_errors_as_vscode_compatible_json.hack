@@ -2,7 +2,7 @@
 namespace HTL\PhaLintersServer;
 
 use namespace HH\Lib\Vec;
-use namespace HTL\PhaLinters;
+use namespace HTL\{Pha, PhaLinters};
 use const JSON_UNESCAPED_SLASHES, JSON_UNESCAPED_UNICODE;
 
 function encode_errors_as_vscode_compatible_json(
@@ -14,28 +14,29 @@ function encode_errors_as_vscode_compatible_json(
     ($path, $errs) ==> Vec\map(
       $errs,
       $e ==> shape(
-        'start' => shape(
-          'line' => $e->getPosition()->getStartLine(),
-          'character' => $e->getPosition()->getStartColumn(),
-        ),
-        'end' => shape(
-          'line' => $e->getPosition()->getEndLine(),
-          'character' => $e->getPosition()->getEndColumn(),
-        ),
-      )
-        |> shape(
-          'severity' => 2,
-          'path' => $path,
-          'message' => $e->getLinterNameWithoutNamespaceAndLinter(),
-          'range' => $$,
-          'source' => 'Portable Hack AST Linters Server',
-          'relatedInformation' => vec[shape(
-            'location' => shape(
-              'range' => $$,
+        'severity' => 2,
+        'path' => $path,
+        'message' => $e->getLinterNameWithoutNamespaceAndLinter(),
+        'range' => to_vscode_range($e->getPosition()),
+        'source' => 'Portable Hack AST Linters Server',
+        'relatedInformation' => vec[shape(
+          'location' => shape(
+            'range' => to_vscode_range($e->getPosition()),
+          ),
+          'message' => $e->getDescription(),
+        )],
+        'autofix' => $e->getPatches()
+          |> $$ is null
+            ? vec[]
+            : Pha\_Private\patch_set_reveal($$)->getReplacements()
+          |> Vec\map(
+            $$,
+            $r ==> shape(
+              'range' => to_vscode_range($r->getPosition()),
+              'replaceWith' => $r->getText(),
             ),
-            'message' => $e->getDescription(),
-          )],
-        ),
+          ),
+      ),
     ),
   )
     |> Vec\flatten($$)
