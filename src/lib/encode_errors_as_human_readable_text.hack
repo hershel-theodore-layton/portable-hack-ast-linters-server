@@ -11,10 +11,16 @@ function encode_errors_as_human_readable_text(
     return "No errors!\n";
   }
 
+  $errors_remaining = Str\format(
+    "%d lint-error%s remaining...\n",
+    C\count($lint_errors),
+    C\count($lint_errors) > 1 ? 's' : '',
+  );
+
   return Vec\map_with_key(
     $lint_errors,
     ($path, $errors) ==> Vec\map($errors, $e ==> $e->toString().' of '.$path)
       |> Str\join($$, "\n\n"),
   )
-    |> Str\join($$, "\n\n")."\n";
+    |> Str\join($$, "\n\n").$errors_remaining."\n";
 }
