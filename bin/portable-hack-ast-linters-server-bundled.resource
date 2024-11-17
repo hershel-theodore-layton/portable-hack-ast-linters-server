@@ -120,12 +120,18 @@ function encode_errors_as_human_readable_text(
     return "No errors!\n";
   }
 
+  $errors_remaining = Str\format(
+    "%d lint-error%s remaining...\n",
+    C\count($lint_errors),
+    C\count($lint_errors) > 1 ? 's' : '',
+  );
+
   return Vec\map_with_key(
     $lint_errors,
     ($path, $errors) ==> Vec\map($errors, $e ==> $e->toString().' of '.$path)
       |> Str\join($$, "\n\n"),
   )
-    |> Str\join($$, "\n\n")."\n";
+    |> Str\join($$, "\n\n").$errors_remaining."\n";
 }
 }
 ///// src/lib/encode_errors_as_vscode_compatible_json.hack /////
@@ -1369,6 +1375,27 @@ final class LintError {
     );
   }
 
+  /**
+   * Identical to `::create()`, but indicates that the option to add patches
+   * was considered and not taken, instead of not being implemented (just yet).
+   */
+  public static function createWithoutPatches(
+    Pha\Script $script,
+    Pha\PragmaMap $pragma_map,
+    Pha\Node $blamed_node,
+    string $linter_name,
+    string $description,
+  )[]: this {
+    return static::createWithPatches(
+      $script,
+      $pragma_map,
+      $blamed_node,
+      $linter_name,
+      $description,
+      null,
+    );
+  }
+
   public function getBlamedNode()[]: Pha\Node {
     return $this->blamedNode;
   }
@@ -1642,7 +1669,7 @@ function dont_await_in_a_loop_linter(
   )
     |> Vec\map(
       $$,
-      $await_token ==> LintError::create(
+      $await_token ==> LintError::createWithoutPatches(
         $script,
         $pragma_map,
         // Blame the whole expression, not just the token.
@@ -1667,7 +1694,7 @@ function dont_create_forwarding_lambdas_linter(
   Pha\PragmaMap $pragma_map,
   shape(
     ?'no_error_for_lambdas_with_typed_parameters_or_return' => bool,
-    // @closed-shape
+    /*_*/
   ) $options = shape(),
 )[]: vec<LintError> {
   $linter = __FUNCTION__;
@@ -1969,7 +1996,7 @@ function dont_use_asio_join_linter(
     )
     |> Vec\map(
       $$,
-      $n ==> LintError::create(
+      $n ==> LintError::createWithoutPatches(
         $script,
         $pragma_map,
         $n,
@@ -2442,7 +2469,7 @@ function namespace_private_symbol_linter(
     )
     |> Vec\map(
       $$,
-      $n ==> LintError::create(
+      $n ==> LintError::createWithoutPatches(
         $script,
         $pragma_map,
         $n,
@@ -2538,7 +2565,7 @@ function namespace_private_use_clause_linter(
     })
     |> Vec\map(
       $$,
-      $v ==> LintError::create(
+      $v ==> LintError::createWithoutPatches(
         $script,
         $pragma_map,
         $v[0],
@@ -2816,21 +2843,23 @@ function no_newline_at_start_of_control_flow_block_linter(
       $$,
       $stmt ==> Pha\node_get_parent($script, $stmt) |> !$is_function_body($$),
     )
-    |> Vec\map($$, $get_first_statement_or_closing_curly)
-    |> Vec\filter(
-      $$,
-      $stmt ==> Support\get_first_token($script, $stmt)
-        |> Pha\node_get_first_child($script, $$)
-        |> $is_eol($$),
-    )
     |> Vec\map(
       $$,
-      $stmt ==> LintError::create(
+      $stmt ==> $get_first_statement_or_closing_curly($stmt)
+        |> Support\get_first_token($script, $$)
+        |> Pha\node_get_first_child($script, $$),
+    )
+    |> Vec\filter($$, $is_eol)
+    |> Vec\map($$, Pha\as_nonnil<>)
+    |> Vec\map(
+      $$,
+      $eol ==> LintError::createWithPatches(
         $script,
         $pragma_map,
-        Pha\as_nonnil($stmt),
+        Pha\as_nonnil($eol),
         $linter,
         'Control flow blocks may not start with an empty line.',
+        Pha\patches($script, Pha\patch_node($eol, '')),
       ),
     );
 }
@@ -3123,7 +3152,7 @@ function unreachable_code_linter(
     |> Vec\filter($$, $creates_unreachable_code)
     |> Vec\map(
       $$,
-      $n ==> LintError::create(
+      $n ==> LintError::createWithoutPatches(
         $script,
         $pragma_map,
         $n,
@@ -3170,7 +3199,7 @@ function unused_pipe_variable_linter(
     )
     |> Vec\map(
       $$,
-      $n ==> LintError::create(
+      $n ==> LintError::createWithoutPatches(
         $script,
         $pragma_map,
         $n,
@@ -3549,7 +3578,7 @@ function use_statement_with_as_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/use_statement_with_leading_backslash_linter.hack /////
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 namespace HTL\PhaLinters{
-use namespace HH\Lib\{C, Vec};
+use namespace HH\Lib\Vec;
 use namespace HTL\Pha;
 
 function use_statement_with_leading_backslash_linter(
@@ -3561,10 +3590,9 @@ function use_statement_with_leading_backslash_linter(
 )[]: vec<LintError> {
   $linter = __FUNCTION__;
 
-  $has_leading_backslash = $node ==> Pha\node_get_descendants($script, $node)
-    |> C\find($$, Pha\is_token<>) ?? Pha\NIL
-    |> Pha\token_get_text($script, Pha\as_token_or_nil($$)) === '\\';
+  $is_backslash = Pha\create_token_matcher($script, Pha\KIND_BACKSLASH);
 
+  $get_leading_backslash = $node ==> Support\get_first_token($script, $node);
   $get_prefix = Pha\create_member_accessor(
     $script,
     Pha\MEMBER_NAMESPACE_USE_NAME,
@@ -3578,18 +3606,27 @@ function use_statement_with_leading_backslash_linter(
     ),
     Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_USE_CLAUSE),
   )
-    |> Vec\map($$, $get_prefix)
-    |> Vec\filter($$, $has_leading_backslash)
+    |> Vec\map($$, $n ==> $get_prefix($n) |> $get_leading_backslash($$))
+    |> Vec\filter($$, $is_backslash)
     |> Vec\map(
       $$,
-      $n ==> LintError::create(
-        $script,
-        $pragma_map,
-        Pha\node_get_parent($script, $n),
-        $linter,
-        'The leading backslashes in use declarations do not have an effect. '.
-        'You may remove them.',
-      ),
+      $n ==> Pha\as_nonnil($n)
+        |> LintError::createWithPatches(
+          $script,
+          $pragma_map,
+          $$,
+          $linter,
+          'The leading backslashes in use declarations do not have an effect. '.
+          'You may remove them.',
+          Pha\patches(
+            $script,
+            Pha\patch_node(
+              $$,
+              '',
+              shape('trivia' => Pha\RetainTrivia::LEADING),
+            ),
+          ),
+        ),
     );
 }
 }
@@ -3630,7 +3667,7 @@ function use_statement_without_kind_linter(
     |> Vec\filter($$, $kind_is_missing)
     |> Vec\map(
       $$,
-      $n ==> LintError::create(
+      $n ==> LintError::createWithoutPatches(
         $script,
         $pragma_map,
         $n,
@@ -4087,7 +4124,7 @@ function generated_file_may_not_be_modified_manually_linter(
 
   return $digest is null || $digest['embedded'] === $digest['hashed']
     ? vec[]
-    : vec[LintError::create(
+    : vec[LintError::createWithoutPatches(
       $script,
       $pragma_map,
       Pha\SCRIPT_NODE,
@@ -4684,7 +4721,7 @@ type TUnusedVariableLinterUsage = shape(
   'scopes' => vec<Pha\Syntax>,
   'var' => Pha\Token,
   'var_name' => string,
-  // @closed-shape
+  /*_*/
 );
 }
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/TUnusedVariableLinterUsageAfterShadowing.hack /////
@@ -4697,7 +4734,7 @@ type TUnusedVariableLinterAfterShadowing = shape(
   'owners' => vec<Pha\Syntax>,
   'var' => Pha\Token,
   'var_name' => string,
-  // @closed-shape
+  /*_*/
 );
 }
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/UseKind.hack /////
@@ -4808,7 +4845,7 @@ function extract_digest(
   'pragma' => Pha\Syntax,
   'embedded' => string,
   'hashed' => string,
-  // @closed-shape
+  /*_*/
 ) {
   list($pragma, $digest) = $pragma_map->getAllPragmas()
     |> C\find(
