@@ -373,6 +373,65 @@ async function main_async()[defaults]: Awaitable<void> {
   }
 }
 }
+///// vendor/hershel-theodore-layton/hhvm-four-shim/src/hadva.hack /////
+/** hhvm-four-shim is MIT licensed, see /LICENSE */
+namespace HTL\HH4Shim{
+use namespace HH;
+
+/**
+ * Returns `dict<_, _>` on hhvm 4.103+.
+ * Returns `darray<_, _>` on hhvm 4.102.
+ */
+function array_to_shape(mixed $array)[]: mixed {
+  invariant(
+    HH\is_dict_or_darray($array),
+    'Expected a shape, got %s',
+    \gettype($array)
+  );
+  return darray($array);
+}
+
+/**
+ * Returns `vec<_>` on hhvm 4.103+.
+ * Returns `varray<_>` on hhvm 4.102.
+ */
+function array_to_tuple(mixed $array)[]: mixed {
+  invariant(
+    HH\is_vec_or_varray($array),
+    'Expected a tuple, got %s',
+    \gettype($array)
+  );
+  return varray($array);
+}
+
+/**
+ * Returns true for `darray<_, _>` and `dict<_, _>`.
+ */
+function is_dictish(mixed $mixed)[]: bool {
+  return HH\is_dict_or_darray($mixed);
+}
+
+/**
+ * Returns true for `varray<_>` and `vec<_>`.
+ */
+function is_vecish(mixed $mixed)[]: bool {
+  return HH\is_vec_or_varray($mixed);
+}
+}
+///// vendor/hershel-theodore-layton/hhvm-four-shim/src/to_mixed.hack /////
+/** hhvm-four-shim is MIT licensed, see /LICENSE */
+namespace HTL\HH4Shim{
+/**
+ * Newer hh_client versions know more about the type of the values in your
+ * program. It complains about useless `as`, which are required to satisfy older
+ * versions of hh_client. By casting to `mixed` on all platforms first, we can
+ * keep performing the `as` cast that newer hh_client versions would have
+ * considered useless.
+ */
+function to_mixed(mixed $mixed)[]: mixed {
+  return $mixed;
+}
+}
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/PragmaMap.hack /////
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 namespace HTL\Pha{
@@ -1766,7 +1825,8 @@ function dont_create_forwarding_lambdas_linter(
         |> Support\get_last_token($script, $$)
         |> Pha\token_get_text($script, $$),
       'call_conv' => $get_parameter_name($p)
-        |> Support\get_first_token($script, $$)
+        |> Support\get_last_token($script, $$)
+        |> Support\get_previous_token($script, $$)
         |> $is_dot_dot_dot($$)
           ? Support\CallingCovention::VARIADIC
           : (
@@ -1800,7 +1860,7 @@ function dont_create_forwarding_lambdas_linter(
     return Pha\NIL;
   };
 
-  $get_argument_list = $lambda ==> {
+  $get_lambda_argument_list = $lambda ==> {
     $body = $get_lambda_body($lambda);
 
     if (!Pha\is_syntax($body)) {
@@ -1876,7 +1936,7 @@ function dont_create_forwarding_lambdas_linter(
 
   return Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_LAMBDA_EXPRESSION)
     |> Vec\filter($$, $lambda ==> {
-      $argument_list = $get_argument_list($lambda);
+      $argument_list = $get_lambda_argument_list($lambda);
 
       if ($argument_list === Pha\NIL) {
         return false;
@@ -3892,6 +3952,71 @@ function context_list_must_be_explicit_linter(
     );
 }
 }
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/context_list_must_be_explicit_on_io_functions_linter.hack /////
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLinters{
+use namespace HH\Lib\{C, Vec};
+use namespace HTL\Pha;
+
+function context_list_must_be_explicit_on_io_functions_linter(
+  Pha\Script $script,
+  Pha\SyntaxIndex $syntax_index,
+  Pha\TokenIndex $_,
+  Pha\Resolver $_,
+  Pha\PragmaMap $pragma_map,
+)[]: vec<LintError> {
+  $linter = __FUNCTION__;
+
+  $is_async = Pha\create_token_matcher($script, Pha\KIND_ASYNC);
+  $is_await = Pha\create_token_matcher($script, Pha\KIND_AWAIT);
+
+  $get_contexts =
+    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CONTEXTS);
+  $get_function_modifiers =
+    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_MODIFIERS);
+
+  return Pha\index_get_nodes_by_kind(
+    $syntax_index,
+    Pha\KIND_FUNCTION_DECLARATION_HEADER,
+  )
+    |> Vec\filter($$, $func ==> {
+      if (!Pha\is_missing($get_contexts($func))) {
+        return false;
+      }
+
+      $modifiers =
+        $get_function_modifiers($func) |> Pha\node_get_children($script, $$);
+
+      if (!C\any($modifiers, $is_async)) {
+        return false;
+      }
+
+      return Pha\node_get_parent($script, $func)
+        |> Pha\node_get_descendants($script, $$)
+        |> C\any($$, $is_await);
+    })
+    |> Vec\map(
+      $$,
+      $func ==> LintError::createWithPatches(
+        $script,
+        $pragma_map,
+        $func,
+        $linter,
+        'This function performs I/O (it contains await), '.
+        'so this is likely a good candidate for `[defaults]`.'.
+        'If this lint is wrong, add the proper context list.',
+        Pha\patches(
+          $script,
+          Pha\patch_node(
+            $get_contexts($func),
+            '[defaults]',
+            shape('trivia' => Pha\RetainTrivia::BOTH),
+          ),
+        ),
+      ),
+    );
+}
+}
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/count_expression_can_be_simplified_linter.hack /////
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 namespace HTL\PhaLinters{
@@ -4256,6 +4381,7 @@ function lambda_parameter_list_parentheses_can_be_removed_linter(
 
   $is_decorated_expression =
     Pha\create_syntax_matcher($script, Pha\KIND_DECORATED_EXPRESSION);
+  $is_dot_dot_dot = Pha\create_token_matcher($script, Pha\KIND_DOT_DOT_DOT);
 
   $get_colon = Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_COLON);
   $get_contexts =
@@ -4304,6 +4430,15 @@ function lambda_parameter_list_parentheses_can_be_removed_linter(
       }
 
       if ($get_parameter_name($param) |> $is_decorated_expression($$)) {
+        return false;
+      }
+
+      if (
+        $get_parameter_name($param)
+        |> Support\get_last_token($script, $$)
+        |> Support\get_previous_token($script, $$)
+        |> $is_dot_dot_dot($$)
+      ) {
         return false;
       }
 
@@ -4997,6 +5132,37 @@ function get_last_token(
         |> C\find($$, Pha\is_token<>) ?? Pha\NIL
       : $node,
   );
+}
+}
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/get_previous_token.hack /////
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+namespace HTL\PhaLinters\Support{
+use namespace HTL\Pha;
+
+function get_previous_token(
+  Pha\Script $script,
+  Pha\NillableNode $node,
+)[]: Pha\NillableToken {
+  if ($node === Pha\NIL) {
+    return Pha\NIL_TOKEN;
+  }
+
+  $family = Pha\as_nonnil($node)
+    |> Pha\node_get_parent($script, $$)
+    |> Pha\node_get_descendants($script, $$);
+
+  $previous_token = Pha\NIL_TOKEN;
+  foreach ($family as $f) {
+    if ($f === $node) {
+      break;
+    }
+
+    if (Pha\is_token($f)) {
+      $previous_token = Pha\as_token($f);
+    }
+  }
+
+  return $previous_token;
 }
 }
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/insert_digest.hack /////
@@ -6546,7 +6712,9 @@ final class InternedStringStorage<T as Kind> {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/ParseContext.hack /////
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 namespace HTL\Pha\_Private{
-use namespace HTL\Pha;
+use namespace HH\Lib\Str;
+use namespace HTL\{HH4Shim, Pha};
+use function gettype;
 
 final class ParseContext {
   public function __construct(
@@ -6613,6 +6781,7 @@ final class ParseContext {
 
   // #region Materialization
   const string VERSION = 'VERSION';
+  const int VERSION_NUMBER = 2;
   const string STRUCTS = 'STRUCTS';
   const string SYNTAX_KINDS = 'SYNTAX_KINDS';
   const string TOKEN_KINDS = 'TOKEN_KINDS';
@@ -6622,15 +6791,15 @@ final class ParseContext {
   <<__Memoize>>
   public function getMaterializationHash()[]: string {
     return $this->dematerialize()
-      |> \fb_compact_serialize($$)
-      |> \sha1($$, true);
+      |> static::toHashable($$)
+      |> \sha1($$, false);
   }
 
   // Memoize because this value can be shared across many scripts.
   <<__Memoize>>
   public function dematerialize()[]: dict<arraykey, mixed> {
     return dict[
-      static::VERSION => 1,
+      static::VERSION => static::VERSION_NUMBER,
       static::STRUCTS => $this->structs->dematerialize(),
       static::SYNTAX_KINDS => $this->syntaxKinds->asVec(),
       static::TOKEN_KINDS => $this->tokenKinds->asVec(),
@@ -6641,7 +6810,7 @@ final class ParseContext {
   public static function materialize(dict<arraykey, mixed> $raw)[]: this {
     $version = idx($raw, static::VERSION, -1);
     enforce(
-      $version === 1,
+      $version === static::VERSION_NUMBER,
       'Could not materialize this Context, '.
       'it was dematerialized with a later version of this library.',
     );
@@ -6666,6 +6835,47 @@ final class ParseContext {
       throw
         new PhaException('Could not materialize Context.', $e->getCode(), $e);
     }
+  }
+
+  /**
+   * The encoding does not need to make sense, as long as it is not ambiguous.
+   * json_encode_pure is not available in 4.102, so do something inline.
+   * The encoding will look a little like json, but instead of quoting strings,
+   * they will be encoded as `s<length><bytes>`. This is not ambiguous with
+   * anything, since no json construct starts with an `s`.
+   */
+  private static function toHashable(mixed $mixed)[]: string {
+    if ($mixed is string) {
+      return 's' . Str\length($mixed) . $mixed;
+    } else if ($mixed is int) {
+      return (string)$mixed;
+    } else if (HH4Shim\is_dictish($mixed)) {
+      $out = '{';
+      foreach (($mixed as AnyArray<_, _>) as $k => $v) {
+        $out .= static::toHashable($k) . ':' . static::toHashable($v) . ',';
+      }
+      $out .= '}';
+
+      return $out;
+    } else if (HH4Shim\is_vecish($mixed)) {
+      $out = '[';
+      foreach (($mixed as AnyArray<_, _>) as $v) {
+        $out .= static::toHashable($v) . ',';
+      }
+      $out .= ']';
+
+      return $out;
+    } else if ($mixed is AnyArray<_, _>) {
+      $out = '{?';
+      foreach ($mixed as $k => $v) {
+        $out .= static::toHashable($k) . ':' . static::toHashable($v) . ',';
+      }
+      $out .= '?}';
+
+      return $out;
+    }
+
+    invariant_violation('Unhandled type: %s', gettype($mixed));
   }
   // #endregion
 }
@@ -6889,18 +7099,19 @@ final class Structs {
 
   //#region Materialization
   const string VERSION = 'VERSION';
+  const int VERSION_NUMBER = 2;
   const string MEMBERS = 'MEMBERS';
 
   public function dematerialize()[]: dict<arraykey, mixed> {
     return dict[
-      static::VERSION => 1,
+      static::VERSION => static::VERSION_NUMBER,
       static::MEMBERS => Vec\flatten($this->rawMembers),
     ];
   }
 
   public static function materialize(dict<arraykey, mixed> $raw)[]: this {
     enforce(
-      idx($raw, static::VERSION) === 1,
+      idx($raw, static::VERSION) === static::VERSION_NUMBER,
       'Could not materialize these Structs, '.
       'they were dematerialized with a later version of this library.',
     );
@@ -7008,6 +7219,7 @@ final class TranslationUnit {
 
   // #region Materialization
   const string VERSION = 'VERSION';
+  const int VERSION_NUMBER = 2;
   const string SOURCE_ORDER = 'SOURCE_ORDER';
   const string SIBLINGS = 'SIBLINGS';
   const string LIST_SIZES = 'LIST_SIZES';
@@ -7017,7 +7229,7 @@ final class TranslationUnit {
   public function dematerialize()[]: ReadyToSerializeScript {
     return shape(
       'script' => dict[
-        static::VERSION => 1,
+        static::VERSION => static::VERSION_NUMBER,
         static::SOURCE_ORDER => $this->sourceOrder,
         static::SIBLINGS => $this->siblings,
         static::LIST_SIZES => $this->listSizes,
@@ -7034,7 +7246,7 @@ final class TranslationUnit {
     ParseContext $ctx,
   )[]: TranslationUnit {
     enforce(
-      idx($raw, static::VERSION) === 1,
+      idx($raw, static::VERSION) === static::VERSION_NUMBER,
       'Could not materialize this Script, '.
       'it was dematerialized with a different version of this library.',
     );
@@ -7238,17 +7450,15 @@ interface Taggable {}
 interface Maybe<+T as Any> extends Taggable {}
 <<__Sealed(SyntaxTag::class, TokenTag::class, TriviumTag::class)>>
 interface Any extends Maybe<Any> {}
-<<__Sealed(NilTag::class)>>
+<<__Sealed()>>
 interface SyntaxTag extends Maybe<SyntaxTag>, Any {}
-<<__Sealed(NilTag::class)>>
+<<__Sealed()>>
 interface TokenTag extends Maybe<TokenTag>, Any {}
-<<__Sealed(NilTag::class)>>
+<<__Sealed()>>
 interface TriviumTag extends Maybe<TriviumTag>, Any {}
-interface NilTag extends SyntaxTag, TokenTag, TriviumTag {}
 
 newtype Tagged<+T as Taggable> = int;
 
-type Nil = Tagged<Maybe<NilTag>>;
 type Node = Tagged<Any>;
 type Syntax = Tagged<SyntaxTag>;
 type Token = Tagged<TokenTag>;
@@ -7258,7 +7468,10 @@ type NillableSyntax = Tagged<Maybe<SyntaxTag>>;
 type NillableToken = Tagged<Maybe<TokenTag>>;
 type NillableTrivium = Tagged<Maybe<TriviumTag>>;
 
-const Nil NIL = 0;
+const NillableSyntax NIL = 0;
+const NillableSyntax NIL_SYNTAX = 0;
+const NillableToken NIL_TOKEN = 0;
+const NillableTrivium NIL_TRIVIUM = 0;
 const Syntax SCRIPT_NODE = Math\INT64_MIN;
 
 function cast_away_nil<T as Any>(Tagged<Maybe<T>> $t)[]: Tagged<T> {
@@ -8220,7 +8433,7 @@ function node_get_next_trivium(
   NillableNode $node,
 )[]: NillableTrivium {
   if ($node === NIL) {
-    return NIL;
+    return NIL_TRIVIUM;
   }
 
   $tu = translation_unit_reveal($script);
@@ -8232,7 +8445,7 @@ function node_get_next_trivium(
       |> $tu->getNodeById($$);
   } while (!Pha\is_trivium($node) && $node !== NIL);
 
-  return $node === NIL ? NIL : trivium_from_node($node);
+  return $node === NIL ? NIL_TRIVIUM : trivium_from_node($node);
 }
 
 function node_get_parent_id(Node $node)[]: NodeId {
@@ -8514,7 +8727,7 @@ function as_token_or_nil(NillableNode $node)[]: NillableToken {
   return $node !== NIL &&
     node_get_group(_Private\cast_away_nil($node)) === NodeGroup::TOKEN
     ? _Private\token_from_node($node)
-    : NIL;
+    : NIL_TOKEN;
 }
 
 /**
@@ -8538,7 +8751,7 @@ function as_trivium_or_nil(NillableNode $node)[]: NillableTrivium {
   return $node !== NIL &&
     node_get_group(_Private\cast_away_nil($node)) === NodeGroup::TRIVIUM
     ? _Private\trivium_from_node($node)
-    : NIL;
+    : NIL_TRIVIUM;
 }
 
 /**
@@ -8582,12 +8795,12 @@ function create_matcher(
 
   // All arms are equivalent to the `default:` arm,
   // but they don't need to iterate the $identities vec.
-  $matcher = () ==> {
+  $matcher = ()[] ==> {
     switch (C\count($identities)) {
       case 0:
-        return $_ ==> false;
+        return ($_)[] ==> false;
       case 1:
-        return $n ==> $n !== NIL &&
+        return ($n)[] ==> $n !== NIL &&
           (
             _Private\node_get_kind_identity(_Private\cast_away_nil($n))
             |> $$ === $id_0
@@ -8595,13 +8808,13 @@ function create_matcher(
       case 2:
       case 3:
       case 4:
-        return $n ==> $n !== NIL &&
+        return ($n)[] ==> $n !== NIL &&
           (
             _Private\node_get_kind_identity(_Private\cast_away_nil($n))
             |> $$ === $id_0 || $$ === $id_1 || $$ === $id_2 || $$ === $id_3
           );
       default:
-        return $n ==> $n !== NIL &&
+        return ($n)[] ==> $n !== NIL &&
           (
             _Private\node_get_kind_identity(_Private\cast_away_nil($n))
             |> C\contains($identities, $$)
@@ -9825,7 +10038,10 @@ type Trivium = _Private\Trivium;
 type TriviumIndex = _Private\KindIndex<Trivium, TriviumKind>;
 
 const _Private\Syntax SCRIPT_NODE = _Private\SCRIPT_NODE;
-const _Private\Nil NIL = _Private\NIL;
+const NillableSyntax NIL = _Private\NIL;
+const NillableSyntax NIL_SYNTAX = _Private\NIL_SYNTAX;
+const NillableToken NIL_TOKEN = _Private\NIL_TOKEN;
+const NillableTrivium NIL_TRIVIUM = _Private\NIL_TRIVIUM;
 }
 ///// vendor/hershel-theodore-layton/pragma/src/pragma.hack /////
 /** pragma is MIT licensed, see /LICENSE. */
