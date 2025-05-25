@@ -3,7 +3,7 @@
   "description": "A non-Hack distribution of PhaLinters to allow HTL packages to use portable-hack-ast-linters without circular dependencies.",
   "license": "MIT",
   "require": {
-    "hhvm": "^4.128",
+    "hhvm": ">=4.128",
     "hershel-theodore-layton/portable-hack-ast": "dev-master",
     "hershel-theodore-layton/portable-hack-ast-extras": "dev-master",
     "hershel-theodore-layton/portable-hack-ast-linters": "dev-master"
