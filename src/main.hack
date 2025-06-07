@@ -37,6 +37,9 @@ async function main_async()[defaults]: Awaitable<void> {
     |> Str\split($$, ',');
 
   switch ($action) {
+    case 'identify-yourself':
+      await $output->writeAllAsync('HTL\PhaLintersServer');
+      return;
     case 'lint-all':
       $lint_errors = await lint_all_files_async(
         $project_root,

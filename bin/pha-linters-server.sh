@@ -76,14 +76,21 @@ fi
 
 if [ -f "$VAR/www.pid" ]; then
   PID="$(cat $VAR/www.pid)"
+
+  url="http://localhost:$PORT_NUMBER/?action=identify-yourself"
+  identity=$(curl --silent $url)
   
-  if [ "$HAS_CHANGED" = "No" ]; then
+  if [ "$HAS_CHANGED" = "No" ] && [ "$identity" = "HTL\PhaLintersServer" ]; then
     echo "Previous server is identical, nothing to do."
     exit
   fi
 
-  echo "Previous server is different, replacing it."
-  kill "$PID" && rm "$var/www.pid"
+  if [ "$identity" = "HTL\PhaLintersServer" ]; then
+    echo "Previous server is different, replacing it."
+    kill "$PID" && rm "$var/www.pid"
+  else
+    echo "Previous server left a dangling www.pid."
+  fi
 fi
 
 hhvm -m server -p "$PORT_NUMBER" \
