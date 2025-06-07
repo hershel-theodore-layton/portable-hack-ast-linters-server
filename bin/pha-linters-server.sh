@@ -14,6 +14,7 @@ print_help_text() {
   echo "  * Compile a repo auth hhbc file if it is missing or out of date"
   echo "  * Start an http server on localhost on the specified port, defaults to 10641."
   echo "Supported options:"
+  echo "  -g install globally, installation in /var instead of .var"
   echo "  -p <port for the server to listen on>"
   echo "  -b (or -r) <path to bundle> implies trust in the resource bundle"
   echo "  -t <no argument> force trust the resource bundle found by this script"
@@ -39,7 +40,7 @@ compile_repo_auth() {
   sha1sum "$RESOURCE" > "$VAR/sha1sum.txt"
 }
 
-while getopts "p:b:r:ht" opt; do
+while getopts "p:b:r:htg" opt; do
   case "$opt" in
     h)  print_help_text && exit 0
       ;;
@@ -53,6 +54,8 @@ while getopts "p:b:r:ht" opt; do
       ;;
     t)  TRUSTS_RESOURCE=Yes
       ;;
+    g)  VAR="/var/tmp/portable-hack-ast-linters-server"
+      ;;
     *) echo "Unknown flag $opt"
       ;;
   esac
@@ -63,7 +66,7 @@ if [ ! -f .hhconfig ]; then
     exit 1
 fi
 
-if [ ! -f .var/portable-hack-ast-linters-server/hhvm.hhbc ]; then
+if [ ! -f "$VAR/hhvm.hhbc" ]; then
   compile_repo_auth
 fi
 
