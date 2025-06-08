@@ -1,9 +1,14 @@
 #!/bin/sh
 
 VAR="./.var/portable-hack-ast-linters-server"
+VSCODE="./.vscode"
+VSCODE_EXTENSIONS="./.vscode/extensions.json"
+VSCODE_SETTINGS="./.vscode/settings.json"
+DOCKER_COMPOSE_YML="./docker-compose.yml"
 RESOURCE_NAME="portable-hack-ast-linters-server-bundled.resource"
 RESOURCE="$(find . -type f -name "$RESOURCE_NAME" | head -n 1)"
 PORT_NUMBER=10641
+SETUP_DOCKER_NATIVE_ENV=No
 TRUSTS_RESOURCE=No
 HAS_CHANGED=No
 
@@ -14,10 +19,45 @@ print_help_text() {
   echo "  * Compile a repo auth hhbc file if it is missing or out of date"
   echo "  * Start an http server on localhost on the specified port, defaults to 10641."
   echo "Supported options:"
-  echo "  -g install globally, installation in /var instead of .var"
+  echo "  -h <no argument> print this help text"
+  echo "  -g <no argument> install globally, installation in /var instead of .var"
   echo "  -p <port for the server to listen on>"
   echo "  -b (or -r) <path to bundle> implies trust in the resource bundle"
   echo "  -t <no argument> force trust the resource bundle found by this script"
+  echo "  -s <no argument> setup .vscode/settings.json for Docker Native development"
+}
+
+setup_docker_native_environment() {
+  mkdir -p "$VSCODE" 2> /dev/null
+
+  if [ -f $VSCODE_SETTINGS ]; then
+    return
+  fi
+
+  linter_port=`cat $DOCKER_COMPOSE_YML | grep -A 1 'ports' | cut -d ':' -f 1 | grep -E -o '[[:digit:]]{5}'`
+  container_name=`cat $DOCKER_COMPOSE_YML | grep 'container_name' | cut -d ':' -f 2`
+
+cat << JSON > $VSCODE_SETTINGS
+{
+  "editor.detectIndentation": false,
+  "editor.tabSize": 2,
+  "editor.rulers": [80],
+  "hack.remote.docker.containerName": "$container_name",
+  "hack.remote.enabled": true,
+  "hack.remote.type": "docker",
+  "hack.remote.workspacePath": "/mnt/project",
+  "lintServer.uri": "http://localhost:$linter_port?action=lint-input&format=vscode-json"
+}
+JSON
+
+cat << JSON > $VSCODE_EXTENSIONS
+{
+  "recommendations": [
+    "pranayagarwal.vscode-hack",
+    "hershel-theodore-layton.dead-simple-lint-server-integration"
+  ]
+}
+JSON
 }
 
 compile_repo_auth() {
@@ -40,7 +80,7 @@ compile_repo_auth() {
   sha1sum "$RESOURCE" > "$VAR/sha1sum.txt"
 }
 
-while getopts "p:b:r:htg" opt; do
+while getopts "p:b:r:htgs" opt; do
   case "$opt" in
     h)  print_help_text && exit 0
       ;;
@@ -56,6 +96,8 @@ while getopts "p:b:r:htg" opt; do
       ;;
     g)  VAR="/var/tmp/portable-hack-ast-linters-server"
       ;;
+    s)  SETUP_DOCKER_NATIVE_ENV=Yes
+      ;;
     *) echo "Unknown flag $opt"
       ;;
   esac
@@ -64,6 +106,10 @@ done
 if [ ! -f .hhconfig ]; then
     echo "Are you in the root directory of your project?" >&2
     exit 1
+fi
+
+if [ "$SETUP_DOCKER_NATIVE_ENV" = "Yes" ]; then
+  setup_docker_native_environment
 fi
 
 if [ ! -f "$VAR/hhvm.hhbc" ]; then

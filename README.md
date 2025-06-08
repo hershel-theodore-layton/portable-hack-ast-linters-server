@@ -2,6 +2,38 @@
 
 _A non-Hack distribution of PhaLinters to allow HTL packages to use portable-hack-ast-linters without circular dependencies._
 
+### New in 2025, Express Docker Native Setup for HTL development
+
+HTL containers recently became Docker Native. A simple `docker compose up`
+will automate a lot of the process described in [how to use](#how-to-use).
+The `CMD` of the [Dockerfile](./Dockerfile) passes `-s -g -b ...`.
+This will setup your `.vscode/settings.json` for local development,
+install the lint server globally (in the Docker container), and only trusts
+the specified bundle.
+
+If this is your first time developing HTL, VSCode will display this prompt
+after a restart:
+
+```
+Do you want to install the recommended extensions from
+pranayagarwal and Hershel Theodore Layton for this repository?
+```
+
+[PranayAgarwal](https://github.com/PranayAgarwal) is an ex-Slack developer
+who wrote [VSCode Hack](https://github.com/slackhq/vscode-hack), the Hack
+language extension for VSCode. This extension provides rich Hack language and
+HHVM support to VSCode. A must have extension for syntax highlighting, inline
+squiggles, auto complete, go to definition, and so much more.
+
+[Hershel Theodore Layton](https://github.com/hershel-theodore-layton/) is
+a pseudonymous Open Source Software developer who wrote
+[Portable Hack AST Linters Server](./README.md) and many other Hack Open Source
+libraries. [This extension](https://open-vsx.org/extension/hershel-theodore-layton/dead-simple-lint-server-integration)[^1]
+listens to changes in your source code and asks a local hhvm http server for
+squiggles and autofixes.
+
+After installing those extensions, your development environment is ready.
+
 ### How to use
 
 - Optionally install [the VSCode extension](https://open-vsx.org/extension/hershel-theodore-layton/dead-simple-lint-server-integration)[^1] and configure it in `.vscode/settings.json`.
@@ -34,6 +66,11 @@ $SERVER_SH -h
 # Interactive setup, scan for the bundle and prompts you to trust it.
 # Hosts the http server on port 10641, or the port specified with `-p`.
 $SERVER_SH
+
+# ASK setup, will setup `.vscode/settings.json` for local HTL development.
+# The installaltion directory is hidden away in `/var/tmp` of the Docker container.
+# The hardcoded bundle path is always used.
+$SERVER_SH -s -g -b ...
 
 # AFK setup which builds and runs the first portable-hack-ast-server-bundle.resource
 # Skips the trust prompt, should only be used if you trust every file in the directory.
