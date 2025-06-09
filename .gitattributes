@@ -1,7 +1,9 @@
 .github/ export-ignore
+src/
 tests/ export-ignore
 .hhconfig export-ignore
 .hhvmconfig.hdf export-ignore
+build.sh
 composer.dev.json export-ignore
 composer.4.102.json export-ignore
 .dockerignore export-ignore
