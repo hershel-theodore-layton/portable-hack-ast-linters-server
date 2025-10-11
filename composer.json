@@ -3,17 +3,9 @@
   "description": "A non-Hack distribution of PhaLinters to allow HTL packages to use portable-hack-ast-linters without circular dependencies.",
   "license": "MIT",
   "require": {
-    "hhvm": ">=4.128"
+    "hhvm": ">=4.153"
   },
   "bin": [
     "bin/pha-linters-server.sh"
-  ],
-  "scripts": {
-    "post-install-cmd": [
-      ".github/workflows/prepare-environment.sh"
-    ],
-    "post-update-cmd": [
-      ".github/workflows/prepare-environment.sh"
-    ]
-  }
+  ]
 }

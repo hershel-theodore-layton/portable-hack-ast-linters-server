@@ -5,7 +5,4 @@ hackfmt.tabs = false
 
 ; Basic configuration
 check_xhp_attribute = true
-
-; @see .github/workflows/prepare-environment.sh
-; requires:4.128
 enable_strict_string_concat_interp = true
