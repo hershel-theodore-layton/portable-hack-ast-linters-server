@@ -6,9 +6,6 @@ use namespace HTL\PhaLinters;
 function all_linters(string $license_header)[]: vec<LintFunction> {
   $known_pragma_prefixes = keyset['PhaLinters'];
 
-  // Expect a lint error in CI;
-  1 + 1;
-
   $linters = vec[
     PhaLinters\async_function_and_method_linter<>,
     PhaLinters\camel_cased_methods_underscored_functions_linter<>,
