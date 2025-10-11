@@ -2,18 +2,14 @@
 namespace HTL\PhaLintersServer;
 
 use namespace HH\Lib\{File, Str, Vec};
-use namespace HTL\HH4Shim;
-use type RecursiveDirectoryIterator, RecursiveIteratorIterator, SplFileInfo;
+use type RecursiveDirectoryIterator, RecursiveIteratorIterator;
 
 <<__EntryPoint>>
 async function build_async()[defaults]: Awaitable<void> {
   $paths = RecursiveDirectoryIterator::SKIP_DOTS
     |> new RecursiveDirectoryIterator(\realpath(__DIR__.'/../'), $$)
     |> new RecursiveIteratorIterator($$)
-    |> Vec\filter(
-      $$,
-      $f ==> HH4Shim\to_mixed($f) as SplFileInfo->getExtension() === 'hack',
-    )
+    |> Vec\filter($$, $f ==> $f->getExtension() === 'hack')
     |> Vec\map($$, $f ==> $f->getPathname());
 
   $files = await Vec\map_async($paths, async $path ==> {

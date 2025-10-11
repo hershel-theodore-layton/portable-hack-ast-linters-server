@@ -396,75 +396,6 @@ async function main_async()[defaults]: Awaitable<void> {
   }
 }
 }
-///// vendor/hershel-theodore-layton/hhvm-four-shim/src/hadva.hack /////
-namespace HTL\HH4Shim {
-/** hhvm-four-shim is MIT licensed, see /LICENSE */
-
-
-/**
- * Returns `dict<_, _>` on hhvm 4.103+.
- * Returns `darray<_, _>` on hhvm 4.102.
- */
-function array_to_shape(mixed $array)[]: mixed {
-  invariant($array is dict<_, _>, 'Expected a shape, got %s', \gettype($array));
-  return $array;
-}
-
-/**
- * Returns `vec<_>` on hhvm 4.103+.
- * Returns `varray<_>` on hhvm 4.102.
- */
-function array_to_tuple(mixed $array)[]: mixed {
-  invariant($array is vec<_>, 'Expected a tuple, got %s', \gettype($array));
-  return $array;
-}
-
-/**
- * Like array_to_shape, but the type information is retained.
- */
-function downgrade_dictish<Tk as arraykey, Tv>(
-  dict<Tk, Tv> $dict
-)[]: AnyArray<Tk, Tv> {
-  return $dict;
-}
-
-/**
- * Like array_to_tuple, but the type information is retained.
- */
-function downgrade_vecish<T>(vec<T> $vec)[]: AnyArray<int, T> {
-  return $vec;
-}
-
-/**
- * Returns true for `darray<_, _>` and `dict<_, _>`.
- */
-function is_dictish(mixed $mixed)[]: bool {
-  return $mixed is dict<_, _>;
-}
-
-/**
- * Returns true for `varray<_>` and `vec<_>`.
- */
-function is_vecish(mixed $mixed)[]: bool {
-  return $mixed is vec<_>;
-}
-}
-///// vendor/hershel-theodore-layton/hhvm-four-shim/src/to_mixed.hack /////
-namespace HTL\HH4Shim {
-/** hhvm-four-shim is MIT licensed, see /LICENSE */
-
-
-/**
- * Newer hh_client versions know more about the type of the values in your
- * program. It complains about useless `as`, which are required to satisfy older
- * versions of hh_client. By casting to `mixed` on all platforms first, we can
- * keep performing the `as` cast that newer hh_client versions would have
- * considered useless.
- */
-function to_mixed(mixed $mixed)[]: mixed {
-  return $mixed;
-}
-}
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/PragmaMap.hack /////
 namespace HTL\Pha {
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
@@ -10460,7 +10391,7 @@ final class Pragmas
   implements
     HH\ClassAttribute,
     HH\EnumAttribute,
-    /* HHVM 4.103+ exclusive HH\EnumClassAttribute, */
+    HH\EnumClassAttribute,
     HH\FunctionAttribute,
     HH\MethodAttribute,
     HH\FileAttribute {
