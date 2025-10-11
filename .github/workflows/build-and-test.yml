@@ -35,3 +35,6 @@ jobs:
           hhvm_flags: ${{ startsWith(matrix.hhvm, '4') && '-dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db' || '' }}
           skip_lint: true
           skip_tests: true
+      - name: Run lints
+        shell: bash
+        run: hhvm ${{ startsWith(matrix.hhvm, '4') && '-dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db' || '' }} src/main.hack
