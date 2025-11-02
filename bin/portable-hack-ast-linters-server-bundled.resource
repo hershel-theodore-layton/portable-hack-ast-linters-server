@@ -269,12 +269,14 @@ use function glob, is_file, is_readable;
 async function snif_license_header_async(
   string $project_root,
 )[defaults]: Awaitable<?string> {
-  $path = C\find<string>(
+  $glob = (string $path) ==>
+    Vec\map(glob($path) as vec<_>, (mixed $x) ==> $x as string);
+
+  $path = C\find(
     Vec\concat(
-      glob($project_root.'/src/*.hack') as vec<_>,
-      glob($project_root.'/src/*/*.hack') as vec<_>,
-    )
-      |> Vec\map($$, $x ==> $x as string),
+      $glob($project_root.'/src/*.hack'),
+      $glob($project_root.'/src/*/*.hack'),
+    ),
     $path ==> is_file($path) && is_readable($path),
   );
 
