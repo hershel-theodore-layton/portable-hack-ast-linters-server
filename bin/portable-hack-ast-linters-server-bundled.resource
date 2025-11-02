@@ -16,12 +16,14 @@ function all_files(
     $dir ==> Vec\range(0, $directory_search_depth)
       |> Vec\map(
         $$,
-        $stars ==>
-          glob($project_root.'/'.$dir.Str\repeat('/*', $stars).'/*.hack'),
+        $stars ==> glob(
+          $project_root.'/'.$dir.Str\repeat('/*', $stars).'/*.hack',
+        ) as vec<_>,
       ),
   )
     |> Vec\flatten($$)
     |> Vec\flatten($$)
+    |> Vec\map($$, $x ==> $x as string)
     |> Keyset\sort($$);
 }
 }
@@ -190,7 +192,7 @@ function encode_errors_as_vscode_compatible_json(
       $$,
       inout $_json_encode_error,
       JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
-    );
+    ) as string;
 }
 }
 ///// src/lib/lint_all_files.hack /////
@@ -267,19 +269,19 @@ use function glob, is_file, is_readable;
 async function snif_license_header_async(
   string $project_root,
 )[defaults]: Awaitable<?string> {
-  $path = C\find<string>(
+  $path = C\find(
     Vec\concat(
-      glob($project_root.'/src/*.hack'),
-      glob($project_root.'/src/*/*.hack'),
+      glob($project_root.'/src/*.hack') as vec<_>,
+      glob($project_root.'/src/*/*.hack') as vec<_>,
     ),
-    $path ==> is_file($path) && is_readable($path),
+    $path ==> is_file($path as string) && is_readable($path),
   );
 
   if ($path is null) {
     return null;
   }
 
-  $file = File\open_read_only($path);
+  $file = File\open_read_only($path as string);
   using $file->closeWhenDisposed();
   using $file->tryLockx(File\LockType::SHARED);
 
@@ -324,10 +326,12 @@ use function dirname, file_exists;
 <<__EntryPoint>>
 async function main_async()[defaults]: Awaitable<void> {
   if (file_exists(dirname(__DIR__).'/.hhvmconfig.hdf')) {
-    $project_root = dirname(__DIR__);
+    $project_root = dirname(__DIR__) as string;
   } else {
-    $project_root =
-      dirname(__DIR__) |> dirname($$) |> dirname($$) |> dirname($$);
+    $project_root = dirname(__DIR__) as string
+      |> dirname($$) as string
+      |> dirname($$) as string
+      |> dirname($$) as string;
   }
 
   $input = IO\request_input();
@@ -5101,7 +5105,7 @@ function extract_digest(
 
   return Pha\node_get_code($script, Pha\SCRIPT_NODE)
     |> Str\replace($$, $digest, '')
-    |> sha1($$)
+    |> sha1($$) as string
     |> Str\slice($$, 0, 20)
     |> shape('pragma' => $pragma, 'embedded' => $digest, 'hashed' => $$);
 }
@@ -7008,7 +7012,7 @@ final class ParseContext {
   public function getMaterializationHash()[]: string {
     return $this->dematerialize()
       |> static::toHashable($$)
-      |> \sha1($$, false);
+      |> \sha1($$, false) as string;
   }
 
   // Memoize because this value can be shared across many scripts.
@@ -7065,13 +7069,13 @@ final class ParseContext {
    */
   private static function toHashable(mixed $mixed)[]: string {
     if ($mixed is string) {
-      return 's' . Str\length($mixed) . $mixed;
+      return 's'.Str\length($mixed).$mixed;
     } else if ($mixed is int) {
       return (string)$mixed;
     } else if ($mixed is dict<_, _>) {
       $out = '{';
       foreach ($mixed as $k => $v) {
-        $out .= static::toHashable($k) . ':' . static::toHashable($v) . ',';
+        $out .= static::toHashable($k).':'.static::toHashable($v).',';
       }
       $out .= '}';
 
@@ -7079,7 +7083,7 @@ final class ParseContext {
     } else if ($mixed is vec<_>) {
       $out = '[';
       foreach ($mixed as $v) {
-        $out .= static::toHashable($v) . ',';
+        $out .= static::toHashable($v).',';
       }
       $out .= ']';
 
@@ -7087,14 +7091,14 @@ final class ParseContext {
     } else if ($mixed is AnyArray<_, _>) {
       $out = '{?';
       foreach ($mixed as $k => $v) {
-        $out .= static::toHashable($k) . ':' . static::toHashable($v) . ',';
+        $out .= static::toHashable($k).':'.static::toHashable($v).',';
       }
       $out .= '?}';
 
       return $out;
     }
 
-    invariant_violation('Unhandled type: %s', gettype($mixed));
+    invariant_violation('Unhandled type: %s', gettype($mixed) as string);
   }
   // #endregion
 }
@@ -7551,7 +7555,7 @@ function enforce(
   mixed ...$args
 )[]: void {
   if (!$assertion) {
-    throw new PhaException(vsprintf($format, $args));
+    throw new PhaException(vsprintf($format, $args) as string);
   }
 }
 }
