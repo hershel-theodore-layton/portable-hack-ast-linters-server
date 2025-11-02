@@ -282,7 +282,7 @@ async function snif_license_header_async(
     return null;
   }
 
-  $file = File\open_read_only($path as string);
+  $file = File\open_read_only($path);
   using $file->closeWhenDisposed();
   using $file->tryLockx(File\LockType::SHARED);
 
