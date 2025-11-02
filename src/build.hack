@@ -13,7 +13,7 @@ async function build_async()[defaults]: Awaitable<void> {
     |> Vec\map($$, $f ==> $f->getPathname());
 
   $files = await Vec\map_async($paths, async $path ==> {
-    $file = File\open_read_only($path);
+    $file = File\open_read_only($path as string);
     using $file->closeWhenDisposed();
     using $file->tryLockx(File\LockType::SHARED);
     $source_text = await $file->readAllAsync();

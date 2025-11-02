@@ -7,19 +7,19 @@ use function glob, is_file, is_readable;
 async function snif_license_header_async(
   string $project_root,
 )[defaults]: Awaitable<?string> {
-  $path = C\find<string>(
+  $path = C\find(
     Vec\concat(
-      glob($project_root.'/src/*.hack'),
-      glob($project_root.'/src/*/*.hack'),
+      glob($project_root.'/src/*.hack') as vec<_>,
+      glob($project_root.'/src/*/*.hack') as vec<_>,
     ),
-    $path ==> is_file($path) && is_readable($path),
+    $path ==> is_file($path as string) && is_readable($path),
   );
 
   if ($path is null) {
     return null;
   }
 
-  $file = File\open_read_only($path);
+  $file = File\open_read_only($path as string);
   using $file->closeWhenDisposed();
   using $file->tryLockx(File\LockType::SHARED);
 

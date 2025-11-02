@@ -14,11 +14,13 @@ function all_files(
     $dir ==> Vec\range(0, $directory_search_depth)
       |> Vec\map(
         $$,
-        $stars ==>
-          glob($project_root.'/'.$dir.Str\repeat('/*', $stars).'/*.hack'),
+        $stars ==> glob(
+          $project_root.'/'.$dir.Str\repeat('/*', $stars).'/*.hack',
+        ) as vec<_>,
       ),
   )
     |> Vec\flatten($$)
     |> Vec\flatten($$)
+    |> Vec\map($$, $x ==> $x as string)
     |> Keyset\sort($$);
 }

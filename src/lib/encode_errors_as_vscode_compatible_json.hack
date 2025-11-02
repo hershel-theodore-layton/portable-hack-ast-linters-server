@@ -44,5 +44,5 @@ function encode_errors_as_vscode_compatible_json(
       $$,
       inout $_json_encode_error,
       JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
-    );
+    ) as string;
 }

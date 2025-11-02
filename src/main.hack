@@ -9,10 +9,12 @@ use function dirname, file_exists;
 <<__EntryPoint>>
 async function main_async()[defaults]: Awaitable<void> {
   if (file_exists(dirname(__DIR__).'/.hhvmconfig.hdf')) {
-    $project_root = dirname(__DIR__);
+    $project_root = dirname(__DIR__) as string;
   } else {
-    $project_root =
-      dirname(__DIR__) |> dirname($$) |> dirname($$) |> dirname($$);
+    $project_root = dirname(__DIR__) as string
+      |> dirname($$) as string
+      |> dirname($$) as string
+      |> dirname($$) as string;
   }
 
   $input = IO\request_input();
