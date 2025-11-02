@@ -12,7 +12,7 @@ async function build_async()[defaults]: Awaitable<void> {
     |> Vec\filter($$, $f ==> $f->getExtension() === 'hack')
     |> Vec\map($$, $f ==> $f->getPathname());
 
-  $files = await Vec\map_async($paths, async $path ==> {
+  $files = await Vec\map_async($paths, async (mixed $path) ==> {
     $file = File\open_read_only($path as string);
     using $file->closeWhenDisposed();
     using $file->tryLockx(File\LockType::SHARED);
