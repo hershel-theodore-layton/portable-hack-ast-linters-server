@@ -13,7 +13,7 @@ async function snif_license_header_async(
       glob($project_root.'/src/*/*.hack') as vec<_>,
     ),
     $path ==> is_file($path as string) && is_readable($path),
-  );
+  ) as ?string;
 
   if ($path is null) {
     return null;
