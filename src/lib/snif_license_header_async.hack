@@ -11,9 +11,10 @@ async function snif_license_header_async(
     Vec\concat(
       glob($project_root.'/src/*.hack') as vec<_>,
       glob($project_root.'/src/*/*.hack') as vec<_>,
-    ),
-    $path ==> is_file($path as string) && is_readable($path),
-  ) as ?string;
+    )
+      |> Vec\map($$, $x ==> $x as string),
+    $path ==> is_file($path) && is_readable($path),
+  );
 
   if ($path is null) {
     return null;
