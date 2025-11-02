@@ -7,7 +7,7 @@ use function glob, is_file, is_readable;
 async function snif_license_header_async(
   string $project_root,
 )[defaults]: Awaitable<?string> {
-  $path = C\find(
+  $path = C\find<string>(
     Vec\concat(
       glob($project_root.'/src/*.hack') as vec<_>,
       glob($project_root.'/src/*/*.hack') as vec<_>,
