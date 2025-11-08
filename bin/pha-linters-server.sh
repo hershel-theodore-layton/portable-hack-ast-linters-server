@@ -82,7 +82,7 @@ compile_repo_auth() {
   sha1sum "$RESOURCE" > "$VAR/sha1sum.txt"
 }
 
-while getopts "p:b:r:htgs" opt; do
+while getopts "p:b:r:htgsd" opt; do
   case "$opt" in
     h)  print_help_text && exit 0
       ;;
