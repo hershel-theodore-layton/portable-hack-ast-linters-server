@@ -11,6 +11,7 @@ PORT_NUMBER=10641
 SETUP_DOCKER_NATIVE_ENV=No
 TRUSTS_RESOURCE=No
 HAS_CHANGED=No
+LAUNCH_MODE=server
 
 print_help_text() {
   echo "Documentation can be found at https://github.com/hershel-theodore-layton/portable-hack-ast-linters-server/blob/master/README.md"
@@ -25,6 +26,7 @@ print_help_text() {
   echo "  -b (or -r) <path to bundle> implies trust in the resource bundle"
   echo "  -t <no argument> force trust the resource bundle found by this script"
   echo "  -s <no argument> setup .vscode/settings.json for Docker Native development"
+  echo "  -d <no argument> run the server as a daemon, return control to the shell"
 }
 
 setup_docker_native_environment() {
@@ -98,6 +100,8 @@ while getopts "p:b:r:htgs" opt; do
       ;;
     s)  SETUP_DOCKER_NATIVE_ENV=Yes
       ;;
+    d)  LAUNCH_MODE=daemon
+      ;;
     *) echo "Unknown flag $opt"
       ;;
   esac
@@ -142,7 +146,7 @@ if [ -f "$VAR/www.pid" ]; then
   fi
 fi
 
-hhvm -m server -p "$PORT_NUMBER" \
+hhvm -m $LAUNCH_MODE -p "$PORT_NUMBER" \
   --no-config \
   -vServer.AllowRunAsRoot=1 \
   -dhhvm.repo.authoritative=true \
