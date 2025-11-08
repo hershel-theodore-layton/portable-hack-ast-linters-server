@@ -100,7 +100,7 @@ while getopts "p:b:r:htgsd" opt; do
       ;;
     s)  SETUP_DOCKER_NATIVE_ENV=Yes
       ;;
-    d)  LAUNCH_MODE=daemon
+    d)  LAUNCH_MODE="daemon -dhhvm.log.file=/dev/null"
       ;;
     *) echo "Unknown flag $opt"
       ;;
