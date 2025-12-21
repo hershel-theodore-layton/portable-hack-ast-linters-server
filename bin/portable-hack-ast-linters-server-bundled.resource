@@ -7004,7 +7004,7 @@ final class ParseContext {
 
   // #region Materialization
   const string VERSION = 'VERSION';
-  const int VERSION_NUMBER = 2;
+  const int VERSION_NUMBER = 3;
   const string STRUCTS = 'STRUCTS';
   const string SYNTAX_KINDS = 'SYNTAX_KINDS';
   const string TOKEN_KINDS = 'TOKEN_KINDS';
@@ -7032,11 +7032,15 @@ final class ParseContext {
 
   public static function materialize(dict<arraykey, mixed> $raw)[]: this {
     $version = idx($raw, static::VERSION, -1);
-    enforce(
-      $version === static::VERSION_NUMBER,
-      'Could not materialize this Context, '.
-      'it was dematerialized with a later version of this library.',
-    );
+    if ($version !== static::VERSION_NUMBER) {
+      throw new PhaException(
+        'Could not materialize this Context, it was dematerialized with version '.
+        (($version ?as int) ?? 0).
+        ', but this version is version '.
+        static::VERSION_NUMBER.
+        '. You should regenerate this Context and update the cache.',
+      );
+    }
 
     try {
       return new static(
@@ -7054,6 +7058,8 @@ final class ParseContext {
           |> keyset($$)
           |> new InternedStringStorage($$, Pha\trivium_kind_from_string<>),
       );
+    } catch (PhaException $e) {
+      throw $e;
     } catch (\Exception $e) {
       throw
         new PhaException('Could not materialize Context.', $e->getCode(), $e);
@@ -7325,10 +7331,13 @@ use namespace HTL\Pha;
 
 final class Structs {
   private int $size;
+  private vec<int> $memberCounts;
+
   public function __construct(
     private dict<SyntaxKind, vec<Member>> $rawMembers,
   )[] {
     $this->size = C\count($rawMembers);
+    $this->memberCounts = Vec\map($rawMembers, C\count<>);
   }
 
   public function asInternedStrings()[]: InternedStringStorage<SyntaxKind> {
@@ -7336,6 +7345,12 @@ final class Structs {
       Keyset\keys($this->rawMembers),
       Pha\syntax_kind_from_string<>,
     );
+  }
+
+  public function getMemberCount(
+    InternedString<SyntaxKind> $syntax_kind,
+  )[]: int {
+    return $this->memberCounts[interned_string_to_int($syntax_kind)];
   }
 
   public function getRaw()[]: dict<SyntaxKind, vec<Member>> {
@@ -7348,7 +7363,7 @@ final class Structs {
 
   //#region Materialization
   const string VERSION = 'VERSION';
-  const int VERSION_NUMBER = 2;
+  const int VERSION_NUMBER = 3;
   const string MEMBERS = 'MEMBERS';
 
   public function dematerialize()[]: dict<arraykey, mixed> {
@@ -7359,11 +7374,16 @@ final class Structs {
   }
 
   public static function materialize(dict<arraykey, mixed> $raw)[]: this {
-    enforce(
-      idx($raw, static::VERSION) === static::VERSION_NUMBER,
-      'Could not materialize these Structs, '.
-      'they were dematerialized with a later version of this library.',
-    );
+    $version = idx($raw, static::VERSION);
+    if ($version !== static::VERSION_NUMBER) {
+      throw new PhaException(
+        'Could not materialize these Structs, they were dematerialized with version '.
+        (($version ?as int) ?? 0).
+        ', but this version is version '.
+        static::VERSION_NUMBER.
+        '. You should regenerate the Context that contains these Structs and update the cache.',
+      );
+    }
 
     return $raw[static::MEMBERS]
       |> as_vec_of_member($$)
@@ -7384,6 +7404,7 @@ final class TranslationUnit {
   const SOME_LARGE_JUMP = 64;
 
   private vec<SourceByteOffset> $lineBreaks;
+  private Structs $structs;
   /**
    * @param $sourceOrder is keyed by NodeId (0..n-1).
    * @param $siblings is keyed by SiblingId (0..n-1).
@@ -7405,6 +7426,7 @@ final class TranslationUnit {
     }
 
     $this->lineBreaks = $line_breaks;
+    $this->structs = $ctx->getStructs();
   }
 
   public function cutSourceOrder(
@@ -7468,9 +7490,16 @@ final class TranslationUnit {
     return Vec\slice($this->siblings, sibling_id_to_int($start), $length);
   }
 
+  public function syntaxGetChildCount(Syntax $syntax)[]: int {
+    return node_get_field_0($syntax) === LIST_OR_MISSING_TAG_AFTER_SHIFT
+      ? $this->listGetSize($syntax)
+      : $this->structs
+        ->getMemberCount(node_get_interned_kind<SyntaxKind>($syntax));
+  }
+
   // #region Materialization
   const string VERSION = 'VERSION';
-  const int VERSION_NUMBER = 2;
+  const int VERSION_NUMBER = 3;
   const string SOURCE_ORDER = 'SOURCE_ORDER';
   const string SIBLINGS = 'SIBLINGS';
   const string LIST_SIZES = 'LIST_SIZES';
@@ -7496,11 +7525,16 @@ final class TranslationUnit {
     dict<arraykey, mixed> $raw,
     ParseContext $ctx,
   )[]: TranslationUnit {
-    enforce(
-      idx($raw, static::VERSION) === static::VERSION_NUMBER,
-      'Could not materialize this Script, '.
-      'it was dematerialized with a different version of this library.',
-    );
+    $version = idx($raw, static::VERSION);
+    if ($version !== static::VERSION_NUMBER) {
+      throw new PhaException(
+        'Could not materialize this Script, it was dematerialized with version '.
+        (($version ?as int) ?? 0).
+        ', but this version is version '.
+        static::VERSION_NUMBER.
+        '. You should reparse this Script and update the cache.',
+      );
+    }
     enforce(
       $ctx->getMaterializationHash() === $raw[static::CONTEXT_ID],
       'The Context and the Script do not belong together.',
@@ -7787,6 +7821,10 @@ newtype NodeId as arraykey = int;
 
 function node_id_add(NodeId $node_id, int $n)[]: NodeId {
   return $node_id + $n;
+}
+
+function node_id_sub(NodeId $node_id, int $n)[]: NodeId {
+  return $node_id - $n;
 }
 
 function node_id_diff(NodeId $a, NodeId $b)[]: NodeId {
@@ -8370,46 +8408,64 @@ function create_node(
   // See bin/pseudo-fields.documentation.txt
   switch ($node->getGroup()) {
     case IntermediateGroup::SYNTAX:
-      $field_0 = SYNTAX_TAG;
+      $field_0_already_shifted = SYNTAX_TAG;
       $field_1 = $ctx->getSyntaxKinds()->intern($node->getSyntaxKind())
         |> interned_string_to_int($$);
       $field_3 = $child_range[0];
       break;
     case IntermediateGroup::TOKEN:
-      $field_0 = TOKEN_TAG;
+      $field_0_already_shifted = TOKEN_TAG;
       $field_1 = $ctx->getTokenKinds()->intern($node->getTokenKind())
         |> interned_string_to_int($$);
       $field_3 = $source_order_idx + $node->getTokenTextTriviumOffsetx();
       break;
     case IntermediateGroup::TRIVIUM:
-      $field_0 = TRIVIUM_TAG;
+      $field_0_already_shifted = TRIVIUM_TAG;
       $field_1 = $ctx->getTriviumKinds()->intern($node->getTriviumKind())
         |> interned_string_to_int($$);
       $field_3 = $byte_offset;
       $byte_offset += $node->getTextLengthx();
       break;
     case IntermediateGroup::LIST:
-      $field_0 = LIST_OR_MISSING_TAG;
+      $field_0_already_shifted = LIST_OR_MISSING_TAG;
       // + 1, because a range from x to x is of length 1, not 0.
       $field_1 =
         Math\minva(FIELD_1_MASK, $child_range[1] - $child_range[0] + 1);
       $field_3 = $child_range[0];
       break;
     case IntermediateGroup::MISSING:
-      $field_0 = LIST_OR_MISSING_TAG;
+      $field_0_already_shifted = LIST_OR_MISSING_TAG;
       $field_1 = 0;
       $field_3 = 0;
   }
 
-  $field_2 = $parent_idx;
+  $parent_diff = $source_order_idx - $parent_idx;
+
+  switch ($node->getGroup()) {
+    case IntermediateGroup::SYNTAX:
+    case IntermediateGroup::TOKEN:
+    case IntermediateGroup::LIST:
+    case IntermediateGroup::MISSING:
+      if ($parent_diff > FIELD_2_MASK) {
+        $parent_diff = 0;
+      }
+      $field_2_already_shifted = $parent_diff << FIELD_2_OFFSET;
+      break;
+    case IntermediateGroup::TRIVIUM:
+      if ($parent_diff > FIELD_2_MASK_FOR_TRIVIA) {
+        $parent_diff = 0;
+      }
+      $field_2_already_shifted = $parent_diff << FIELD_2_OFFSET_FOR_TRIVIA;
+  }
+
   $field_4 = $source_order_idx;
 
   return node_from_int(
-    ($field_0) |
-      ($field_1 << 54) |
-      ($field_2 << 36) |
-      ($field_3 << 18) |
-      $field_4,
+    $field_0_already_shifted |
+      ($field_1 << FIELD_1_OFFSET) |
+      $field_2_already_shifted |
+      ($field_3 << FIELD_3_OFFSET) |
+      ($field_4 << FIELD_4_OFFSET),
   );
 }
 }
@@ -8426,10 +8482,10 @@ function create_translation_unit(
   ParseContext $ctx,
 )[]: TranslationUnit {
   enforce(
-    Str\length($source_text) < FIELD_3_MASK,
+    Str\length($source_text) < FIELD_3_MASK_FOR_TRIVIA,
     'Implementation limit: Source may not exceed %d (0x%x) bytes, got %d.',
-    FIELD_3_MASK,
-    FIELD_3_MASK,
+    FIELD_3_MASK_FOR_TRIVIA,
+    FIELD_3_MASK_FOR_TRIVIA,
     Str\length($source_text),
   );
 
@@ -8589,21 +8645,28 @@ namespace HTL\Pha\_Private {
 use namespace HH\Lib\Math;
 use namespace HTL\Pha;
 
-const int FIELD_4_SIZE = 18;
-const int FIELD_3_SIZE = 18;
-const int FIELD_2_SIZE = 18;
+const int FIELD_4_SIZE = 20;
+const int FIELD_3_SIZE = 20;
+const int FIELD_3_SIZE_FOR_TRIVIA = 24;
+const int FIELD_2_SIZE = 14;
+const int FIELD_2_SIZE_FOR_TRIVIA = 10;
 const int FIELD_1_SIZE = 8;
 const int FIELD_0_SIZE = 2;
 
 const int FIELD_4_OFFSET = 0;
 const int FIELD_3_OFFSET = FIELD_4_OFFSET + FIELD_4_SIZE;
+const int FIELD_3_OFFSET_FOR_TRIVIA = FIELD_3_OFFSET;
 const int FIELD_2_OFFSET = FIELD_3_OFFSET + FIELD_3_SIZE;
+const int FIELD_2_OFFSET_FOR_TRIVIA =
+  FIELD_3_OFFSET_FOR_TRIVIA + FIELD_3_SIZE_FOR_TRIVIA;
 const int FIELD_1_OFFSET = FIELD_2_OFFSET + FIELD_2_SIZE;
 const int FIELD_0_OFFSET = FIELD_1_OFFSET + FIELD_1_SIZE;
 
 const int FIELD_4_MASK = (1 << FIELD_4_SIZE) - 1;
 const int FIELD_3_MASK = (1 << FIELD_3_SIZE) - 1;
+const int FIELD_3_MASK_FOR_TRIVIA = (1 << FIELD_3_SIZE_FOR_TRIVIA) - 1;
 const int FIELD_2_MASK = (1 << FIELD_2_SIZE) - 1;
+const int FIELD_2_MASK_FOR_TRIVIA = (1 << FIELD_2_SIZE_FOR_TRIVIA) - 1;
 const int FIELD_1_MASK = (1 << FIELD_1_SIZE) - 1;
 const int FIELD_0_MASK = (1 << FIELD_0_SIZE) - 1;
 
@@ -8618,6 +8681,12 @@ const int SYNTAX_TAG = Math\INT64_MIN;
 const int TOKEN_TAG = 1 << 62;
 const int TRIVIUM_TAG = 0;
 const int LIST_OR_MISSING_TAG = Math\INT64_MIN | (1 << 62);
+
+const int SYNTAX_TAG_AFTER_SHIFT = SYNTAX_TAG >> FIELD_0_OFFSET;
+const int TOKEN_TAG_AFTER_SHIFT = TOKEN_TAG >> FIELD_0_OFFSET;
+const int TRIVIUM_TAG_AFTER_SHIFT = TRIVIUM_TAG >> FIELD_0_OFFSET;
+const int LIST_OR_MISSING_TAG_AFTER_SHIFT =
+  LIST_OR_MISSING_TAG >> FIELD_0_OFFSET;
 
 const int MAX_INTERNED_STRING = FIELD_1_MASK;
 
@@ -8679,12 +8748,30 @@ function node_get_field_1(NillableNode $node)[]: int {
   return node_to_int($node) >> FIELD_1_OFFSET |> $$ & FIELD_1_MASK;
 }
 
-function node_get_field_2(NillableNode $node)[]: int {
-  return node_to_int($node) >> FIELD_2_OFFSET |> $$ & FIELD_2_MASK;
+function syntax_get_field_2(NillableSyntax $syntax)[]: int {
+  return node_to_int($syntax) >> FIELD_2_OFFSET |> $$ & FIELD_2_MASK;
 }
 
-function node_get_field_3(NillableNode $node)[]: int {
-  return node_to_int($node) >> FIELD_3_OFFSET |> $$ & FIELD_3_MASK;
+function token_get_field_2(NillableToken $token)[]: int {
+  return node_to_int($token) >> FIELD_2_OFFSET |> $$ & FIELD_2_MASK;
+}
+
+function trivium_get_field_2(NillableTrivium $trivium)[]: int {
+  return node_to_int($trivium) >> FIELD_2_OFFSET_FOR_TRIVIA
+    |> $$ & FIELD_2_MASK_FOR_TRIVIA;
+}
+
+function syntax_get_field_3(NillableSyntax $syntax)[]: int {
+  return node_to_int($syntax) >> FIELD_3_OFFSET |> $$ & FIELD_3_MASK;
+}
+
+function token_get_field_3(NillableToken $token)[]: int {
+  return node_to_int($token) >> FIELD_3_OFFSET |> $$ & FIELD_3_MASK;
+}
+
+function trivium_get_field_3(NillableTrivium $trivium)[]: int {
+  return node_to_int($trivium) >> FIELD_3_OFFSET_FOR_TRIVIA
+    |> $$ & FIELD_3_MASK_FOR_TRIVIA;
 }
 
 function node_get_field_4(NillableNode $node)[]: int {
@@ -8744,8 +8831,15 @@ function node_get_next_trivium(
   return $node === NIL ? NIL_TRIVIUM : trivium_from_node($node);
 }
 
-function node_get_parent_id(Node $node)[]: NodeId {
-  return node_get_field_2($node) |> node_id_from_int($$);
+function node_get_parent_offset(Node $node)[]: int {
+  switch (node_get_field_0($node)) {
+    case TRIVIUM_TAG_AFTER_SHIFT:
+      return trivium_from_node($node) |> trivium_get_field_2($$);
+    case TOKEN_TAG_AFTER_SHIFT:
+      return token_from_node($node) |> token_get_field_2($$);
+    default:
+      return syntax_from_node($node) |> syntax_get_field_2($$);
+  }
 }
 
 function node_is_between_or_at_boundary(
@@ -8759,11 +8853,27 @@ function node_is_between_or_at_boundary(
 }
 
 function syntax_get_first_child_sibling_id(Syntax $node)[]: SiblingId {
-  return node_get_field_3($node) |> sibling_id_from_int($$);
+  return syntax_get_field_3($node) |> sibling_id_from_int($$);
+}
+
+function syntax_get_parent_offset(Syntax $syntax)[]: int {
+  return syntax_get_field_2($syntax);
+}
+
+function token_get_parent_offset(Token $token)[]: int {
+  return token_get_field_2($token);
+}
+
+function trivium_get_parent_offset(Trivium $trivium)[]: int {
+  return trivium_get_field_2($trivium);
+}
+
+function token_get_token_text_trivium_id(Token $token)[]: NodeId {
+  return token_get_field_3($token) |> node_id_from_int($$);
 }
 
 function trivium_get_source_byte_offset(Trivium $trivium)[]: SourceByteOffset {
-  return node_get_field_3($trivium) |> source_byte_offset_from_int($$);
+  return trivium_get_field_3($trivium) |> source_byte_offset_from_int($$);
 }
 }
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/retain_trivia_keep_leading_and_trailing.hack /////
@@ -9431,8 +9541,8 @@ function node_get_child_at_offset(
   switch (node_get_elaborated_group($node)) {
     case NodeElaboratedGroup::SYNTAX:
     case NodeElaboratedGroup::LIST:
-      $child_node = _Private\syntax_from_node($node)
-        |> _Private\syntax_get_first_child_sibling_id($$)
+      $node = _Private\syntax_from_node($node);
+      $child_node = _Private\syntax_get_first_child_sibling_id($node)
         |> _Private\sibling_id_add($$, $offset)
         |> $tu->getNodeBySiblingId($$);
 
@@ -9441,9 +9551,18 @@ function node_get_child_at_offset(
       }
 
       $child_node = _Private\cast_away_nil($child_node);
-      return _Private\node_get_parent_id($child_node) === node_get_id($node)
-        ? $child_node
-        : NIL;
+
+      $child_node_id = node_get_id($child_node);
+      $node_id = node_get_id($node);
+      $parent_offset = _Private\node_get_parent_offset($child_node);
+
+      // fast path: Can see if `$node` is the parent of `$child_node` from bits
+      if (_Private\node_id_sub($child_node_id, $parent_offset) === $node_id) {
+        return $child_node;
+      }
+
+      // slow path: Need to check with the list-sizes or syntax member counts
+      return $tu->syntaxGetChildCount($node) > $offset ? $child_node : NIL;
 
     case NodeElaboratedGroup::TOKEN:
       $child_node = node_get_id($node)
@@ -9454,10 +9573,37 @@ function node_get_child_at_offset(
         return NIL;
       }
 
-      $child_node = _Private\cast_away_nil($child_node);
-      return _Private\node_get_parent_id($child_node) === node_get_id($node)
-        ? $child_node
-        : NIL;
+      $child_node = _Private\trivium_from_node($child_node);
+      $parent_offset = _Private\trivium_get_parent_offset($child_node);
+      // fast path: Can see if `$node` is parent of `child_node` from bits
+      if ($parent_offset === $offset + 1) {
+        return $child_node;
+      }
+
+      if ($parent_offset !== 0) {
+        return NIL;
+      }
+
+      // slow path: Can not jump to child, must verify every intermediate node
+      // is a trivium, to ensure the trivium returned is a child of `$node`.
+      $parent_id = node_get_id($node);
+      $child_id = $parent_id;
+      $child = NIL;
+
+      for ($i = 0; $i <= $offset; ++$i) {
+        $child_id = _Private\node_id_add($child_id, 1);
+        $child = $tu->getNodeById($child_id);
+        if ($child === NIL) {
+          return NIL;
+        }
+
+        $child = _Private\cast_away_nil($child);
+
+        if (node_get_group($child) !== NodeGroup::TRIVIUM) {
+          return NIL;
+        }
+      }
+      return $child;
 
     case NodeElaboratedGroup::TRIVIUM:
     case NodeElaboratedGroup::MISSING:
@@ -9502,10 +9648,11 @@ function node_get_children(Script $script, NillableNode $node)[]: vec<Node> {
 
   switch (node_get_elaborated_group($node)) {
     case NodeElaboratedGroup::SYNTAX:
+    case NodeElaboratedGroup::LIST:
       $node = _Private\syntax_from_node($node);
       return $tu->sliceSiblings(
         _Private\syntax_get_first_child_sibling_id($node),
-        C\count(syntax_get_members($script, $node)),
+        $tu->syntaxGetChildCount($node),
       );
 
     case NodeElaboratedGroup::TOKEN:
@@ -9522,19 +9669,12 @@ function node_get_children(Script $script, NillableNode $node)[]: vec<Node> {
 
         $child = _Private\cast_away_nil($child);
 
-        if (_Private\node_get_parent_id($child) !== $parent_id) {
+        if (node_get_group($child) !== NodeGroup::TRIVIUM) {
           return $children;
         }
 
         $children[] = $child;
       }
-
-    case NodeElaboratedGroup::LIST:
-      $node = _Private\syntax_from_node($node);
-      return $tu->sliceSiblings(
-        _Private\syntax_get_first_child_sibling_id($node),
-        $tu->listGetSize($node),
-      );
 
     case NodeElaboratedGroup::TRIVIUM:
     case NodeElaboratedGroup::MISSING:
@@ -9643,11 +9783,11 @@ function node_get_descendants(Script $script, NillableNode $node)[]: vec<Node> {
 
 function node_get_elaborated_group(Node $node)[]: NodeElaboratedGroup {
   switch (_Private\node_get_field_0($node)) {
-    case 0:
+    case _Private\TRIVIUM_TAG_AFTER_SHIFT:
       return NodeElaboratedGroup::TRIVIUM;
-    case 1:
+    case _Private\TOKEN_TAG_AFTER_SHIFT:
       return NodeElaboratedGroup::TOKEN;
-    case -2:
+    case _Private\SYNTAX_TAG_AFTER_SHIFT:
       return NodeElaboratedGroup::SYNTAX;
     default:
       return _Private\node_get_field_1($node) === 0
@@ -9700,9 +9840,9 @@ function node_get_first_childx(Script $script, Node $node)[]: Node {
 
 function node_get_group(Node $node)[]: NodeGroup {
   switch (_Private\node_get_field_0($node)) {
-    case 0:
+    case _Private\TRIVIUM_TAG_AFTER_SHIFT:
       return NodeGroup::TRIVIUM;
-    case 1:
+    case _Private\TOKEN_TAG_AFTER_SHIFT:
       return NodeGroup::TOKEN;
     default:
       return NodeGroup::SYNTAX;
@@ -9771,7 +9911,7 @@ function node_get_last_child(
       return node_get_child_at_offset(
         $script,
         $node,
-        C\count(syntax_get_members($script, $node)) - 1,
+        $tu->syntaxGetChildCount($node) - 1,
       );
 
     case NodeElaboratedGroup::TOKEN:
@@ -9788,7 +9928,7 @@ function node_get_last_child(
 
         $child = _Private\cast_away_nil($child);
 
-        if (_Private\node_get_parent_id($child) !== $parent_id) {
+        if (node_get_group($child) !== NodeGroup::TRIVIUM) {
           return $last_child;
         }
 
@@ -9883,8 +10023,29 @@ function node_get_line_and_column_numbers(
  */
 function node_get_parent(Script $script, Node $node)[]: Node {
   $tu = _Private\translation_unit_reveal($script);
-  return _Private\node_get_parent_id($node)
-    |> $tu->getNodeByIdx($$);
+  $parent_offset = _Private\node_get_parent_offset($node);
+  if ($parent_offset !== 0 || $node === SCRIPT_NODE) {
+    return _Private\node_id_sub(node_get_id($node), $parent_offset)
+      |> $tu->getNodeByIdx($$);
+  }
+
+  // slow path: Can not find my parent from bits, must find myself by selecting
+  // an ancestor each time. The last ancestor before me is my parent.
+  $source_order = node_get_source_order($node);
+  $next = SCRIPT_NODE;
+
+  do {
+    $parent = $next;
+    $children = node_get_children($script, $parent);
+
+    $i = C\count($children) - 1;
+    do {
+      $next = $children[$i];
+      --$i;
+    } while (node_get_source_order($next) > $source_order);
+  } while ($next !== $node);
+
+  return $parent;
 }
 
 /**
@@ -10244,10 +10405,9 @@ function token_get_text(Script $script, NillableToken $node)[]: string {
     |> node_get_code($script, $$);
 }
 
-function token_get_text_trivium(Script $script, Token $node)[]: Trivium {
+function token_get_text_trivium(Script $script, Token $token)[]: Trivium {
   $tu = _Private\translation_unit_reveal($script);
-  return _Private\node_get_field_3($node)
-    |> _Private\node_id_from_int($$)
+  return _Private\token_get_token_text_trivium_id($token)
     |> $tu->getNodeByIdx($$)
     |> _Private\trivium_from_node($$);
 }
