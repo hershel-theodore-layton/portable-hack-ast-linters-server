@@ -1,4 +1,4 @@
-FROM hersheltheodorelayton/hhvm-full:25.11.0
+FROM hersheltheodorelayton/hhvm-full:beta
 ENV COMPOSER=composer.dev.json
 
 WORKDIR /mnt/project
