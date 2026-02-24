@@ -8,6 +8,7 @@ DOCKER_COMPOSE_YML="./docker-compose.yml"
 RESOURCE_NAME="portable-hack-ast-linters-server-bundled.resource"
 RESOURCE="$(find . -type f -name "$RESOURCE_NAME" | head -n 1)"
 PORT_NUMBER=10641
+REPO_AUTH=Yes
 SETUP_DOCKER_NATIVE_ENV=No
 TRUSTS_RESOURCE=No
 HAS_CHANGED=No
@@ -27,6 +28,11 @@ print_help_text() {
   echo "  -t <no argument> force trust the resource bundle found by this script"
   echo "  -s <no argument> setup .vscode/settings.json for Docker Native development"
   echo "  -d <no argument> run the server as a daemon, return control to the shell"
+  # This flag was added because the beta docker builds of hhvm in February 2026 did
+  # not support building Repo Auth hhbc files. This workaround should not be needed
+  # anymore. Try removing it. If that works, check it in and forget that -i exists.
+  echo "  \033[33mOnly set '-i' when the Repo Auth do not work. This mode is janky!\033[0m"
+  echo "  -i <no argument> Run in interpreter mode, not repo auth mode. Do not enable this!"
 }
 
 setup_docker_native_environment() {
@@ -78,11 +84,34 @@ compile_repo_auth() {
     fi
   fi
 
+  if [ "$REPO_AUTH" != "Yes" ]; then
+    echo "\033[33mUsing interpreter, because the '-i' flag has been passed.\033[0m"
+    echo "\033[33m  This is slower than Repo Auth mode. You should prefer\033[0m"
+    echo "\033[33m    Repo Auth mode if possible. Try removing the '-i'\033[0m"
+    echo "\033[33m      flag passed to pha-linters-server.sh. If this\033[0m"
+    echo "\033[33m        works, commit that change and forget that\033[0m"
+    echo "\033[33m          the '-i' flag exists. It was a hotfix\033[0m"
+    echo "\033[33m            to unblock beta 26.2.0. This flag\033[0m"
+    echo "\033[33m              will be removed when the beta\033[0m"
+    echo "\033[33m                image works again in Repo\033[0m"
+    echo "\033[33m                  Auth mode. The server\033[0m"
+    echo "\033[33m                    will start in ten\033[0m"
+    echo "\033[33m                      seconds. Text\033[0m"
+    echo "\033[33m                        triangle!\033[0m"
+    echo "\033[33m                          (-.-)\033[0m"
+
+
+    sleep 10;
+    sha1sum "$RESOURCE" > "$VAR/sha1sum.txt"
+    return
+  fi
+
+  echo "Building... $RESOURCE"
   hhvm --hphp "$RESOURCE" --output-dir "$VAR"
   sha1sum "$RESOURCE" > "$VAR/sha1sum.txt"
 }
 
-while getopts "p:b:r:htgsd" opt; do
+while getopts "p:b:r:htgsdi" opt; do
   case "$opt" in
     h)  print_help_text && exit 0
       ;;
@@ -101,6 +130,8 @@ while getopts "p:b:r:htgsd" opt; do
     s)  SETUP_DOCKER_NATIVE_ENV=Yes
       ;;
     d)  LAUNCH_MODE="daemon -dhhvm.log.file=/dev/null"
+      ;;
+    i)  REPO_AUTH="no"
       ;;
     *) echo "Unknown flag $opt"
       ;;
@@ -146,12 +177,22 @@ if [ -f "$VAR/www.pid" ]; then
   fi
 fi
 
-hhvm -m $LAUNCH_MODE -p "$PORT_NUMBER" \
-  --no-config \
-  -vServer.AllowRunAsRoot=1 \
-  -dhhvm.repo.authoritative=true \
-  -dhhvm.repo.path=$VAR/hhvm.hhbc \
-  "-dhhvm.server.global_document=""$RESOURCE""" \
-  -dhhvm.jit_retranslate_all_request=5 \
-  "-dhhvm.php_file.extensions[resource]=1" \
-  -dhhvm.pid_file=$VAR/www.pid
+if [ "$REPO_AUTH" = "Yes" ]; then
+  hhvm -m $LAUNCH_MODE -p "$PORT_NUMBER" \
+    --no-config \
+    -vServer.AllowRunAsRoot=1 \
+    -dhhvm.repo.authoritative=true \
+    -dhhvm.repo.path=$VAR/hhvm.hhbc \
+    "-dhhvm.server.global_document=""$RESOURCE""" \
+    -dhhvm.jit_retranslate_all_request=5 \
+    "-dhhvm.php_file.extensions[resource]=1" \
+    -dhhvm.pid_file=$VAR/www.pid
+else
+  hhvm -m $LAUNCH_MODE -p "$PORT_NUMBER" \
+    --no-config \
+    -vServer.AllowRunAsRoot=1 \
+    "-dhhvm.server.global_document=""$RESOURCE""" \
+    -dhhvm.jit_retranslate_all_request=5 \
+    "-dhhvm.php_file.extensions[resource]=1" \
+    -dhhvm.pid_file=$VAR/www.pid
+fi
