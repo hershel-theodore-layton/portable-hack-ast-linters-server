@@ -12,6 +12,7 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
     PhaLinters\concat_merge_or_union_expression_can_be_simplified_linter<>,
     PhaLinters\context_list_must_be_explicit_linter<>,
     PhaLinters\count_expression_can_be_simplified_linter<>,
+    PhaLinters\dict_literal_keys_must_be_unique_linter<>,
     PhaLinters\dont_await_in_a_loop_linter<>,
     PhaLinters\dont_create_forwarding_lambdas_linter<>,
     PhaLinters\dont_discard_new_expressions_linter<>,
