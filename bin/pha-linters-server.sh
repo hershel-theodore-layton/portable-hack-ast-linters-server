@@ -28,8 +28,8 @@ print_help_text() {
   echo "  -t <no argument> force trust the resource bundle found by this script"
   echo "  -s <no argument> setup .vscode/settings.json for Docker Native development"
   echo "  -d <no argument> run the server as a daemon, return control to the shell"
-  # This flag was added because the beta docker builds of hhvm in February 2026 did
-  # not support building Repo Auth hhbc files. This workaround should not be needed
+  # This flag was added because the beta Docker builds of HHVM in February 2026 did
+  # not support building Repo Auth HHBC files. This workaround should not be needed
   # anymore. Try removing it. If that works, check it in and forget that -i exists.
   echo "  \033[33mOnly set '-i' when the Repo Auth do not work. This mode is janky!\033[0m"
   echo "  -i <no argument> Run in interpreter mode, not repo auth mode. Do not enable this!"
@@ -171,7 +171,7 @@ if [ -f "$VAR/www.pid" ]; then
 
   if [ "$identity" = "HTL\PhaLintersServer" ]; then
     echo "Previous server is different, replacing it."
-    kill "$PID" && rm "$var/www.pid"
+    kill "$PID" && rm "$VAR/www.pid"
   else
     echo "Previous server left a dangling www.pid."
   fi

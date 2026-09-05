@@ -4,7 +4,7 @@ namespace HTL\PhaLintersServer\_Private;
 use namespace HTL\Pha;
 
 /**
- * Files that contain `namespace Example;` must be transformed from into
+ * Files that contain `namespace Example;` must be transformed into
  * ```
  * namespace Example {
  * // code goes here
@@ -42,7 +42,7 @@ function get_wrapping_namespace(
       $wrap_with is null || $is_file_scoped,
       'This file contains two namespaces. '.
       'Hack-compact treats `namespace %s;` as a file-scoped namespace and '.
-      'does not support multiple of such namespaces in one file.',
+      'does not support multiple such namespaces in one file.',
       $wrap_with,
     );
 
