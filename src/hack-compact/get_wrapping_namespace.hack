@@ -4,15 +4,16 @@ namespace HTL\PhaLintersServer\_Private;
 use namespace HTL\Pha;
 
 /**
- * Files that contain `namespace Example;` must be transformed into
+ * Files that contain namespaces with a `;`, f.e. `namespace Example;` can be
+ * included as-is.
+ *
  * ```
- * namespace Example {
+ * namespace Example;
  * // code goes here
- * }
  * ```
  * 
- * If the file already used the `namespace Example {}` style, nothing needs
- * to happen to make this file compact-ready.
+ * This lets the compacted output switch namespaces between concatenated files
+ * without adding namespace blocks.
  */
 function get_wrapping_namespace(
   Pha\Script $script,

@@ -1,5 +1,5 @@
 ///// src/all_files.hack /////
-namespace HTL\PhaLintersServer {
+namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
 
@@ -26,9 +26,9 @@ function all_files(
     |> Vec\map($$, $x ==> $x as string)
     |> Keyset\sort($$);
 }
-}
+
 ///// src/all_linters.hack /////
-namespace HTL\PhaLintersServer {
+namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
 
@@ -101,9 +101,9 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
 
   return $linters;
 }
-}
+
 ///// src/lib/LintFunction.hack /////
-namespace HTL\PhaLintersServer {
+namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
 
@@ -116,9 +116,9 @@ type LintFunction = (function(
   Pha\Resolver,
   Pha\PragmaMap,
 )[]: vec<PhaLinters\LintError>);
-}
+
 ///// src/lib/encode_errors_as_human_readable_text.hack /////
-namespace HTL\PhaLintersServer {
+namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
 
@@ -145,9 +145,9 @@ function encode_errors_as_human_readable_text(
   )
     |> Str\join($$, "\n\n").$errors_remaining."\n";
 }
-}
+
 ///// src/lib/encode_errors_as_vscode_compatible_json.hack /////
-namespace HTL\PhaLintersServer {
+namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
 
@@ -196,9 +196,9 @@ function encode_errors_as_vscode_compatible_json(
       JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
     ) as string;
 }
-}
+
 ///// src/lib/lint_all_files.hack /////
-namespace HTL\PhaLintersServer {
+namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
 
@@ -232,9 +232,9 @@ async function lint_all_files_async(
 
   return $out;
 }
-}
+
 ///// src/lib/lint_hack_code.hack /////
-namespace HTL\PhaLintersServer {
+namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
 
@@ -259,9 +259,9 @@ function lint_hack_code(
     |> Vec\flatten($$)
     |> Vec\filter($$, $e ==> !$e->isIgnored());
 }
-}
+
 ///// src/lib/snif_license_header_async.hack /////
-namespace HTL\PhaLintersServer {
+namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
 
@@ -293,9 +293,9 @@ async function snif_license_header_async(
   $br = new IO\BufferedReader($file);
   return await $br->readUntilAsync('*/');
 }
-}
+
 ///// src/lib/to_vscode_range.hack /////
-namespace HTL\PhaLintersServer {
+namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
 
@@ -317,9 +317,9 @@ function to_vscode_range(Pha\LineAndColumnNumbers $x)[]: shape(
     ),
   );
 }
-}
+
 ///// src/main.hack /////
-namespace HTL\PhaLintersServer {
+namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
 
@@ -404,9 +404,9 @@ async function main_async()[defaults]: Awaitable<void> {
       exit(1);
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/PragmaMap.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
 
@@ -433,9 +433,9 @@ final class PragmaMap {
     return $this->pragmas;
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/NameResolver.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
 
@@ -623,9 +623,9 @@ final class NameResolver {
       C\contains(BUILTIN_CONTEXT_NAMES, $type_name);
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/implementation_types/Resolver.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
 
@@ -638,9 +638,9 @@ function resolver_hide(NameResolver $resolver)[]: Resolver {
 function resolver_reveal(Resolver $resolver)[]: NameResolver {
   return $resolver;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/AUTO_IMPORTED_FUNCTIONS.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
 
@@ -692,9 +692,9 @@ const keyset<string> AUTO_IMPORTED_FUNCTIONS = keyset[
   'vec',
   'xenon_get_data',
 ];
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/AUTO_IMPORTED_TYPES.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
 
@@ -753,9 +753,9 @@ const keyset<string> AUTO_IMPORTED_TYPES = keyset[
   'WaitableWaitHandle',
   'XenonSample',
 ];
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/BUILTIN_CONTEXT_NAMES.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
 
@@ -776,9 +776,9 @@ const vec<string> BUILTIN_CONTEXT_NAMES = vec[
   'rx_shallow',
   'rx_local',
 ];
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/NamespaceResolution.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
 
@@ -818,9 +818,9 @@ final class NamespaceResolution {
       node_is_between_or_at_boundary($node, $this->startsAt, $this->endsAt);
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/UseInfo.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
 
@@ -855,9 +855,9 @@ final class UseInfo {
     return $this->prefix;
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/UseKind.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
 
@@ -868,9 +868,9 @@ enum UseKind: int {
   TYPE = 3;
   NONE = 4;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/three_way_zip.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
 
@@ -894,9 +894,9 @@ function three_way_zip<T1, T2, T3>(
 
   return $result;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/create_name_resolver.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
 
@@ -1225,9 +1225,9 @@ function create_name_resolver(
     )
     |> _Private\resolver_hide($$);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/create_pragma_map.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
 
@@ -1341,16 +1341,16 @@ function create_pragma_map(
 
   return new PragmaMap($pragma_lines);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/public_types.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
 
 type Resolver = _Private\Resolver;
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/resolve_name.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
 
@@ -1380,9 +1380,9 @@ function resolve_name_and_use_clause(
 
   return $resolver->resolveName($node, $ancestors, $compressed_code);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/LintError.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -1521,9 +1521,9 @@ final class LintError {
       |> Str\strip_suffix($$, 'Linter');
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/async_function_and_method_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -1570,9 +1570,9 @@ function async_function_and_method_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/camel_cased_methods_underscored_functions_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -1627,9 +1627,9 @@ function camel_cased_methods_underscored_functions_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/dont_await_in_a_loop_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -1747,9 +1747,9 @@ function dont_await_in_a_loop_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/dont_create_forwarding_lambdas_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -1987,9 +1987,9 @@ function dont_create_forwarding_lambdas_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/dont_discard_new_expressions_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -2036,9 +2036,9 @@ function dont_discard_new_expressions_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/dont_use_asio_join_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -2080,9 +2080,9 @@ function dont_use_asio_join_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/final_or_abstract_classes_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -2137,9 +2137,9 @@ function final_or_abstract_classes_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/group_use_statement_alphabetization_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -2218,9 +2218,9 @@ function group_use_statement_alphabetization_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/group_use_statements_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -2366,9 +2366,9 @@ function group_use_statements_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/license_header_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -2411,9 +2411,9 @@ function license_header_linter(
         )),
       )];
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/must_use_braces_for_control_flow_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -2474,9 +2474,9 @@ function must_use_braces_for_control_flow_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/namespace_private_symbol_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -2566,9 +2566,9 @@ function namespace_private_symbol_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/namespace_private_use_clause_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -2664,9 +2664,9 @@ function namespace_private_use_clause_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/no_elseif_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -2699,9 +2699,9 @@ function no_elseif_linter(
     ),
   );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/no_empty_statements_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -2823,9 +2823,9 @@ function no_empty_statements_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/no_final_method_in_final_classes_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -2899,9 +2899,9 @@ function no_final_method_in_final_classes_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/no_newline_at_start_of_control_flow_block_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -2960,9 +2960,9 @@ function no_newline_at_start_of_control_flow_block_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/no_php_equality_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -3004,9 +3004,9 @@ function no_php_equality_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/no_string_interpolation_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -3043,9 +3043,9 @@ function no_string_interpolation_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/prefer_lambdas_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -3073,9 +3073,9 @@ function prefer_lambdas_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/prefer_require_once_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -3122,9 +3122,9 @@ function prefer_require_once_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/prefer_single_quoted_string_literals_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -3192,9 +3192,9 @@ function prefer_single_quoted_string_literals_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/shout_case_enum_members_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -3232,9 +3232,9 @@ function shout_case_enum_members_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/unreachable_code_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -3272,9 +3272,9 @@ function unreachable_code_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/unused_pipe_variable_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -3321,9 +3321,9 @@ function unused_pipe_variable_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/unused_use_clause_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -3369,9 +3369,9 @@ function unused_use_clause_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/unused_variable_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -3701,9 +3701,9 @@ function unused_variable_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/use_statement_with_as_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -3736,9 +3736,9 @@ function use_statement_with_as_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/use_statement_with_leading_backslash_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -3793,9 +3793,9 @@ function use_statement_with_leading_backslash_linter(
         ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/use_statement_without_kind_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -3842,9 +3842,9 @@ function use_statement_without_kind_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/whitespace_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -3926,9 +3926,9 @@ function whitespace_linter(
 
   return $errors;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/concat_merge_or_union_expression_can_be_simplified_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -4007,9 +4007,9 @@ function concat_merge_or_union_expression_can_be_simplified_linter(
         ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/context_list_must_be_explicit_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -4063,9 +4063,9 @@ function context_list_must_be_explicit_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/context_list_must_be_explicit_on_io_functions_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -4130,9 +4130,9 @@ function context_list_must_be_explicit_on_io_functions_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/count_expression_can_be_simplified_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -4346,9 +4346,9 @@ function count_expression_can_be_simplified_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/dict_literal_keys_must_be_unique_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -4406,9 +4406,9 @@ function dict_literal_keys_must_be_unique_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/dont_use_hack_collections_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -4496,9 +4496,9 @@ function dont_use_hack_collections_linter(
 
   return $errors;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/generated_file_may_not_be_modified_manually_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -4525,9 +4525,9 @@ function generated_file_may_not_be_modified_manually_linter(
       'This file was generated with a code generator and should not be edited by hand.',
     )];
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/getter_method_could_have_a_context_list_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -4633,9 +4633,9 @@ function getter_method_could_have_a_context_list_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/lambda_parameter_list_parentheses_can_be_removed_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -4735,9 +4735,9 @@ function lambda_parameter_list_parentheses_can_be_removed_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/pragma_could_not_be_parsed_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -4840,9 +4840,9 @@ function pragma_could_not_be_parsed_linter(
     );
 
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/pragma_prefix_unknown_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -4876,9 +4876,9 @@ function pragma_prefix_unknown_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/shape_type_additional_field_intent_should_be_explicit_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -4950,9 +4950,9 @@ function shape_type_additional_field_intent_should_be_explicit_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/solitary_escape_sequences_should_be_disambiguated_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5017,9 +5017,9 @@ function solitary_escape_sequences_should_be_disambiguated_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/variable_name_must_be_lowercase_linter.hack /////
-namespace HTL\PhaLinters {
+namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5103,9 +5103,9 @@ function variable_name_must_be_lowercase_linter(
       ),
     );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/CallingConvention.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5115,9 +5115,9 @@ enum CallingCovention: int {
   VARIADIC = 2;
   OTHER = 3;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/ComparisonKind.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5129,9 +5129,9 @@ enum ComparisonKind: int {
   GREATER_THAN = 4;
   GREATER_THAN_OR_EQUAL = 5;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/TUnusedVariableLinterUsage.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5147,9 +5147,9 @@ type TUnusedVariableLinterUsage = shape(
   'var_name' => string,
   /*_*/
 );
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/TUnusedVariableLinterUsageAfterShadowing.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5163,9 +5163,9 @@ type TUnusedVariableLinterAfterShadowing = shape(
   'var_name' => string,
   /*_*/
 );
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/UseKind.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5179,9 +5179,9 @@ enum UseKind: int {
 
 const vec<UseKind> REAL_USE_KINDS =
   vec[UseKind::CONST, UseKind::FUNCTION, UseKind::NAMESPACE, UseKind::TYPE];
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/dict_merge_by_concatting_values.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5205,9 +5205,9 @@ function dict_merge_by_concatting_values<Tk as arraykey, Tv>(
 
   return $out;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/enforce_naming.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5263,9 +5263,9 @@ function enforce_naming(
     ),
   );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/extract_digest.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5309,9 +5309,9 @@ function extract_digest(
     |> Str\slice($$, 0, 20)
     |> shape('pragma' => $pragma, 'embedded' => $digest, 'hashed' => $$);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/get_first_token.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5329,9 +5329,9 @@ function get_first_token(
       : $node,
   );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/get_flattened_namespace_uses.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5418,9 +5418,9 @@ function get_flattened_namespace_uses(
 
   return dict_merge_by_concatting_values($use_clauses, $grouped_uses);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/get_last_token.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5439,9 +5439,9 @@ function get_last_token(
       : $node,
   );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/get_previous_token.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5472,9 +5472,9 @@ function get_previous_token(
 
   return $previous_token;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/insert_digest.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5505,9 +5505,9 @@ function insert_digest(
     |> Pha\patches($script, Pha\patch_node($digest['pragma'], $$))
     |> Pha\patches_apply($$);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/is_assignment_operator.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5534,9 +5534,9 @@ function assignment_operator_matcher(Pha\Script $script)[]: (function(
     Pha\KIND_STAR_STAR_EQUAL,
   );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/vec_take_while_inclusive.hack /////
-namespace HTL\PhaLinters\Support {
+namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
 
@@ -5565,9 +5565,9 @@ function vec_take_while_inclusive<T>(
 
   return $out;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/Kind.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -6036,9 +6036,9 @@ const TokenKind KIND_XHP_ELEMENT_NAME = 'XHP_element_name';
 const TokenKind KIND_XHP_STRING_LITERAL = 'XHP_string_literal';
 const TokenKind KIND_YIELD = 'yield';
 // #endregion
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/LineAndColumnNumbers.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -6106,9 +6106,9 @@ final class LineAndColumnNumbers {
     return tuple($this->getEndLineOneBased(), $this->getEndColumnOneBased());
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/Member.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -6938,9 +6938,9 @@ const Member MEMBER_YIELD_BREAK_SEMICOLON = tuple(KIND_YIELD_BREAK_STATEMENT, 'y
 const Member MEMBER_YIELD_KEYWORD = tuple(KIND_YIELD_EXPRESSION, 'yield_keyword');
 const Member MEMBER_YIELD_OPERAND = tuple(KIND_YIELD_EXPRESSION, 'yield_operand');
 // #endregion
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/NodeElaboratedGroup.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -6951,9 +6951,9 @@ enum NodeElaboratedGroup: int {
   LIST = 3;
   MISSING = 4;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/NodeGroup.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -6962,9 +6962,9 @@ enum NodeGroup: int {
   TOKEN = 1;
   TRIVIUM = 2;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/PhaException.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -6979,9 +6979,9 @@ interface PhaException {
   require extends Exception;
   public function getMessage()[]: string;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/RetainTrivia.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -6991,9 +6991,9 @@ enum RetainTrivia: int {
   TRAILING = 2;
   BOTH = 3;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/Index.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7074,9 +7074,9 @@ final class Index<Tnode as Node, Tkind as Kind> {
     return new Index<Tnode_, Tkind_>($ctx, $group, $sorted, $ranges);
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/InternedStringStorage.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7126,9 +7126,9 @@ final class InternedStringStorage<T as Kind> {
     return $this->size === C\count($new_names);
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/ParseContext.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7308,9 +7308,9 @@ final class ParseContext {
   }
   // #endregion
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/PatchNode.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7388,9 +7388,9 @@ final class PatchNode {
     );
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/PatchSet.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7467,9 +7467,9 @@ final class PatchSet {
     return $this->replacements;
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/PhaException.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7482,9 +7482,9 @@ final class PhaException extends Exception implements Pha\PhaException {
     return $this->message;
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/Replacement.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7517,9 +7517,9 @@ final class Replacement {
     return $this->text;
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/Structs.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7589,9 +7589,9 @@ final class Structs {
   }
   //#endregion
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/TranslationUnit.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7754,9 +7754,9 @@ final class TranslationUnit {
     }
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/aliasses.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7767,9 +7767,9 @@ type Member = Pha\Member;
 type TokenKind = Pha\TokenKind;
 type TriviumKind = Pha\TriviumKind;
 type SyntaxKind = Pha\SyntaxKind;
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/enforce.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7792,9 +7792,9 @@ function enforce(
     throw new PhaException(vsprintf($format, $args) as string);
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/grammatical_nth.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7822,9 +7822,9 @@ function grammatical_nth(int $n)[]: string {
 
   return $n.'th';
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/hsl/find_last.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7847,9 +7847,9 @@ function find_lastx<T>(
 
   invariant_violation('%s: Could\'t find the target value.', __FUNCTION__);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/Context.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7862,9 +7862,9 @@ function context_hide(ParseContext $ctx)[]: Context {
 function context_reveal(Context $ctx)[]: ParseContext {
   return $ctx;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/IndexMask.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7877,9 +7877,9 @@ function index_mask_from_int(int $int)[]: IndexMask {
 function index_mask_to_int(IndexMask $index_mask)[]: int {
   return $index_mask;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/InternedString.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7900,9 +7900,9 @@ function interned_string_recast_t<<<__Explicit>> T>(
 function interned_string_to_int(InternedString<mixed> $interned_string)[]: int {
   return $interned_string;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/KindIdentity.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -7915,9 +7915,9 @@ function kind_identity_from_int(int $int)[]: KindIdentity {
 function kind_identity_to_int(KindIdentity $kind_identity)[]: int {
   return $kind_identity;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/Node.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8008,9 +8008,9 @@ function trivium_from_int(int $int)[]: Trivium {
 function trivium_from_node(NillableNode $node)[]: Trivium {
   return $node;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/NodeId.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8041,9 +8041,9 @@ function node_id_to_int(NodeId $node_id)[]: int {
 function node_id_from_int(int $node_id)[]: NodeId {
   return $node_id;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/Patch.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8056,9 +8056,9 @@ function patch_node_hide(PatchNode $patch_node)[]: Patch {
 function patch_node_reveal(Patch $patch)[]: PatchNode {
   return $patch;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/Patches.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8071,9 +8071,9 @@ function patch_set_hide(PatchSet $patch_set)[]: Patches {
 function patch_set_reveal(Patches $patches)[]: PatchSet {
   return $patches;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/ReadyToSerialize.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8099,9 +8099,9 @@ type ReadyToSerializeScript = shape(
   'context_hash' => string,
   ...
 );
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/Script.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8114,9 +8114,9 @@ function translation_unit_hide(TranslationUnit $tu)[]: Script {
 function translation_unit_reveal(Script $script)[]: TranslationUnit {
   return $script;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/SearchIndex.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8133,9 +8133,9 @@ function index_reveal<Tnode as Node, Tkind as Kind>(
 )[]: Index<Tnode, Tkind> {
   return $index;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/SiblingId.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8152,9 +8152,9 @@ function sibling_id_to_int(SiblingId $sibling_id)[]: int {
 function sibling_id_from_int(int $int)[]: SiblingId {
   return $int;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/SourceByteOffset.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8181,9 +8181,9 @@ function source_byte_offset_is_less_than_or_equal(
 )[]: bool {
   return $a < $b;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/SourceRange.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8200,9 +8200,9 @@ function source_range_reveal(
 )[]: (SourceByteOffset, ?SourceByteOffset) {
   return $range;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/Intermediate.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8292,9 +8292,9 @@ final class Intermediate {
     return $this->tokenTextTriviumOffset;
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/IntermediateGroup.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8305,9 +8305,9 @@ enum IntermediateGroup: int {
   TOKEN = 3;
   TRIVIUM = 4;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/Wrapped.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8361,9 +8361,9 @@ final class Wrapped {
     );
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediate_list.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8386,18 +8386,18 @@ function create_intermediate_list(
 
   return tuple($intermediate, $children);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediate_missing.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
 function create_intermediate_missing(Wrapped $next, int $id)[]: Intermediate {
   return $next->createMissing($id);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediate_syntax.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8425,9 +8425,9 @@ function create_intermediate_syntax(
 
   return tuple($intermediate, $children);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediate_token.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8477,9 +8477,9 @@ function create_intermediate_token(
 
   return tuple($intermediate, $trivia);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediate_trivia.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8507,9 +8507,9 @@ function create_intermediate_trivia(
 
   return $out;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediates.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8586,9 +8586,9 @@ function create_intermediates(
 
   return Vec\sort_by($completed, $i ==> $i->getId());
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_node.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8665,9 +8665,9 @@ function create_node(
       ($field_4 << FIELD_4_OFFSET),
   );
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_translation_unit.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8734,9 +8734,9 @@ function create_translation_unit(
   return
     new TranslationUnit($nodes, $siblings, $list_sizes, $source_text, $ctx);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/extract_ranges.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8756,9 +8756,9 @@ function extract_ranges(
 
   return $out;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/layout_siblings.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8787,9 +8787,9 @@ function layout_siblings(
 
   return tuple(extract_ranges($heritage), Vec\flatten($heritage));
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/layout_source_order.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -8833,9 +8833,9 @@ function layout_source_order(
 
   return $out;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/private_node_functions.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -9072,9 +9072,9 @@ function token_get_token_text_trivium_id(Token $token)[]: NodeId {
 function trivium_get_source_byte_offset(Trivium $trivium)[]: SourceByteOffset {
   return trivium_get_field_3($trivium) |> source_byte_offset_from_int($$);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/retain_trivia_keep_leading_and_trailing.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -9094,9 +9094,9 @@ function retain_trivia_keep_leading_and_trailing(
       return tuple(false, true);
   }
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/type_assert.hack /////
-namespace HTL\Pha\_Private {
+namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -9166,9 +9166,9 @@ function as_vec_of_trivium_kind(mixed $raw)[]: vec<TriviumKind> {
 
   return $out;
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/create_context.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -9181,9 +9181,9 @@ function create_context()[]: Context {
   )
     |> _Private\context_hide($$);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/create_kind_index.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -9207,9 +9207,9 @@ function create_trivium_kind_index(Script $script)[]: TriviumIndex {
     |> _Private\Index::create<Trivium, TriviumKind>($c, NodeGroup::TRIVIUM, $$)
     |> _Private\index_hide($$);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/materialize.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -9242,9 +9242,9 @@ function materialize_script(
     |> _Private\TranslationUnit::materialize($dematerialized, $$)
     |> _Private\translation_unit_hide($$);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/node_functions.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -10613,9 +10613,9 @@ function token_get_text_trivium(Script $script, Token $token)[]: Trivium {
 function trivium_get_parent(Script $script, Trivium $node)[]: Token {
   return node_get_parent($script, $node) |> _Private\token_from_node($$);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/parse.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -10626,9 +10626,9 @@ function parse(string $source, Context $ctx)[]: (Script, Context) {
   $parse_tree = $ffp_parsed['parse_tree'] as dict<_, _>;
   return parse_from_tree($parse_tree, $source, $ctx);
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/parse_from_tree.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -10665,9 +10665,9 @@ function parse_from_tree(
   return
     tuple(_Private\translation_unit_hide($tu), _Private\context_hide($ctx));
 }
-}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/public_types.hack /////
-namespace HTL\Pha {
+namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 
@@ -10696,9 +10696,9 @@ const NillableSyntax NIL = _Private\NIL;
 const NillableSyntax NIL_SYNTAX = _Private\NIL_SYNTAX;
 const NillableToken NIL_TOKEN = _Private\NIL_TOKEN;
 const NillableTrivium NIL_TRIVIUM = _Private\NIL_TRIVIUM;
-}
+
 ///// vendor/hershel-theodore-layton/pragma/src/pragma.hack /////
-namespace HTL\Pragma {
+namespace HTL\Pragma;
 /** pragma is MIT licensed, see /LICENSE. */
 
 
@@ -10765,5 +10765,4 @@ final class Pragmas
   public function __construct(vec<string> ...$values)[] {
     $this->values = vec($values);
   }
-}
 }

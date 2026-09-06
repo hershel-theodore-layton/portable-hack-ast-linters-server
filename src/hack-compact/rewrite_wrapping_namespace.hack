@@ -20,7 +20,7 @@ function rewrite_with_wrapping_namespace(
     |> Pha\patches($script, $$)
     |> Pha\patches_apply($$)
     |> Str\format(
-      "namespace %s {\n%s\n}",
+      "namespace %s;\n%s\n",
       $wrapping_namespace,
       Str\trim($$, "\n"),
     );
