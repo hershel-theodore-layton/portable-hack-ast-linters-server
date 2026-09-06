@@ -2,7 +2,6 @@
 namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{Keyset, Str, Vec};
 use function glob;
 
@@ -30,7 +29,6 @@ function all_files(
 ///// src/all_linters.hack /////
 namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
 
 use namespace HTL\PhaLinters;
 
@@ -106,7 +104,6 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
 namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
-
 use namespace HTL\{Pha, PhaLinters};
 
 type LintFunction = (function(
@@ -120,7 +117,6 @@ type LintFunction = (function(
 ///// src/lib/encode_errors_as_human_readable_text.hack /////
 namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\PhaLinters;
@@ -149,7 +145,6 @@ function encode_errors_as_human_readable_text(
 ///// src/lib/encode_errors_as_vscode_compatible_json.hack /////
 namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\Vec;
 use namespace HTL\{Pha, PhaLinters};
@@ -201,7 +196,6 @@ function encode_errors_as_vscode_compatible_json(
 namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Dict, File};
 use namespace HTL\{Pha, PhaLinters};
 
@@ -237,7 +231,6 @@ async function lint_all_files_async(
 namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Vec;
 use namespace HTL\{Pha, PhaLinters};
 
@@ -263,7 +256,6 @@ function lint_hack_code(
 ///// src/lib/snif_license_header_async.hack /////
 namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, File, IO, Vec};
 use function glob, is_file, is_readable;
@@ -298,7 +290,6 @@ async function snif_license_header_async(
 namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
 
-
 use namespace HTL\Pha;
 
 function to_vscode_range(Pha\LineAndColumnNumbers $x)[]: shape(
@@ -321,7 +312,6 @@ function to_vscode_range(Pha\LineAndColumnNumbers $x)[]: shape(
 ///// src/main.hack /////
 namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
 
 use namespace HH;
 use namespace HH\Lib\{C, IO, Str, Vec};
@@ -409,7 +399,6 @@ async function main_async()[defaults]: Awaitable<void> {
 namespace HTL\Pha;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Vec;
 
 final class PragmaMap {
@@ -437,7 +426,6 @@ final class PragmaMap {
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/NameResolver.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
@@ -628,7 +616,6 @@ final class NameResolver {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
-
 newtype Resolver = NameResolver;
 
 function resolver_hide(NameResolver $resolver)[]: Resolver {
@@ -642,7 +629,6 @@ function resolver_reveal(Resolver $resolver)[]: NameResolver {
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/AUTO_IMPORTED_FUNCTIONS.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
 
 // @see https://github.com/facebook/hhvm/blob/09f6283fcdbdac9b4ec19768d809ee7d2012e612/hphp/hack/src/parser/hh_autoimport.ml
 const keyset<string> AUTO_IMPORTED_FUNCTIONS = keyset[
@@ -696,7 +682,6 @@ const keyset<string> AUTO_IMPORTED_FUNCTIONS = keyset[
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/AUTO_IMPORTED_TYPES.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
 
 // @see https://github.com/facebook/hhvm/blob/09f6283fcdbdac9b4ec19768d809ee7d2012e612/hphp/hack/src/parser/hh_autoimport.ml
 const keyset<string> AUTO_IMPORTED_TYPES = keyset[
@@ -758,7 +743,6 @@ const keyset<string> AUTO_IMPORTED_TYPES = keyset[
 namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
-
 // @see https://github.com/facebook/hhvm/blob/09f6283fcdbdac9b4ec19768d809ee7d2012e612/hphp/hack/src/parser/hh_autoimport.ml
 const vec<string> BUILTIN_CONTEXT_NAMES = vec[
   'defaults',
@@ -780,7 +764,6 @@ const vec<string> BUILTIN_CONTEXT_NAMES = vec[
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/NamespaceResolution.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
 
 use namespace HTL\Pha;
 
@@ -823,7 +806,6 @@ final class NamespaceResolution {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
-
 use namespace HTL\Pha;
 
 final class UseInfo {
@@ -860,7 +842,6 @@ final class UseInfo {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
-
 enum UseKind: int {
   CONST = 0;
   FUNCTION = 1;
@@ -872,7 +853,6 @@ enum UseKind: int {
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/three_way_zip.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Math};
 
@@ -898,7 +878,6 @@ function three_way_zip<T1, T2, T3>(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/create_name_resolver.hack /////
 namespace HTL\Pha;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Dict, Str, Vec};
 use type HTL\Pha\_Private\{NameResolver, NamespaceResolution, UseInfo, UseKind};
@@ -1230,7 +1209,6 @@ function create_name_resolver(
 namespace HTL\Pha;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Str, Vec};
 
 function create_pragma_map(
@@ -1346,13 +1324,11 @@ function create_pragma_map(
 namespace HTL\Pha;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
 
-
 type Resolver = _Private\Resolver;
 
 ///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/resolve_name.hack /////
 namespace HTL\Pha;
 /** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
 
 function resolve_name(
   Resolver $resolver,
@@ -1384,7 +1360,6 @@ function resolve_name_and_use_clause(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/LintError.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
@@ -1526,7 +1501,6 @@ final class LintError {
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{Str, Vec};
 use namespace HTL\Pha;
 
@@ -1574,7 +1548,6 @@ function async_function_and_method_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/camel_cased_methods_underscored_functions_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Regex, Str, Vec};
 use namespace HTL\Pha;
@@ -1631,7 +1604,6 @@ function camel_cased_methods_underscored_functions_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/dont_await_in_a_loop_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Vec};
 use namespace HTL\Pha;
@@ -1751,7 +1723,6 @@ function dont_await_in_a_loop_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/dont_create_forwarding_lambdas_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Vec};
 use namespace HTL\Pha;
@@ -1992,7 +1963,6 @@ function dont_create_forwarding_lambdas_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Vec;
 use namespace HTL\Pha;
 
@@ -2041,7 +2011,6 @@ function dont_discard_new_expressions_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Vec};
 use namespace HTL\Pha;
 
@@ -2084,7 +2053,6 @@ function dont_use_asio_join_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/final_or_abstract_classes_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Vec};
 use namespace HTL\Pha;
@@ -2141,7 +2109,6 @@ function final_or_abstract_classes_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/group_use_statement_alphabetization_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Vec};
 use namespace HTL\Pha;
@@ -2222,7 +2189,6 @@ function group_use_statement_alphabetization_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/group_use_statements_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Dict, Str, Vec};
 use namespace HTL\Pha;
@@ -2371,7 +2337,6 @@ function group_use_statements_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Str};
 use namespace HTL\Pha;
 
@@ -2415,7 +2380,6 @@ function license_header_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/must_use_braces_for_control_flow_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\Vec;
 use namespace HTL\Pha;
@@ -2478,7 +2442,6 @@ function must_use_braces_for_control_flow_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/namespace_private_symbol_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
@@ -2570,7 +2533,6 @@ function namespace_private_symbol_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/namespace_private_use_clause_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
@@ -2669,7 +2631,6 @@ function namespace_private_use_clause_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Vec;
 use namespace HTL\Pha;
 
@@ -2703,7 +2664,6 @@ function no_elseif_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/no_empty_statements_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{Str, Vec};
 use namespace HTL\Pha;
@@ -2828,7 +2788,6 @@ function no_empty_statements_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Vec};
 use namespace HTL\Pha;
 
@@ -2904,7 +2863,6 @@ function no_final_method_in_final_classes_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Vec;
 use namespace HTL\Pha;
 
@@ -2965,7 +2923,6 @@ function no_newline_at_start_of_control_flow_block_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Vec;
 use namespace HTL\Pha;
 
@@ -3009,7 +2966,6 @@ function no_php_equality_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Vec;
 use namespace HTL\Pha;
 
@@ -3048,7 +3004,6 @@ function no_string_interpolation_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Vec;
 use namespace HTL\Pha;
 
@@ -3077,7 +3032,6 @@ function prefer_lambdas_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/prefer_require_once_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{Str, Vec};
 use namespace HTL\Pha;
@@ -3126,7 +3080,6 @@ function prefer_require_once_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/prefer_single_quoted_string_literals_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
@@ -3197,7 +3150,6 @@ function prefer_single_quoted_string_literals_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{Str, Vec};
 use namespace HTL\Pha;
 
@@ -3237,7 +3189,6 @@ function shout_case_enum_members_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Vec;
 use namespace HTL\Pha;
 
@@ -3276,7 +3227,6 @@ function unreachable_code_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/unused_pipe_variable_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Vec};
 use namespace HTL\Pha;
@@ -3326,7 +3276,6 @@ function unused_pipe_variable_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Keyset, Vec};
 use namespace HTL\Pha;
 
@@ -3373,7 +3322,6 @@ function unused_use_clause_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/unused_variable_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Dict, Math, Str, Vec};
 use namespace HTL\Pha;
@@ -3706,7 +3654,6 @@ function unused_variable_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Vec;
 use namespace HTL\Pha;
 
@@ -3740,7 +3687,6 @@ function use_statement_with_as_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/use_statement_with_leading_backslash_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\Vec;
 use namespace HTL\Pha;
@@ -3798,7 +3744,6 @@ function use_statement_with_leading_backslash_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Vec;
 use namespace HTL\Pha;
 
@@ -3846,7 +3791,6 @@ function use_statement_without_kind_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/whitespace_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\C;
 use namespace HTL\Pha;
@@ -3931,7 +3875,6 @@ function whitespace_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
 
@@ -4012,7 +3955,6 @@ function concat_merge_or_union_expression_can_be_simplified_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Vec;
 use namespace HTL\Pha;
 
@@ -4067,7 +4009,6 @@ function context_list_must_be_explicit_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/context_list_must_be_explicit_on_io_functions_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Vec};
 use namespace HTL\Pha;
@@ -4134,7 +4075,6 @@ function context_list_must_be_explicit_on_io_functions_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/count_expression_can_be_simplified_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{Str, Vec};
 use namespace HTL\Pha;
@@ -4351,7 +4291,6 @@ function count_expression_can_be_simplified_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{Dict, Str, Vec};
 use namespace HTL\Pha;
 
@@ -4410,7 +4349,6 @@ function dict_literal_keys_must_be_unique_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/dont_use_hack_collections_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
@@ -4501,7 +4439,6 @@ function dont_use_hack_collections_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HTL\Pha;
 
 function generated_file_may_not_be_modified_manually_linter(
@@ -4529,7 +4466,6 @@ function generated_file_may_not_be_modified_manually_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/getter_method_could_have_a_context_list_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{Regex, Vec};
 use namespace HTL\Pha;
@@ -4638,7 +4574,6 @@ function getter_method_could_have_a_context_list_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{Str, Vec};
 use namespace HTL\Pha;
 
@@ -4682,7 +4617,6 @@ function keywords_should_be_lowercase_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/lambda_parameter_list_parentheses_can_be_removed_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Vec};
 use namespace HTL\Pha;
@@ -4784,7 +4718,6 @@ function lambda_parameter_list_parentheses_can_be_removed_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/pragma_could_not_be_parsed_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
@@ -4890,7 +4823,6 @@ function pragma_could_not_be_parsed_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
 
@@ -4925,7 +4857,6 @@ function pragma_prefix_unknown_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/shape_type_additional_field_intent_should_be_explicit_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
@@ -5000,7 +4931,6 @@ function shape_type_additional_field_intent_should_be_explicit_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
 
@@ -5066,7 +4996,6 @@ function solitary_escape_sequences_should_be_disambiguated_linter(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/variable_name_must_be_lowercase_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
@@ -5153,7 +5082,6 @@ function variable_name_must_be_lowercase_linter(
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 enum CallingCovention: int {
   PLAIN = 0;
   INOUT = 1;
@@ -5164,7 +5092,6 @@ enum CallingCovention: int {
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/ComparisonKind.hack /////
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 enum ComparisonKind: int {
   EQUALS = 0;
@@ -5178,7 +5105,6 @@ enum ComparisonKind: int {
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/TUnusedVariableLinterUsage.hack /////
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HTL\Pha;
 
@@ -5197,7 +5123,6 @@ type TUnusedVariableLinterUsage = shape(
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HTL\Pha;
 
 type TUnusedVariableLinterAfterShadowing = shape(
@@ -5213,7 +5138,6 @@ type TUnusedVariableLinterAfterShadowing = shape(
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 enum UseKind: int {
   CONST = 0;
   FUNCTION = 1;
@@ -5228,7 +5152,6 @@ const vec<UseKind> REAL_USE_KINDS =
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/dict_merge_by_concatting_values.hack /////
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Vec};
 
@@ -5254,7 +5177,6 @@ function dict_merge_by_concatting_values<Tk as arraykey, Tv>(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/enforce_naming.hack /////
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
@@ -5313,7 +5235,6 @@ function enforce_naming(
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Str};
 use namespace HTL\Pha;
 use function sha1;
@@ -5359,7 +5280,6 @@ function extract_digest(
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\C;
 use namespace HTL\Pha;
 
@@ -5378,7 +5298,6 @@ function get_first_token(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/get_flattened_namespace_uses.hack /////
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{Dict, Vec};
 use namespace HTL\Pha;
@@ -5468,7 +5387,6 @@ function get_flattened_namespace_uses(
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Vec};
 use namespace HTL\Pha;
 
@@ -5488,7 +5406,6 @@ function get_last_token(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/get_previous_token.hack /////
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 use namespace HTL\Pha;
 
@@ -5522,7 +5439,6 @@ function get_previous_token(
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{Str};
 use namespace HTL\Pha;
 
@@ -5555,7 +5471,6 @@ function insert_digest(
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-
 use namespace HTL\Pha;
 
 function assignment_operator_matcher(Pha\Script $script)[]: (function(
@@ -5583,7 +5498,6 @@ function assignment_operator_matcher(Pha\Script $script)[]: (function(
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/vec_take_while_inclusive.hack /////
 namespace HTL\PhaLinters\Support;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
 
 /**
  * Returns a new vec with all elements up until and including the first element
@@ -5614,7 +5528,6 @@ function vec_take_while_inclusive<T>(
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/Kind.hack /////
 namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 newtype Kind as string = string;
 newtype SyntaxKind as Kind = Kind;
@@ -6086,7 +5999,6 @@ const TokenKind KIND_YIELD = 'yield';
 namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 /**
  * The start of the first trivium of a file is at line(0), col(0).
  * A column is determined by the place of the cursor, not the start of the byte.
@@ -6155,7 +6067,6 @@ final class LineAndColumnNumbers {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/Member.hack /////
 namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 newtype Member = (SyntaxKind, string);
 
@@ -6988,7 +6899,6 @@ const Member MEMBER_YIELD_OPERAND = tuple(KIND_YIELD_EXPRESSION, 'yield_operand'
 namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 enum NodeElaboratedGroup: int {
   SYNTAX = 0;
   TOKEN = 1;
@@ -7001,7 +6911,6 @@ enum NodeElaboratedGroup: int {
 namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 enum NodeGroup: int {
   SYNTAX = 0;
   TOKEN = 1;
@@ -7011,7 +6920,6 @@ enum NodeGroup: int {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/PhaException.hack /////
 namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use type Exception;
 
@@ -7029,7 +6937,6 @@ interface PhaException {
 namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 enum RetainTrivia: int {
   NEITHER = 0;
   LEADING = 1;
@@ -7040,7 +6947,6 @@ enum RetainTrivia: int {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/Index.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Vec};
 use namespace HTL\Pha;
@@ -7124,7 +7030,6 @@ final class Index<Tnode as Node, Tkind as Kind> {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Dict};
 
 final class InternedStringStorage<T as Kind> {
@@ -7171,7 +7076,6 @@ final class InternedStringStorage<T as Kind> {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/ParseContext.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\Str;
 use namespace HTL\Pha;
@@ -7354,7 +7258,6 @@ final class ParseContext {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Str};
 use namespace HTL\Pha;
 
@@ -7434,7 +7337,6 @@ final class PatchNode {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
 
@@ -7513,7 +7415,6 @@ final class PatchSet {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 use namespace HTL\Pha;
 use type Exception;
 
@@ -7527,7 +7428,6 @@ final class PhaException extends Exception implements Pha\PhaException {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/Replacement.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HTL\Pha;
 
@@ -7562,7 +7462,6 @@ final class Replacement {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/Structs.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Dict, Keyset, Vec};
 use namespace HTL\Pha;
@@ -7634,7 +7533,6 @@ final class Structs {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/TranslationUnit.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{Str, Vec};
 
@@ -7800,7 +7698,6 @@ final class TranslationUnit {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 use namespace HTL\Pha;
 
 type Kind = Pha\Kind;
@@ -7812,7 +7709,6 @@ type SyntaxKind = Pha\SyntaxKind;
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/enforce.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\Str;
 use function vsprintf;
@@ -7837,7 +7733,6 @@ function enforce(
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/grammatical_nth.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 function grammatical_nth(int $n)[]: string {
   // Can't just use NumberFormatter, because it has no contexts.
@@ -7868,7 +7763,6 @@ function grammatical_nth(int $n)[]: string {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\C;
 
 /**
@@ -7893,7 +7787,6 @@ function find_lastx<T>(
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 newtype Context = ParseContext;
 
 function context_hide(ParseContext $ctx)[]: Context {
@@ -7908,7 +7801,6 @@ function context_reveal(Context $ctx)[]: ParseContext {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 newtype IndexMask as arraykey = int;
 
 function index_mask_from_int(int $int)[]: IndexMask {
@@ -7922,7 +7814,6 @@ function index_mask_to_int(IndexMask $index_mask)[]: int {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/InternedString.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 newtype InternedString<+T> as arraykey = int;
 
@@ -7946,7 +7837,6 @@ function interned_string_to_int(InternedString<mixed> $interned_string)[]: int {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 newtype KindIdentity as arraykey = int;
 
 function kind_identity_from_int(int $int)[]: KindIdentity {
@@ -7960,7 +7850,6 @@ function kind_identity_to_int(KindIdentity $kind_identity)[]: int {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/Node.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\Math;
 
@@ -8054,7 +7943,6 @@ function trivium_from_node(NillableNode $node)[]: Trivium {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 newtype NodeId as arraykey = int;
 
 function node_id_add(NodeId $node_id, int $n)[]: NodeId {
@@ -8087,7 +7975,6 @@ function node_id_from_int(int $node_id)[]: NodeId {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 newtype Patch = PatchNode;
 
 function patch_node_hide(PatchNode $patch_node)[]: Patch {
@@ -8102,7 +7989,6 @@ function patch_node_reveal(Patch $patch)[]: PatchNode {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 newtype Patches = PatchSet;
 
 function patch_set_hide(PatchSet $patch_set)[]: Patches {
@@ -8116,7 +8002,6 @@ function patch_set_reveal(Patches $patches)[]: PatchSet {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/ReadyToSerialize.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 /**
  * You are not allowed to observe the `mixed` values, aside from serializing them.
@@ -8145,7 +8030,6 @@ type ReadyToSerializeScript = shape(
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 newtype Script = TranslationUnit;
 
 function translation_unit_hide(TranslationUnit $tu)[]: Script {
@@ -8159,7 +8043,6 @@ function translation_unit_reveal(Script $script)[]: TranslationUnit {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/SearchIndex.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 newtype KindIndex<Tnode as Node, Tkind as Kind> = Index<Tnode, Tkind>;
 
@@ -8179,7 +8062,6 @@ function index_reveal<Tnode as Node, Tkind as Kind>(
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 newtype SiblingId as arraykey = int;
 
 function sibling_id_add(SiblingId $sibling_id, int $n)[]: SiblingId {
@@ -8197,7 +8079,6 @@ function sibling_id_from_int(int $int)[]: SiblingId {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/SourceByteOffset.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 newtype SourceByteOffset = int;
 
@@ -8227,7 +8108,6 @@ function source_byte_offset_is_less_than_or_equal(
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 newtype SourceRange = (SourceByteOffset, ?SourceByteOffset);
 
 function source_range_hide(
@@ -8245,7 +8125,6 @@ function source_range_reveal(
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/Intermediate.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HTL\Pha;
 
@@ -8338,7 +8217,6 @@ final class Intermediate {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 enum IntermediateGroup: int {
   LIST = 0;
   MISSING = 1;
@@ -8350,7 +8228,6 @@ enum IntermediateGroup: int {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/Wrapped.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HTL\Pha;
 
@@ -8407,7 +8284,6 @@ final class Wrapped {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Vec;
 
 function create_intermediate_list(
@@ -8432,7 +8308,6 @@ function create_intermediate_list(
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 function create_intermediate_missing(Wrapped $next, int $id)[]: Intermediate {
   return $next->createMissing($id);
 }
@@ -8440,7 +8315,6 @@ function create_intermediate_missing(Wrapped $next, int $id)[]: Intermediate {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediate_syntax.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HTL\Pha;
 
@@ -8470,7 +8344,6 @@ function create_intermediate_syntax(
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediate_token.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Str};
 use namespace HTL\Pha;
@@ -8523,7 +8396,6 @@ function create_intermediate_token(
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Str;
 use namespace HTL\Pha;
 
@@ -8552,7 +8424,6 @@ function create_intermediate_trivia(
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediates.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Vec};
 use namespace HTL\Pha;
@@ -8632,7 +8503,6 @@ function create_intermediates(
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\Math;
 
 function create_node(
@@ -8711,7 +8581,6 @@ function create_node(
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\{C, Str, Vec};
 
 function create_translation_unit(
@@ -8780,7 +8649,6 @@ function create_translation_unit(
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 use namespace HH\Lib\C;
 
 function extract_ranges(
@@ -8801,7 +8669,6 @@ function extract_ranges(
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/layout_siblings.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{Dict, Vec};
 
@@ -8832,7 +8699,6 @@ function layout_siblings(
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/layout_source_order.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Dict};
 
@@ -8878,7 +8744,6 @@ function layout_source_order(
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/private_node_functions.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\Math;
 use namespace HTL\Pha;
@@ -9118,7 +8983,6 @@ function trivium_get_source_byte_offset(Trivium $trivium)[]: SourceByteOffset {
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 use namespace HTL\Pha;
 
 function retain_trivia_keep_leading_and_trailing(
@@ -9139,7 +9003,6 @@ function retain_trivia_keep_leading_and_trailing(
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/type_assert.hack /////
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HTL\Pha;
 
@@ -9212,7 +9075,6 @@ function as_vec_of_trivium_kind(mixed $raw)[]: vec<TriviumKind> {
 namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 function create_context()[]: Context {
   return new _Private\ParseContext(
     new _Private\Structs(dict[]),
@@ -9226,7 +9088,6 @@ function create_context()[]: Context {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/create_kind_index.hack /////
 namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 function create_syntax_kind_index(Script $script)[]: SyntaxIndex {
   $c = _Private\translation_unit_reveal($script)->getParseContext();
@@ -9252,7 +9113,6 @@ function create_trivium_kind_index(Script $script)[]: TriviumIndex {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/materialize.hack /////
 namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 function dematerialize_context(Context $ctx)[]: ReadyToSerializeContext {
   return _Private\context_reveal($ctx)
@@ -9287,7 +9147,6 @@ function materialize_script(
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/node_functions.hack /////
 namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 use namespace HH\Lib\{C, Dict, Math, Str, Vec};
 
@@ -10660,7 +10519,6 @@ function trivium_get_parent(Script $script, Trivium $node)[]: Token {
 namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 use namespace HH;
 
 function parse(string $source, Context $ctx)[]: (Script, Context) {
@@ -10672,7 +10530,6 @@ function parse(string $source, Context $ctx)[]: (Script, Context) {
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/parse_from_tree.hack /////
 namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
-
 
 /**
  * @param $parse_tree ought to be the `$ffp_parsed['parse_tree']` of a script.
@@ -10712,7 +10569,6 @@ function parse_from_tree(
 namespace HTL\Pha;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
-
 type Context = _Private\Context;
 type NillableNode = _Private\NillableNode;
 type NillableSyntax = _Private\NillableSyntax;
@@ -10742,7 +10598,6 @@ const NillableTrivium NIL_TRIVIUM = _Private\NIL_TRIVIUM;
 ///// vendor/hershel-theodore-layton/pragma/src/pragma.hack /////
 namespace HTL\Pragma;
 /** pragma is MIT licensed, see /LICENSE. */
-
 
 /**
  * @package The `pragma(...)` directive and `<<Pragmas(...)>>`

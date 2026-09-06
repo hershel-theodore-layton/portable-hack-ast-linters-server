@@ -16,7 +16,7 @@ function rewrite_with_wrapping_namespace(
   return
     Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_DECLARATION)
     |> C\onlyx($$)
-    |> Pha\patch_node($$, '', shape('trivia' => Pha\RetainTrivia::BOTH))
+    |> Pha\patch_node($$, '', shape('trivia' => Pha\RetainTrivia::LEADING))
     |> Pha\patches($script, $$)
     |> Pha\patches_apply($$)
     |> Str\format(
