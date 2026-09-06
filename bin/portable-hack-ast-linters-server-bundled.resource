@@ -510,7 +510,7 @@ final class NameResolver {
       return tuple($compressed_code, NIL);
     }
 
-    // xhp names are a special case, they use `:` as a namespace separator.
+    // XHP names are a special case, they use `:` as a namespace separator.
     // By making those names look like regular qualified names,
     // we can treat them as normal names for the purposes of resolving names.
     $compressed_code = Str\replace($compressed_code, ':', '\\');
@@ -563,9 +563,9 @@ final class NameResolver {
     }
 
     if ($kind === UseKind::NAMESPACE) {
-      $aliassed_namespace = idx($this->aliasedNamespaces, $first_part);
-      if ($aliassed_namespace is nonnull) {
-        return tuple($aliassed_namespace.$suffix, NIL);
+      $aliased_namespace = idx($this->aliasedNamespaces, $first_part);
+      if ($aliased_namespace is nonnull) {
+        return tuple($aliased_namespace.$suffix, NIL);
       }
     }
 
@@ -909,15 +909,15 @@ use type HTL\Pha\_Private\{NameResolver, NamespaceResolution, UseInfo, UseKind};
  * So for example, mapping `Vec` to `HH\Lib\Vec` acts as if every file started
  * with `if (!exists(use clause "Vec")) use namespace HH\Lib\Vec as Vec;`.
  * You can pass the result of `\ini_get("hhvm.aliased_namespaces")` to make
- * `resolve_names` take your pre resolved names into account.
+ * `resolve_name` take your pre-resolved names into account.
  *
  * @param $auto_imported_functions a list of functions that are available in any
- * hack file without an explicit use clause. If your hhvm version has different
- * auto imported names, and you care, you can pass a different list of names.
+ * Hack file without an explicit use clause. If your HHVM version has different
+ * auto-imported names, and you care, you can pass a different list of names.
  *
  * @param $auto_imported_types a list of types that are available in any
- * hack file without an explicit use clause. If your hhvm version has different
- * auto imported names, and you care, you can pass a different list of names.
+ * Hack file without an explicit use clause. If your HHVM version has different
+ * auto-imported names, and you care, you can pass a different list of names.
  */
 function create_name_resolver(
   Script $script,
@@ -950,7 +950,7 @@ function create_name_resolver(
     KIND_NAMESPACE_USE_DECLARATION,
     KIND_NAMESPACE_GROUP_USE_DECLARATION,
   );
-  $is_qualfied_name = create_syntax_matcher($script, KIND_QUALIFIED_NAME);
+  $is_qualified_name = create_syntax_matcher($script, KIND_QUALIFIED_NAME);
   $is_type = create_token_matcher($script, KIND_TYPE);
 
   $get_function_name = create_member_accessor($script, MEMBER_FUNCTION_NAME);
@@ -1210,7 +1210,7 @@ function create_name_resolver(
     |> Vec\map(
       $$,
       $n ==> node_get_ancestors($script, $n)
-        |> C\find($$, $is_qualfied_name) ?? $n,
+        |> C\find($$, $is_qualified_name) ?? $n,
     )
     |> Vec\unique_by($$, node_get_id<>)
     |> Dict\pull($$, $resolve_name, node_get_id<>)
@@ -1646,7 +1646,7 @@ function dont_await_in_a_loop_linter(
   $linter = __FUNCTION__;
 
   // Only includes possible direct statement parents of the await expression.
-  // Those marked with `// (...)` indicate that the await must be a expression
+  // Those marked with `// (...)` indicate that the await must be an expression
   // inside of the parens, not the body, since these structures usually have
   // a statement list `{}` as their body. If you do something like:
   // `if (...) await x;` this fails to hold.
@@ -1727,8 +1727,8 @@ function dont_await_in_a_loop_linter(
       $statement = Pha\node_get_ancestors($script, $await)
         |> C\findx($$, $is_statement);
 
-      // Allow an await in a loop if the this block ends with a
-      // return or throw statement, since no effective parrallism is lost.
+      // Allow an await in a loop if this block ends with a
+      // return or throw statement, since no effective parallelism is lost.
       return Pha\node_get_parent($script, $statement)
         |> Pha\node_get_children($script, $$)
         |> Vec\slice($$, C\find_key($$, $n ==> $n === $statement) as nonnull)
@@ -2236,10 +2236,10 @@ function group_use_statements_linter(
 )[]: vec<LintError> {
   $linter = __FUNCTION__;
 
-  // If you have multiple namespaces per file, "why else use namespace blocks?",
-  // this linter will ignore this file. This is no better than hhast, which will
+  // If you have multiple namespaces per file, "why else would you use namespace blocks?",
+  // this linter will ignore this file. This is no better than HHAST, which will
   // report errors and suggest fixes that change the semantics: hhvm/hhast#307.
-  // I have decided that I won't add in logic to support namespace nesting.
+  // I have decided that I won't add logic to support namespace nesting.
   // I won't object to a PR that adds this support.
   if (
     C\any(Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_BODY))
@@ -2401,7 +2401,7 @@ function license_header_linter(
         $pragma_map,
         C\firstx($$),
         $linter,
-        'Expected the find your license header at the top of this file: '.
+        'Expected to find your license header at the top of this file: '.
         $expected_license_header,
         Pha\patches($script, Pha\patch_node(
           $first_thing,
@@ -2599,7 +2599,7 @@ function namespace_private_use_clause_linter(
 )[]: vec<LintError> {
   $linter = __FUNCTION__;
 
-  // If you have multiple namespaces per file, "why else use namespace blocks?",
+  // If you have multiple namespaces per file, "why else would you use namespace blocks?",
   // this linter will ignore this file. I won't object to a PR that adds this support.
   if (
     C\any(Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_BODY))
@@ -2690,7 +2690,7 @@ function no_elseif_linter(
       $f,
       $linter,
       'Use else if instead of elseif. '.
-      'This syntax will be removed in a future version of hhvm.',
+      'This syntax will be removed in a future version of HHVM.',
       Pha\patches($script, Pha\patch_node(
         $f,
         'else if',
@@ -2762,9 +2762,9 @@ function no_empty_statements_linter(
     // The `|>` operator has no side-effect, but this common idiom needs to be ok.
     // `some_cumbersome_expr |> side_effecty_function($$);`
     // This is preferred when this results in easier to read code.
-    // Is is not always possible to use a discard statement `$_ = ...`,
+    // It is not always possible to use a discard statement `$_ = ...`,
     // since the type of this expression may be void.
-    // Assigned void to `$_` is not allowed.
+    // Assigning void to `$_` is not allowed.
     Pha\KIND_BAR_GREATER_THAN,
   );
 
@@ -3142,15 +3142,15 @@ function prefer_single_quoted_string_literals_linter(
 
   // hackfmt-ignore
   $escape_sequences = vec[
-    '\\e', // ansi escape
+    '\\e', // ANSI escape
     '\\f', // form feed
     '\\t', // horizontal tab
     '\\r', // carriage return
     '\\n', // newline
-    '\\u', // unicode codepoint
+    '\\u', // Unicode code point
     '\\v', // vertical tab
     '\\x', // hex
-    "'", // single quote,
+    "'", // single quote
     '\$', // anti-variable interpolation
     '\\0', '\\1', '\\2', '\\3', '\\4', '\\5', '\\6', '\\7' // octal
   ];
@@ -3472,7 +3472,7 @@ function unused_variable_linter(
   $is_assignment_expression = $node ==> $is_binary_expression($node) &&
     $is_assignment_operator($get_binop_operator($node));
 
-  $is_promoted_contructor_parameter = (Pha\Token $token) ==>
+  $is_promoted_constructor_parameter = (Pha\Token $token) ==>
     Pha\node_get_syntax_ancestors($script, $token)
     |> C\find($$, $is_parameter_declaration)
     |> $$ is nonnull && !Pha\is_missing($get_parameter_visibility($$));
@@ -3572,7 +3572,7 @@ function unused_variable_linter(
 
       if ($is_scope($node)) {
         $ret['scopes'][] = $node;
-        // Any assignment to a inout variable should be treated as a use.
+        // Any assignment to an `inout` variable should be treated as a use.
         // Reason being, they have effects on the outer scopes / the caller.
         if (
           !$is_param &&
@@ -3656,7 +3656,7 @@ function unused_variable_linter(
 
   $is_unused = (Support\TUnusedVariableLinterAfterShadowing $a) ==>
     !Str\starts_with($a['var_name'], '$_') &&
-    !$is_promoted_contructor_parameter($a['var']) &&
+    !$is_promoted_constructor_parameter($a['var']) &&
     !C\any($a['owners'], $is_abstract_scope) &&
     !C\any(
       idx($usages_by_name, $a['var_name'], vec[]),
@@ -3854,7 +3854,7 @@ use namespace HTL\Pha;
 // This linter implements no_white_space_at_end_of_line_linter.
 //
 // It also doubles as consistent_line_endings_linter.
-// In a unix line ending world, `\r\n` is whitespace at eol, since `\r` is whitespace.
+// In a Unix line ending world, `\r\n` is whitespace at EOL, since `\r` is whitespace.
 //
 // It also triples as must_have_newline_at_end_of_file_linter.
 //
@@ -4118,7 +4118,7 @@ function context_list_must_be_explicit_on_io_functions_linter(
         $linter,
         'This function performs I/O (it contains await), '.
         'so this is likely a good candidate for `[defaults]`.'.
-        'If this lint is wrong, add the proper context list.',
+        ' If this lint is wrong, add the proper context list.',
         Pha\patches(
           $script,
           Pha\patch_node(
@@ -4164,7 +4164,7 @@ function count_expression_can_be_simplified_linter(
     Pha\KIND_EXCLAMATION_EQUAL_EQUAL,
   );
   $is_less_than = Pha\create_token_matcher($script, Pha\KIND_LESS_THAN);
-  $is_less_than_or_greater =
+  $is_less_than_or_equal =
     Pha\create_token_matcher($script, Pha\KIND_LESS_THAN_EQUAL);
   $is_prefix_unary_expression =
     Pha\create_syntax_matcher($script, Pha\KIND_PREFIX_UNARY_EXPRESSION);
@@ -4198,7 +4198,7 @@ function count_expression_can_be_simplified_linter(
     if ($is_less_than($n)) {
       return Support\ComparisonKind::LESS_THAN;
     }
-    if ($is_less_than_or_greater($n)) {
+    if ($is_less_than_or_equal($n)) {
       return Support\ComparisonKind::LESS_THAN_OR_EQUAL;
     }
     if ($is_greater_than($n)) {
@@ -4238,7 +4238,7 @@ function count_expression_can_be_simplified_linter(
       return tuple('', null);
     }
 
-    // Need this because of yoda conditions `0 === C\count(...)`.
+    // Need this because of Yoda conditions `0 === C\count(...)`.
     // In Hack, `C\count(...) === 0` is canonical.
     $is_canonical = $get_binop_lhs($parent) === $call;
     $cmp = $is_canonical ? $get_binop_rhs($parent) : $get_binop_lhs($parent)
@@ -4601,10 +4601,10 @@ function getter_method_could_have_a_context_list_linter(
         |> Pha\node_get_code_compressed($script, $$)
         // This is a rather crude heuristic.
         // It matches `$this->it`, `$this->it as Type`, and `$this->it is Type`.
-        // The idea is to have little false positives.
+        // The idea is to have few false positives.
         // A false negative, such as `$this->it < 6` is fine.
-        // This could be a getter, but maybe this is simple
-        // as an implementation detail, who knows?
+        // This could be a getter, but maybe this is simply
+        // an implementation detail, who knows?
         |> Regex\matches($$, re'/^\$this->(\w)+$/');
     })
     |> Vec\map(
@@ -4632,6 +4632,51 @@ function getter_method_could_have_a_context_list_linter(
         ),
       ),
     );
+}
+
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/keywords_should_be_lowercase_linter.hack /////
+namespace HTL\PhaLinters;
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+
+
+use namespace HH\Lib\{Str, Vec};
+use namespace HTL\Pha;
+
+function keywords_should_be_lowercase_linter(
+  Pha\Script $script,
+  Pha\SyntaxIndex $_,
+  Pha\TokenIndex $token_index,
+  Pha\Resolver $_,
+  Pha\PragmaMap $pragma_map,
+)[]: vec<LintError> {
+  $linter = __FUNCTION__;
+
+  return Vec\concat(
+    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_BOOLEAN_LITERAL),
+    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_NULL_LITERAL),
+  )
+    |> Vec\filter($$, $token ==> {
+      $text = Pha\token_get_text($script, $token);
+      return $text !== Str\lowercase($text);
+    })
+    |> Vec\map($$, $token ==> {
+      $lowercase = Pha\token_get_text($script, $token) |> Str\lowercase($$);
+      return LintError::createWithPatches(
+        $script,
+        $pragma_map,
+        $token,
+        $linter,
+        'Use the canonical lowercase spelling `'.$lowercase.'`.',
+        Pha\patches(
+          $script,
+          Pha\patch_node(
+            $token,
+            $lowercase,
+            shape('trivia' => Pha\RetainTrivia::BOTH),
+          ),
+        ),
+      );
+    });
 }
 
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/lambda_parameter_list_parentheses_can_be_removed_linter.hack /////
@@ -4932,9 +4977,9 @@ function shape_type_additional_field_intent_should_be_explicit_linter(
         $pragma_map,
         $shape,
         $linter,
-        'The intent of whether this shape accepts additional fields is not expliticly expressed. '.
+        'The intent of whether this shape accepts additional fields is not explicitly expressed. '.
         'If you intended to accept these fields, and any number of unspecified fields, '.
-        'add `, ...` after the last field. If you can not want to accept additional fields, add '.
+        'add `, ...` after the last field. If you do not want to accept additional fields, add '.
         $closed_shape_marker.
         ' before the closing parenthesis.',
         Pha\patches(
@@ -5542,7 +5587,7 @@ namespace HTL\PhaLinters\Support;
 
 /**
  * Returns a new vec with all elements up until and including the first element
- * for which the does not predicate hold.
+ * for which the predicate does not hold.
  * If the predicate holds for all elements, all elements are returned.
  *
  * ```
@@ -6972,7 +7017,7 @@ use type Exception;
 
 /**
  * The exception thrown for all the known reachable error states.
- * If an other exception is thrown from this library,
+ * If another exception is thrown from this library,
  * this is a bug and you may report it as such.
  */
 interface PhaException {
@@ -7002,7 +7047,7 @@ use namespace HTL\Pha;
 
 final class Index<Tnode as Node, Tkind as Kind> {
   /**
-   * @param $nodes are sorted by kind, then sub sorted by source order.
+   * @param $nodes are sorted by kind, then by source order within each kind.
    * @param $ranges values are (start, length).
    *   The order is interned string numeric order, but this is not relied upon.
    */
@@ -7086,10 +7131,6 @@ final class InternedStringStorage<T as Kind> {
   private vec<T> $items;
   private dict<T, int> $flipped;
   private int $size;
-
-  /**
-   * @param $items is keyed by interned string (0..n-1).
-   */
   public function __construct(
     private keyset<T> $asKeyset,
     private (function(string)[]: T) $castFunc,
@@ -7265,7 +7306,7 @@ final class ParseContext {
 
   /**
    * The encoding does not need to make sense, as long as it is not ambiguous.
-   * json_encode_pure is wasn't available in 4.102, so something inline was done.
+   * json_encode_pure wasn't available in 4.102, so something inline was done.
    * Changing this breaks backwards compatibility with VERSION=2 serialization.
    * This can be removed when VERSION=3 comes around.
    *
@@ -7845,7 +7886,7 @@ function find_lastx<T>(
     }
   }
 
-  invariant_violation('%s: Could\'t find the target value.', __FUNCTION__);
+  invariant_violation('%s: Couldn\'t find the target value.', __FUNCTION__);
 }
 
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/Context.hack /////
@@ -8376,7 +8417,7 @@ function create_intermediate_list(
   $list = $next->getItem();
 
   // Could be a dict or a vec, depending on json_decode() options...
-  // This is a square bracket array literal in the json,
+  // This is a square bracket array literal in the JSON,
   // but the default for `\json_decode()` remains to create a dict.
   // If users decode from `HH\ffp_parse_string_native(...)` and json_decode()
   // with `\JSON_DECODE_HACK_ARRAYS`, we'd see vecs here.
@@ -8768,7 +8809,7 @@ use namespace HH\Lib\{Dict, Vec};
  * Get the children of syntax and list nodes.
  * For other nodes, the children are implied:
  *  - Token -> All trivia are sequential
- *  - Trivium / Missing -> Has no children
+ *  - Trivium / Missing -> Have no children
  *
  * @return (dict<parent_id, (start, end)>, vec<siblings>)
  */
@@ -8888,8 +8929,8 @@ const int LIST_OR_MISSING_TAG_AFTER_SHIFT =
 const int MAX_INTERNED_STRING = FIELD_1_MASK;
 
 /**
- * Careful, if `$kind` is `KIND_NODE_LIST` or `KIND_MISSING`, you'll get a non
- * matching identity.
+ * Careful, if `$kind` is `KIND_NODE_LIST` or `KIND_MISSING`, you'll get a
+ * non-matching identity.
  */
 function create_syntax_identity(
   Script $script,
@@ -9329,7 +9370,7 @@ function as_token_or_nil(NillableNode $node)[]: NillableToken {
 }
 
 /**
- * @throws If $node is not Trivium.
+ * @throws Iff $node is not Trivium.
  */
 function as_trivium(NillableNode $node)[]: Trivium {
   $ret = as_trivium_or_nil($node);
@@ -9448,7 +9489,7 @@ function create_matcher(
 /**
  * An alternative to `syntax_member($script, $node, $member)`.
  * This version returns a callable that takes `$node`.
- * It can also pick the "right" member to create on the fly polymorphism.
+ * It can also pick the "right" member to enable polymorphism on the fly.
  *
  * ```
  * $get_clauses = create_member_accessor($script, dict[
@@ -9685,7 +9726,7 @@ function list_get_items_of_children(
 
 /**
  * Ancestors are returned in opposite source order.
- * So the first node is the parent, the second is the grand parent, etc.
+ * So the first node is the parent, the second is the grandparent, etc.
  *
  * Special case: SCRIPT_NODE is its own parent, but this function has to have a
  * termination condition. For this reason, the ancestor chain is terminated at
@@ -9781,7 +9822,7 @@ function node_get_child_at_offset(
         return NIL;
       }
 
-      // slow path: Can not jump to child, must verify every intermediate node
+      // slow path: Cannot jump to child, must verify every intermediate node
       // is a trivium, to ensure the trivium returned is a child of `$node`.
       $parent_id = node_get_id($node);
       $child_id = $parent_id;
@@ -9889,7 +9930,7 @@ function node_get_code(Script $script, NillableNode $node)[]: string {
 }
 
 /**
- * Returns the code with all the tokens glued together, (no comments / whitespace).
+ * Returns the code with all the tokens glued together (no comments or whitespace).
  *
  * The text returned is not code that can be reparsed.
  * This canonicalizes code by stripping comments and whitespace, but in doing so
@@ -10227,7 +10268,7 @@ function node_get_parent(Script $script, Node $node)[]: Node {
       |> $tu->getNodeByIdx($$);
   }
 
-  // slow path: Can not find my parent from bits, must find myself by selecting
+  // slow path: Cannot find my parent from bits, must find myself by selecting
   // an ancestor each time. The last ancestor before me is my parent.
   $source_order = node_get_source_order($node);
   $next = SCRIPT_NODE;
@@ -10267,7 +10308,7 @@ function node_get_source_range(Script $script, Node $node)[]: SourceRange {
     // My reasoning goes:
     //  1. Every Syntax (except for Missing) has at least one member.
     //  2. Each of these members is either a Syntax or a Token.
-    //  3. If the last member is a Syntax, goto 1.
+    //  3. If the last member is a Syntax, go to 1.
     //  4. You'll now either have a Token or a missing.
     //  5. If you have a Token, it will always have a token-text-trivium.
     //  6. If you have a Missing, and there is no end-of-file token after you,
@@ -10288,7 +10329,7 @@ function node_get_source_range(Script $script, Node $node)[]: SourceRange {
 
 /**
  * The ancestors are returned in opposite source order,
- * so parents precede grand parents, grand parents precede great grand parents.
+ * so parents precede grandparents, grandparents precede great-grandparents.
  *
  * The returned ancestors contain only Syntaxes, any ancestors that are not
  * Syntaxes are skipped.
@@ -10568,7 +10609,8 @@ function syntax_get_parent(Script $script, Syntax $node)[]: Syntax {
 /**
  * @see `create_member_accessor`, which is preferred over this function.
  *      `syntax_member` rediscovers offsets with each invocation.
- *      `create_member_accessor` precomputes offsets string comparisons.
+ *      `create_member_accessor` precomputes offsets instead of doing string
+ *      comparisons.
  */
 function syntax_member(Script $script, Syntax $node, Member $member)[]: Node {
   $ii = 0;
