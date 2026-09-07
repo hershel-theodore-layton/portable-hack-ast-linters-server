@@ -8,6 +8,16 @@ use function dirname, file_exists;
 
 <<__EntryPoint>>
 async function main_async()[defaults]: Awaitable<void> {
+  $cli_argv = HH\global_get('argv') as ?vec<_>;
+  if (is_likely_cli() && idx($cli_argv, 1) === 'sign-file') {
+    invariant(
+      $cli_argv is nonnull && C\count($cli_argv) === 3,
+      'Usage: pha-sign-hack-source.sh FILE',
+    );
+    await sign_file_async($cli_argv[2] as string);
+    return;
+  }
+
   if (file_exists(dirname(__DIR__).'/.hhvmconfig.hdf')) {
     $project_root = dirname(__DIR__) as string;
   } else {

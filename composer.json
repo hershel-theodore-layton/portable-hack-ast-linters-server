@@ -6,6 +6,7 @@
     "hhvm": ">=4.153"
   },
   "bin": [
-    "bin/pha-linters-server.sh"
+    "bin/pha-linters-server.sh",
+    "bin/pha-sign-hack-source.sh"
   ]
 }

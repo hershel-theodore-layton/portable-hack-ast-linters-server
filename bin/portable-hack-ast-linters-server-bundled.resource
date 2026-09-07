@@ -206,6 +206,21 @@ function encode_errors_as_vscode_compatible_json(
     ) as string;
 }
 
+///// src/lib/is_likely_cli.hack /////
+namespace HTL\PhaLintersServer;
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
+
+use namespace HH\Lib\IO;
+
+/**
+ * If request_error is available, we are in CLI mode.
+ * This is a simple check to make sure that the web server
+ * does not accidentally expose signing functionality.
+ */
+function is_likely_cli()[defaults]: bool {
+  return IO\request_error() is nonnull;
+}
+
 ///// src/lib/lint_all_files.hack /////
 namespace HTL\PhaLintersServer;
 /** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
@@ -265,6 +280,27 @@ function lint_hack_code(
   )
     |> Vec\flatten($$)
     |> Vec\filter($$, $e ==> !$e->isIgnored());
+}
+
+///// src/lib/sign_file.hack /////
+namespace HTL\PhaLintersServer;
+/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
+
+use namespace HH\Lib\File;
+use namespace HTL\{Pha, PhaLinters};
+
+async function sign_file_async(string $path)[defaults]: Awaitable<void> {
+  $file = File\open_read_write($path);
+  using $file->closeWhenDisposed();
+  using $file->tryLockx(File\LockType::EXCLUSIVE);
+  $source = await $file->readAllAsync();
+  list($script, $_) = Pha\parse($source, Pha\create_context());
+  $index = Pha\create_syntax_kind_index($script);
+  $pragmas = Pha\create_pragma_map($script, $index);
+  $signed = PhaLinters\Support\insert_digest($script, $pragmas);
+  $file->seek(0);
+  $file->truncate();
+  await $file->writeAllAsync($signed);
 }
 
 ///// src/lib/snif_license_header_async.hack /////
@@ -334,6 +370,16 @@ use function dirname, file_exists;
 
 <<__EntryPoint>>
 async function main_async()[defaults]: Awaitable<void> {
+  $cli_argv = HH\global_get('argv') as ?vec<_>;
+  if (is_likely_cli() && idx($cli_argv, 1) === 'sign-file') {
+    invariant(
+      $cli_argv is nonnull && C\count($cli_argv) === 3,
+      'Usage: pha-sign-hack-source.sh FILE',
+    );
+    await sign_file_async($cli_argv[2] as string);
+    return;
+  }
+
   if (file_exists(dirname(__DIR__).'/.hhvmconfig.hdf')) {
     $project_root = dirname(__DIR__) as string;
   } else {

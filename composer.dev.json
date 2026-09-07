@@ -8,5 +8,5 @@
     "hershel-theodore-layton/portable-hack-ast-extras": "dev-master",
     "hershel-theodore-layton/portable-hack-ast-linters": "dev-master"
   },
-  "bin": ["bin/pha-linters-server.sh"]
+  "bin": ["bin/pha-linters-server.sh", "bin/pha-sign-hack-source.sh"]
 }
