@@ -29,6 +29,7 @@ async function build_async()[defaults]: Awaitable<void> {
         !Str\contains($f->getSourceText(), '__EntryPoint') ||
         $f->getPath() === 'src/main.hack'
       ) &&
+        !Str\starts_with($f->getPath(), 'api/') &&
         !Str\contains($f->getPath(), 'portable-hack-ast/bin/') &&
         !Str\contains($f->getPath(), 'src/hack-compact/'),
     )

@@ -138,27 +138,3 @@ This will rebuild, recompile and start the lint-server.
     If you are using VSCode, download and install the `.vsix` file.
     If you are using a VSCode fork, such as VSCodium, you can find the
     extension in the extension search tab, since VSCode forks use open-vsx.
-
-### Signing generated Hack source
-
-After generating and formatting a file, sign it in place:
-
-```sh
-vendor/bin/pha-sign-hack-source.sh path/to/generated.hack
-```
-
-The generator must include this import and an empty digest pragma:
-
-```hack
-use type HTL\Pragma\Pragmas;
-
-<<file: Pragmas(vec['PhaLinters', 'digest:'])>>
-```
-
-The command uses the bundled linter support, so generators do not need a
-build-time dependency on `portable-hack-ast-linters`. It rejects missing or
-nonempty digest pragmas without changing the file. Regenerate the source before
-signing it again, and perform all formatting before signing. The digest lets the
-linter recognize generated source and detect subsequent manual edits.
-
-Signing is available only through CLI execution, not HTTP requests.
