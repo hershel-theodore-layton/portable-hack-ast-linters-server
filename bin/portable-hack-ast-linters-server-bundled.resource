@@ -41,7 +41,6 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
     PhaLinters\camel_cased_methods_underscored_functions_linter<>,
     PhaLinters\concat_merge_or_union_expression_can_be_simplified_linter<>,
     PhaLinters\context_list_must_be_explicit_linter<>,
-    PhaLinters\context_list_must_be_explicit_on_io_functions_linter<>,
     PhaLinters\count_expression_can_be_simplified_linter<>,
     PhaLinters\dict_literal_keys_must_be_unique_linter<>,
     PhaLinters\dont_await_in_a_loop_linter<>,
@@ -74,6 +73,8 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
     PhaLinters\prefer_require_once_linter<>,
     PhaLinters\prefer_semicolon_bodied_namespace_linter<>,
     PhaLinters\prefer_single_quoted_string_literals_linter<>,
+    PhaLinters\prefer_use_clause_over_fully_qualified_names_linter<>
+      |> PhaLinters\Support\disable_in_generated_source($$),
     PhaLinters\region_comments_must_be_balanced_linter<>,
     PhaLinters\shout_case_enum_members_linter<>,
     PhaLinters\solitary_escape_sequences_should_be_disambiguated_linter<>,
@@ -81,7 +82,9 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
     PhaLinters\unused_pipe_variable_linter<>,
     PhaLinters\unused_use_clause_linter<>,
     PhaLinters\unused_variable_linter<>,
+    PhaLinters\use_statement_alphabetization_linter<>,
     PhaLinters\use_statement_could_be_removed_linter<>,
+    PhaLinters\use_statement_order_linter<>,
     PhaLinters\use_statement_with_as_linter<>,
     PhaLinters\use_statement_with_leading_backslash_linter<>,
     PhaLinters\use_statement_without_kind_linter<>,
@@ -158,6 +161,7 @@ namespace HTL\PhaLintersServer;
 
 use namespace HH\Lib\Vec;
 use namespace HTL\{Pha, PhaLinters};
+use function json_encode_pure;
 use const JSON_UNESCAPED_SLASHES, JSON_UNESCAPED_UNICODE;
 
 function encode_errors_as_vscode_compatible_json(
@@ -195,7 +199,7 @@ function encode_errors_as_vscode_compatible_json(
     ),
   )
     |> Vec\flatten($$)
-    |> \json_encode_pure(
+    |> json_encode_pure(
       $$,
       inout $_json_encode_error,
       JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
@@ -3364,8 +3368,10 @@ function unused_variable_linter(
   $is_lambda = $build_matcher(Pha\KIND_LAMBDA_EXPRESSION);
   $is_lambda_signature = $build_matcher(Pha\KIND_LAMBDA_SIGNATURE);
   $is_list_expression = $build_matcher(Pha\KIND_LIST_EXPRESSION);
-  $is_member_selection_expression =
-    $build_matcher(Pha\KIND_MEMBER_SELECTION_EXPRESSION);
+  $is_property_access = $build_matcher(
+    Pha\KIND_MEMBER_SELECTION_EXPRESSION,
+    Pha\KIND_SCOPE_RESOLUTION_EXPRESSION,
+  );
   $is_methodish_declaration = $build_matcher(Pha\KIND_METHODISH_DECLARATION);
   $is_node_list = $build_matcher(Pha\KIND_NODE_LIST);
   $is_parameter_declaration = $build_matcher(Pha\KIND_PARAMETER_DECLARATION);
@@ -3376,6 +3382,8 @@ function unused_variable_linter(
     Pha\KIND_LAMBDA_EXPRESSION,
     Pha\KIND_METHODISH_DECLARATION,
   );
+  $is_scope_resolution_expression =
+    $build_matcher(Pha\KIND_SCOPE_RESOLUTION_EXPRESSION);
   $is_unary_expression = $build_matcher(
     Pha\KIND_PREFIX_UNARY_EXPRESSION,
     Pha\KIND_POSTFIX_UNARY_EXPRESSION,
@@ -3413,6 +3421,13 @@ function unused_variable_linter(
     Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_NAME);
   $get_parameter_visibility =
     Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_VISIBILITY);
+  $get_scope_resolution_name =
+    Pha\create_member_accessor($script, Pha\MEMBER_SCOPE_RESOLUTION_NAME);
+  $get_unary_operand = Pha\create_member_accessor(
+    $script,
+    Pha\MEMBER_PREFIX_UNARY_OPERAND,
+    Pha\MEMBER_POSTFIX_UNARY_OPERAND,
+  );
   $get_unary_operator = Pha\create_member_accessor(
     $script,
     Pha\MEMBER_PREFIX_UNARY_OPERATOR,
@@ -3442,7 +3457,7 @@ function unused_variable_linter(
     Pha\Token $var,
   ) ==> Pha\node_get_syntax_ancestors($script, $var)
     |> Support\vec_take_while_inclusive($$, $node ==> $node !== $assignment)
-    |> C\any($$, $is_member_selection_expression);
+    |> C\any($$, $is_property_access);
 
   $inout_scopes = Pha\index_get_nodes_by_kind($token_index, Pha\KIND_INOUT)
     |> Vec\map(
@@ -3462,6 +3477,16 @@ function unused_variable_linter(
     |> Dict\map($$, $shapes ==> Vec\map($shapes, $s ==> $s['scope']));
 
   $classify_use = ($variable): ?Support\TUnusedVariableLinterUsage ==> {
+    // `C::$property` makes `$property` look like a local, which it is not.
+    // `$class_name::$property` still means `$class_name` is a local.
+    $parent = Pha\token_get_parent($script, $variable);
+    if (
+      $is_scope_resolution_expression($parent) &&
+      $get_scope_resolution_name($parent) === $variable
+    ) {
+      return null;
+    }
+
     $ret = shape(
       'is_assignment' => false,
       'disposable_assignment' => null,
@@ -3487,10 +3512,14 @@ function unused_variable_linter(
       ) ||
       (
         $is_unary_expression($loop_node) &&
-        $is_plus_plus_or_minus_minus($get_unary_operator($loop_node))
+        $is_plus_plus_or_minus_minus($get_unary_operator($loop_node)) &&
+        Support\get_first_token($script, $get_unary_operand($loop_node)) ===
+          $variable &&
+        !$assignment_has_non_local_effects($loop_node, $variable)
       ) ||
       (
         $is_list_expression($loop_node) &&
+        !$assignment_has_non_local_effects($loop_node, $variable) &&
         // Only mark `$a` and `$c` as assigned: `$list($a[$b], $c)`
         C\any(
           $get_list_expr_members($loop_node)
@@ -5323,6 +5352,84 @@ function prefer_semicolon_bodied_namespace_linter(
     });
 }
 
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/prefer_use_clause_over_fully_qualified_names_linter.hack /////
+namespace HTL\PhaLinters;
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+
+use namespace HH\Lib\{C, Str};
+use namespace HTL\Pha;
+
+function prefer_use_clause_over_fully_qualified_names_linter(
+  Pha\Script $script,
+  Pha\SyntaxIndex $syntax_index,
+  Pha\TokenIndex $_,
+  Pha\Resolver $_,
+  Pha\PragmaMap $pragma_map,
+)[]: vec<LintError> {
+  $is_declaration = Pha\create_syntax_matcher(
+    $script,
+    Pha\KIND_NAMESPACE_DECLARATION_HEADER,
+    Pha\KIND_NAMESPACE_USE_DECLARATION,
+    Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
+  );
+  $is_function = Pha\create_syntax_matcher(
+    $script,
+    Pha\KIND_FUNCTION_CALL_EXPRESSION,
+    Pha\KIND_FUNCTION_POINTER_EXPRESSION,
+  );
+  $is_type = Pha\create_syntax_matcher(
+    $script,
+    Pha\KIND_CONSTRUCTOR_CALL,
+    Pha\KIND_GENERIC_TYPE_SPECIFIER,
+    Pha\KIND_SCOPE_RESOLUTION_EXPRESSION,
+    Pha\KIND_SIMPLE_TYPE_SPECIFIER,
+    Pha\KIND_TYPE_PARAMETER,
+  );
+
+  $errors = vec[];
+  foreach (
+    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_QUALIFIED_NAME) as
+      $node
+  ) {
+    $name = Pha\node_get_code_compressed($script, $node);
+    if (!Str\starts_with($name, '\\')) {
+      continue;
+    }
+
+    $ancestors = Pha\node_get_syntax_ancestors($script, $node);
+    if (C\any($ancestors, $is_declaration)) {
+      continue;
+    }
+
+    $name = Str\strip_prefix($name, '\\');
+    $separator = Str\search_last($name, '\\');
+    if ($separator is nonnull) {
+      $kind = 'namespace';
+      $import = Str\slice($name, 0, $separator);
+    } else {
+      $parent = C\firstx($ancestors);
+      $kind = $is_function($parent)
+        ? 'function'
+        : ($is_type($parent) ? 'type' : 'const');
+      $import = $name;
+    }
+
+    $errors[] = LintError::createWithoutPatches(
+      $script,
+      $pragma_map,
+      $node,
+      __FUNCTION__,
+      Str\format(
+        'Add a use clause for this; Consider `use %s %s;`.',
+        $kind,
+        $import,
+      ),
+    );
+  }
+
+  return $errors;
+}
+
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/region_comments_must_be_balanced_linter.hack /////
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
@@ -5467,6 +5574,7 @@ namespace HTL\PhaLinters;
 
 use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
+use function ctype_digit;
 
 function solitary_escape_sequences_should_be_disambiguated_linter(
   Pha\Script $script,
@@ -5498,7 +5606,7 @@ function solitary_escape_sequences_should_be_disambiguated_linter(
         $contents[0] === '\\' &&
         (
           C\contains_key($escape_chars, $contents[1]) ||
-          \ctype_digit($contents[1])
+          ctype_digit($contents[1])
         );
     })
     |> Vec\map(
@@ -5523,6 +5631,86 @@ function solitary_escape_sequences_should_be_disambiguated_linter(
             shape('trivia' => Pha\RetainTrivia::BOTH),
           ),
         ),
+      ),
+    );
+}
+
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/use_statement_alphabetization_linter.hack /////
+namespace HTL\PhaLinters;
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+
+use namespace HH\Lib\{C, Vec};
+use namespace HTL\Pha;
+
+function use_statement_alphabetization_linter(
+  Pha\Script $script,
+  Pha\SyntaxIndex $syntax_index,
+  Pha\TokenIndex $_,
+  Pha\Resolver $_,
+  Pha\PragmaMap $pragma_map,
+)[]: vec<LintError> {
+  $linter = __FUNCTION__;
+
+  $get_clauses =
+    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_CLAUSES)
+    |> Pha\returns_syntax($$);
+
+  $get_use_name =
+    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_NAME);
+
+  $get_uses_to_be_sorted = $use ==> $get_clauses($use)
+    |> Pha\list_get_items_of_children($script, $$);
+
+  $autofix = $use ==> {
+    $old_order = $get_uses_to_be_sorted($use);
+    $new_order = Vec\sort_by(
+      $old_order,
+      $c ==> Pha\as_syntax($c)
+        |> $get_use_name($$)
+        |> Pha\node_get_code_compressed($script, $$),
+    );
+    return Vec\zip($old_order, $new_order)
+      |> Vec\map(
+        $$,
+        $tuple ==> vec[
+          Pha\patch_node(
+            $tuple[0],
+            Pha\node_get_code_without_leading_or_trailing_trivia(
+              $script,
+              $tuple[1],
+            ),
+            shape('trivia' => Pha\RetainTrivia::BOTH),
+          ),
+        ],
+      )
+      |> Vec\flatten($$)
+      |> Pha\patches($script, ...$$);
+  };
+
+  return Pha\index_get_nodes_by_kind(
+    $syntax_index,
+    Pha\KIND_NAMESPACE_USE_DECLARATION,
+  )
+    |> Vec\filter(
+      $$,
+      $use ==> $get_uses_to_be_sorted($use)
+        |> Vec\map(
+          $$,
+          $clause ==> Pha\as_syntax($clause)
+            |> $get_use_name($$)
+            |> Pha\node_get_code_compressed($script, $$),
+        )
+        |> !C\is_sorted($$),
+    )
+    |> Vec\map(
+      $$,
+      $use ==> LintError::createWithPatches(
+        $script,
+        $pragma_map,
+        $use,
+        $linter,
+        'Use clauses should be sorted alphabetically.',
+        $autofix($use),
       ),
     );
 }
@@ -5663,6 +5851,115 @@ function use_statement_could_be_removed_linter(
     }
   }
 
+  return $errors;
+}
+
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/use_statement_order_linter.hack /////
+namespace HTL\PhaLinters;
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+
+use namespace HH\Lib\{C, Str, Vec};
+use namespace HTL\Pha;
+
+function use_statement_order_linter(
+  Pha\Script $script,
+  Pha\SyntaxIndex $syntax_index,
+  Pha\TokenIndex $_,
+  Pha\Resolver $_,
+  Pha\PragmaMap $pragma_map,
+)[]: vec<LintError> {
+  $linter = __FUNCTION__;
+  $is_use = Pha\create_syntax_matcher(
+    $script,
+    Pha\KIND_NAMESPACE_USE_DECLARATION,
+    Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
+  );
+  $is_group_use = Pha\create_syntax_matcher(
+    $script,
+    Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
+  );
+  $get_declarations = Pha\create_member_accessor(
+    $script,
+    Pha\MEMBER_SCRIPT_DECLARATIONS,
+    Pha\MEMBER_NAMESPACE_DECLARATIONS,
+  );
+  $get_kind = Pha\create_member_accessor(
+    $script,
+    Pha\MEMBER_NAMESPACE_USE_KIND,
+    Pha\MEMBER_NAMESPACE_GROUP_USE_KIND,
+  );
+  $get_prefix =
+    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_GROUP_USE_PREFIX);
+  $get_clauses =
+    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_CLAUSES)
+    |> Pha\returns_syntax($$);
+  $get_name =
+    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_NAME);
+  $kind_order =
+    dict['namespace' => 0, 'type' => 1, 'function' => 2, 'const' => 3];
+
+  $bodies = Vec\concat(
+    vec[Pha\SCRIPT_NODE],
+    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_BODY),
+  );
+
+  $errors = vec[];
+  foreach ($bodies as $body) {
+    $previous = null;
+    $reported = false;
+    foreach (
+      Pha\node_get_children($script, $get_declarations($body)) as $node
+    ) {
+      if (!$is_use($node)) {
+        $previous = null;
+        $reported = false;
+        continue;
+      }
+
+      $use = Pha\as_syntax($node);
+      $kind = $get_kind($use)
+        |> Pha\node_get_code_compressed($script, $$)
+        |> Str\lowercase($$)
+        |> idx($kind_order, $$);
+      // PHP-ish `use Foo` without a kind do not have a specified order.
+      if ($kind is null) {
+        $previous = null;
+        $reported = false;
+        continue;
+      }
+
+      if ($is_group_use($use)) {
+        $prefix_node = $get_prefix($use);
+      } else {
+        // For cases like `use const X, Y, Z`, we treat this as `use const X;`
+        $clause = Pha\list_get_items_of_children($script, $get_clauses($use))
+          |> C\first($$);
+        if ($clause is null) {
+          $previous = null;
+          $reported = false;
+          continue;
+        }
+        $prefix_node = $get_name(Pha\as_syntax($clause));
+      }
+      $prefix = Pha\node_get_code_compressed($script, $prefix_node)
+        |> Str\strip_prefix($$, '\\');
+      $key = (string)$kind.';'.$prefix;
+      if (
+        $previous is nonnull && !$reported && Str\compare($previous, $key) > 0
+      ) {
+        $errors[] = LintError::createWithoutPatches(
+          $script,
+          $pragma_map,
+          $use,
+          $linter,
+          'Consecutive use statements should be ordered by kind '.
+          '(namespace, type, function, const), then alphabetically.',
+        );
+        $reported = true;
+      }
+      $previous = $key;
+    }
+  }
   return $errors;
 }
 
@@ -5865,6 +6162,34 @@ function dict_merge_by_concatting_values<Tk as arraykey, Tv>(
   }
 
   return $out;
+}
+
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/disable_in_generated_source.hack /////
+namespace HTL\PhaLinters\Support;
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+
+use namespace HTL\Pha;
+use type HTL\PhaLinters\LintError;
+
+function disable_in_generated_source(
+  (function(
+    Pha\Script,
+    Pha\SyntaxIndex,
+    Pha\TokenIndex,
+    Pha\Resolver,
+    Pha\PragmaMap,
+  )[]: vec<LintError>) $linter,
+)[]: (function(
+  Pha\Script,
+  Pha\SyntaxIndex,
+  Pha\TokenIndex,
+  Pha\Resolver,
+  Pha\PragmaMap,
+)[]: vec<LintError>) {
+  return ($script, $syntax_index, $token_index, $resolver, $pragma_map)[] ==>
+    extract_digest($script, $pragma_map) is nonnull
+      ? vec[]
+      : $linter($script, $syntax_index, $token_index, $resolver, $pragma_map);
 }
 
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/enforce_naming.hack /////

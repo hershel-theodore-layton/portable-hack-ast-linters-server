@@ -3,6 +3,7 @@ namespace HTL\PhaLintersServer;
 
 use namespace HH\Lib\Vec;
 use namespace HTL\{Pha, PhaLinters};
+use function json_encode_pure;
 use const JSON_UNESCAPED_SLASHES, JSON_UNESCAPED_UNICODE;
 
 function encode_errors_as_vscode_compatible_json(
@@ -40,7 +41,7 @@ function encode_errors_as_vscode_compatible_json(
     ),
   )
     |> Vec\flatten($$)
-    |> \json_encode_pure(
+    |> json_encode_pure(
       $$,
       inout $_json_encode_error,
       JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,

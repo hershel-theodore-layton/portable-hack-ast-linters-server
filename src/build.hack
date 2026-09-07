@@ -3,11 +3,12 @@ namespace HTL\PhaLintersServer;
 
 use namespace HH\Lib\{File, Str, Vec};
 use type RecursiveDirectoryIterator, RecursiveIteratorIterator;
+use function realpath;
 
 <<__EntryPoint>>
 async function build_async()[defaults]: Awaitable<void> {
   $paths = RecursiveDirectoryIterator::SKIP_DOTS
-    |> new RecursiveDirectoryIterator(\realpath(__DIR__.'/../'), $$)
+    |> new RecursiveDirectoryIterator(realpath(__DIR__.'/../'), $$)
     |> new RecursiveIteratorIterator($$)
     |> Vec\filter($$, $f ==> $f->getExtension() === 'hack')
     |> Vec\map($$, $f ==> $f->getPathname());

@@ -44,6 +44,8 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
     PhaLinters\prefer_require_once_linter<>,
     PhaLinters\prefer_semicolon_bodied_namespace_linter<>,
     PhaLinters\prefer_single_quoted_string_literals_linter<>,
+    PhaLinters\prefer_use_clause_over_fully_qualified_names_linter<>
+      |> PhaLinters\Support\disable_in_generated_source($$),
     PhaLinters\region_comments_must_be_balanced_linter<>,
     PhaLinters\shout_case_enum_members_linter<>,
     PhaLinters\solitary_escape_sequences_should_be_disambiguated_linter<>,
@@ -51,7 +53,9 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
     PhaLinters\unused_pipe_variable_linter<>,
     PhaLinters\unused_use_clause_linter<>,
     PhaLinters\unused_variable_linter<>,
+    PhaLinters\use_statement_alphabetization_linter<>,
     PhaLinters\use_statement_could_be_removed_linter<>,
+    PhaLinters\use_statement_order_linter<>,
     PhaLinters\use_statement_with_as_linter<>,
     PhaLinters\use_statement_with_leading_backslash_linter<>,
     PhaLinters\use_statement_without_kind_linter<>,
