@@ -43,3 +43,5 @@ jobs:
       - name: Run lints
         shell: bash
         run: hhvm ${{ startsWith(matrix.hhvm, '4') && '-dhhvm.autoload.enabled=true -dhhvm.autoload.db.path=.var/facts.db' || '' }} src/main.hack
+      - name: Test source signing
+        run: sh tests/sign-hack-source.sh
