@@ -38,6 +38,7 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
   $linters = vec[
     PhaLinters\assignment_to_empty_list_tuple_or_shape_linter<>,
     PhaLinters\async_function_and_method_linter<>,
+    PhaLinters\autoload_your_code_linter<>,
     PhaLinters\camel_cased_methods_underscored_functions_linter<>,
     PhaLinters\concat_merge_or_union_expression_can_be_simplified_linter<>,
     PhaLinters\context_list_must_be_explicit_linter<>,
@@ -459,28 +460,30 @@ async function main_async()[defaults]: Awaitable<void> {
 namespace HTL\HH4Shim;
 /** hhvm-four-shim is MIT licensed, see /LICENSE */
 
+use function gettype;
+
 /**
- * Returns `dict<_, _>` on hhvm 4.103+.
- * Returns `darray<_, _>` on hhvm 4.102.
+ * Returns `dict<_, _>` on HHVM 4.103+.
+ * Returns `darray<_, _>` on HHVM 4.102.
  */
 function array_to_shape(mixed $array)[]: mixed {
   invariant(
     $array is dict<_, _>,
     'Expected a shape, got %s',
-    \gettype($array) as string,
+    gettype($array) as string,
   );
   return $array;
 }
 
 /**
- * Returns `vec<_>` on hhvm 4.103+.
- * Returns `varray<_>` on hhvm 4.102.
+ * Returns `vec<_>` on HHVM 4.103+.
+ * Returns `varray<_>` on HHVM 4.102.
  */
 function array_to_tuple(mixed $array)[]: mixed {
   invariant(
     $array is vec<_>,
     'Expected a tuple, got %s',
-    \gettype($array) as string,
+    gettype($array) as string,
   );
   return $array;
 }
@@ -4097,6 +4100,40 @@ function assignment_to_empty_list_tuple_or_shape_linter(
         ),
       );
     });
+}
+
+///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/autoload_your_code_linter.hack /////
+namespace HTL\PhaLinters;
+/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
+
+use namespace HH\Lib\Vec;
+use namespace HTL\Pha;
+
+/**
+ * Manual inclusion directives are going to be removed from hhvm.
+ * This linter allows preadoption of the no-inclusion-directives language change.
+ */
+function autoload_your_code_linter(
+  Pha\Script $script,
+  Pha\SyntaxIndex $syntax_index,
+  Pha\TokenIndex $_,
+  Pha\Resolver $_,
+  Pha\PragmaMap $pragma_map,
+)[]: vec<LintError> {
+  $linter = __FUNCTION__;
+
+  return
+    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_INCLUSION_EXPRESSION)
+    |> Vec\map(
+      $$,
+      $n ==> LintError::create(
+        $script,
+        $pragma_map,
+        $n,
+        $linter,
+        'Autoload your code instead of using inclusion directives.',
+      ),
+    );
 }
 
 ///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/concat_merge_or_union_expression_can_be_simplified_linter.hack /////
@@ -8221,7 +8258,8 @@ namespace HTL\Pha\_Private;
 
 use namespace HH\Lib\Str;
 use namespace HTL\Pha;
-use function gettype;
+use type Exception;
+use function gettype, sha1;
 
 final class ParseContext {
   public function __construct(
@@ -8299,7 +8337,7 @@ final class ParseContext {
   public function getMaterializationHash()[]: string {
     return $this->dematerialize()
       |> static::toHashable($$)
-      |> \sha1($$, false) as string;
+      |> sha1($$, false) as string;
   }
 
   // Memoize because this value can be shared across many scripts.
@@ -8344,7 +8382,7 @@ final class ParseContext {
       );
     } catch (PhaException $e) {
       throw $e;
-    } catch (\Exception $e) {
+    } catch (Exception $e) {
       throw
         new PhaException('Could not materialize Context.', $e->getCode(), $e);
     }
@@ -8677,6 +8715,7 @@ namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
 use namespace HH\Lib\{Str, Vec};
+use type Exception;
 
 final class TranslationUnit {
   const SOME_LARGE_JUMP = 64;
@@ -8826,7 +8865,7 @@ final class TranslationUnit {
         $raw['SOURCE_TEXT'] as string,
         $ctx,
       );
-    } catch (\Exception $e) {
+    } catch (Exception $e) {
       throw new PhaException(
         'Failed to materialize this Script.',
         $e->getCode(),
@@ -8834,6 +8873,7 @@ final class TranslationUnit {
       );
     }
   }
+  // #endregion
 }
 
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/aliasses.hack /////
@@ -10709,6 +10749,8 @@ function list_get_items_of_children(
       ));
   }
 
+  $function = __FUNCTION__;
+
   return Vec\map(
     node_get_children($script, $node),
     $list_item ==> {
@@ -10716,7 +10758,7 @@ function list_get_items_of_children(
       _Private\enforce(
         $kind === KIND_LIST_ITEM,
         '%s expected a list with list_items, but found a %s in the list.',
-        __FUNCTION__,
+        $function,
         $kind,
       );
 
@@ -11747,11 +11789,11 @@ namespace HTL\Pragma;
  * The typechecker looks for hh_fixme and hh_ignore_error directives.
  * HHAST looks for hhast_ignore_error, hhast_ignore_all, and hhast_fixme directives.
  *
- * I don't like the state of things, because nothings checks the comments.
+ * I don't like the state of things, because nothing checks the comments.
  * It is unclear if a comment is a directive for something, a normal comment,
  * or worst of all, a dangling directive that is silently misinforming you.
  *
- * I am not going to change the typechecker to stop using comment for suppressions,
+ * I am not going to change the typechecker to stop using comments for suppressions,
  * but userspace libraries are welcome to adopt this informal standard.
  *
  * There are two ways to invoke a pragma.
@@ -11759,19 +11801,19 @@ namespace HTL\Pragma;
  *  - The `<<Pragmas(vec['one', 'ok=1'], vec['two', 'ok=false'])>>` attribute.
  *
  * The pragma directive accepts any number of arguments.
- * The 1st addresses a library, and the 2nd to last are implementation defined.
+ * The 1st addresses a library, and the 2nd and subsequent are implementation-defined.
  * These take effect for the lines they are on and the next line.
  *
  * The attribute takes any number of vecs, each of which is a directive.
  * The scope is from attribute to closing curly brace if atop a class.
  * A file attribute `<<file: Pragmas(...)>>` affects the entire file.
  *
- * A library that uses pragma's is required to emit a diagnostic for pragmas
+ * A library that uses pragmas is required to emit a diagnostic for pragmas
  * that start with the library name and that can not be parsed or are invalid.
- * This prevents broken directive and attributes from hanging around.
+ * This prevents broken directives and attributes from hanging around.
  *
  * You must use a canonical use statement for the pragma directive and attribute.
- * Using a Pragma namespace and using qualfied names is not allowed.
+ * Using a Pragma namespace and using qualified names is not allowed.
  * `use namespace HTL\Pragma; ... Pragma\pragma(...) ... <<Pragma\Pragmas(...)>>`
  * Using `use function HTL\Pragma\pragma as not_pragma` is also not allowed.
  *

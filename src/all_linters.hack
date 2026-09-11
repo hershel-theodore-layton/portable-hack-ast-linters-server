@@ -9,6 +9,7 @@ function all_linters(string $license_header)[]: vec<LintFunction> {
   $linters = vec[
     PhaLinters\assignment_to_empty_list_tuple_or_shape_linter<>,
     PhaLinters\async_function_and_method_linter<>,
+    PhaLinters\autoload_your_code_linter<>,
     PhaLinters\camel_cased_methods_underscored_functions_linter<>,
     PhaLinters\concat_merge_or_union_expression_can_be_simplified_linter<>,
     PhaLinters\context_list_must_be_explicit_linter<>,
