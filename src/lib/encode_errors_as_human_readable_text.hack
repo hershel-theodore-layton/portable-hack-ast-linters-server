@@ -7,14 +7,19 @@ use namespace HTL\PhaLinters;
 function encode_errors_as_human_readable_text(
   dict<string, vec<PhaLinters\LintError>> $lint_errors,
 )[]: string {
-  if (C\is_empty($lint_errors)) {
+  $error_count = 0;
+  foreach ($lint_errors as $errors) {
+    $error_count += C\count($errors);
+  }
+
+  if ($error_count === 0) {
     return "No errors!\n";
   }
 
   $errors_remaining = Str\format(
     "%d lint-error%s remaining...\n",
-    C\count($lint_errors),
-    C\count($lint_errors) > 1 ? 's' : '',
+    $error_count,
+    $error_count > 1 ? 's' : '',
   );
 
   return Vec\map_with_key(
