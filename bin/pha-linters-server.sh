@@ -107,7 +107,7 @@ compile_repo_auth() {
   fi
 
   echo "Building... $RESOURCE"
-  hhvm --hphp "$RESOURCE" --output-dir "$VAR"
+  hhvm --hphp "$RESOURCE" --output-dir "$VAR" || exit "$?"
   sha1sum "$RESOURCE" > "$VAR/sha1sum.txt"
 }
 
