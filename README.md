@@ -37,7 +37,7 @@ After installing those extensions, your development environment is ready.
 ### How to use
 
 - Optionally install [the VSCode extension](https://open-vsx.org/extension/hershel-theodore-layton/dead-simple-lint-server-integration)[^1] and configure it in `.vscode/settings.json`.
-  - `http://localhost:10641?format=json&action=lint-input` is a good default.
+  - `http://localhost:10641?format=vscode-json&action=lint-input` is a good default.
 - Launch the server using the CLI instructions below.
 - Make sure the port is exposed to the host network in Docker.
 - Lint the entire project using `curl http://localhost:10641`.
