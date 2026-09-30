@@ -138,14 +138,19 @@ use namespace HTL\PhaLinters;
 function encode_errors_as_human_readable_text(
   dict<string, vec<PhaLinters\LintError>> $lint_errors,
 )[]: string {
-  if (C\is_empty($lint_errors)) {
+  $error_count = 0;
+  foreach ($lint_errors as $errors) {
+    $error_count += C\count($errors);
+  }
+
+  if ($error_count === 0) {
     return "No errors!\n";
   }
 
   $errors_remaining = Str\format(
     "%d lint-error%s remaining...\n",
-    C\count($lint_errors),
-    C\count($lint_errors) > 1 ? 's' : '',
+    $error_count,
+    $error_count > 1 ? 's' : '',
   );
 
   return Vec\map_with_key(
@@ -3242,6 +3247,7 @@ function prefer_single_quoted_string_literals_linter(
     '\\v', // vertical tab
     '\\x', // hex
     "'", // single quote
+    '\\"', // escaped double quote
     '\$', // anti-variable interpolation
     '\\0', '\\1', '\\2', '\\3', '\\4', '\\5', '\\6', '\\7' // octal
   ];
@@ -4341,7 +4347,7 @@ function context_list_must_be_explicit_on_io_functions_linter(
 namespace HTL\PhaLinters;
 /** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
 
-use namespace HH\Lib\{Str, Vec};
+use namespace HH\Lib\{C, Str, Vec};
 use namespace HTL\Pha;
 
 function count_expression_can_be_simplified_linter(
@@ -4390,6 +4396,18 @@ function count_expression_can_be_simplified_linter(
   $is_c_count = $call ==> $get_call_receiver($call)
     |> Pha\resolve_name($resolver, $script, $$) === 'HH\Lib\C\count';
 
+  $can_use_c = C\count(Pha\index_get_nodes_by_kind(
+    $syntax_index,
+    Pha\KIND_NAMESPACE_DECLARATION,
+  )) <= 1 && C\any(
+    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_QUALIFIED_NAME),
+    $name ==> {
+      $code = Pha\node_get_code_compressed($script, $name);
+      return Str\starts_with($code, 'C\\') &&
+        Pha\resolve_name($resolver, $script, $name) === 'HH\\Lib\\'.$code;
+    },
+  );
+
   $is_logical_not = $n ==> $is_prefix_unary_expression($n) &&
     $is_exclamation($get_prefix_operator($n));
 
@@ -4416,15 +4434,17 @@ function count_expression_can_be_simplified_linter(
   };
 
   $get_error = ($parent, $call) ==> {
-    $replace_with = $function_name ==> Pha\patches($script, Pha\patch_node(
-      $parent,
-      Str\format(
-        '%s(%s)',
-        $function_name,
-        Pha\node_get_code($script, $get_argument_list($call)),
-      ),
-      shape('trivia' => Pha\RetainTrivia::BOTH),
-    ));
+    $replace_with = $function_name ==> $can_use_c
+      ? Pha\patches($script, Pha\patch_node(
+        $parent,
+        Str\format(
+          '%s(%s)',
+          $function_name,
+          Pha\node_get_code($script, $get_argument_list($call)),
+        ),
+        shape('trivia' => Pha\RetainTrivia::BOTH),
+      ))
+      : null;
 
     if ($is_logical_not($parent)) {
       return tuple(
@@ -8527,8 +8547,13 @@ final class PatchSet {
     private string $beforeText,
     vec<Replacement> $replacements,
   )[] {
-    $this->replacements =
-      Vec\sort_by($replacements, $r ==> $r->getStartOffset());
+    $this->replacements = Vec\sort_by(
+      $replacements,
+      $r ==> tuple(
+        $r->getStartOffset(),
+        $r->getEndOffset() === $r->getStartOffset() ? 0 : 1,
+      ),
+    );
     $shifted = Vec\drop($this->replacements, 1);
     $with_next = Vec\zip($this->replacements, $shifted);
 
@@ -8734,12 +8759,12 @@ final class TranslationUnit {
     private string $sourceText,
     private ParseContext $ctx,
   )[] {
-    $line_breaks = vec[source_byte_offset_from_int(0)];
+    $line_breaks = vec[];
 
     $byte = 0;
     foreach (Str\split($sourceText, "\n") as $line) {
-      $byte += Str\length($line) + 1;
       $line_breaks[] = source_byte_offset_from_int($byte);
+      $byte += Str\length($line) + 1;
     }
 
     $this->lineBreaks = $line_breaks;
@@ -8767,6 +8792,10 @@ final class TranslationUnit {
 
   public function getLineBreaks()[]: vec<SourceByteOffset> {
     return $this->lineBreaks;
+  }
+
+  public function getSourceEndOffset()[]: SourceByteOffset {
+    return Str\length($this->sourceText) |> source_byte_offset_from_int($$);
   }
 
   public function getNodeById(NodeId $node_id)[]: NillableNode {
@@ -9283,7 +9312,7 @@ function source_byte_offset_is_less_than_or_equal(
   SourceByteOffset $a,
   SourceByteOffset $b,
 )[]: bool {
-  return $a < $b;
+  return $a <= $b;
 }
 
 ///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/SourceRange.hack /////
@@ -9535,8 +9564,8 @@ function create_intermediate_token(
   int $id,
 )[]: (Intermediate, vec<Intermediate>) {
   $token = $next->getItem()['token'] as dict<_, _>;
-  $leading_raw = $token['leading'] as dict<_, _>;
-  $trailing_raw = $token['trailing'] as dict<_, _>;
+  $leading_raw = $token['leading'] as vec_or_dict<_>;
+  $trailing_raw = $token['trailing'] as vec_or_dict<_>;
 
   $intermediate = $next->createToken(
     $id,
@@ -9584,7 +9613,7 @@ use namespace HTL\Pha;
 function create_intermediate_trivia(
   int $id,
   int $count,
-  dict<arraykey, mixed> $trivia,
+  vec_or_dict<arraykey, mixed> $trivia,
 )[]: vec<Intermediate> {
   $out = vec[];
 
@@ -10186,15 +10215,19 @@ function retain_trivia_keep_leading_and_trailing(
 namespace HTL\Pha\_Private;
 /** portable-hack-ast is MIT licensed, see /LICENSE. */
 
+use namespace HH\Lib\Str;
 use namespace HTL\Pha;
 
-// These functions assert to AnyArray<_, _> to survive fb_compact_serialize...
+// These functions assert to AnyArray<_, _> to survive fb_compact_serialize,
+// order json_encode_pure. fb_compact_serialize erases the array kind and
+// json_encode_pure turns `dict[3 => X]` into `dict['3' => X]`.
 
 function as_dict_of_node_id_to_int(mixed $raw)[]: dict<NodeId, int> {
   $out = dict[];
 
   foreach (($raw as AnyArray<_, _>) as $k => $v) {
-    $out[node_id_from_int($k as int)] = $v as int;
+    $key = $k is int ? $k : Str\to_int($k) as nonnull;
+    $out[node_id_from_int($key)] = $v as int;
   }
 
   return $out;
@@ -11571,26 +11604,24 @@ function source_range_overlaps(SourceRange $a, SourceRange $b)[]: bool {
   $a = _Private\source_range_reveal($a);
   $b = _Private\source_range_reveal($b);
 
-  if (_Private\source_byte_offset_is_less_than($b[0], $a[0])) {
-    $tmp = $a;
-    $a = $b;
-    $b = $tmp;
-  }
-
   $a_end = $a[1];
+  $b_end = $b[1];
 
-  return
-    $a_end is null || _Private\source_byte_offset_is_less_than($b[0], $a_end);
+  return (
+    $a_end is null || _Private\source_byte_offset_is_less_than($b[0], $a_end)
+  ) &&
+    ($b_end is null || _Private\source_byte_offset_is_less_than($a[0], $b_end));
 }
 
 function source_range_to_line_and_column_numbers(
   Script $script,
   SourceRange $range,
 )[]: LineAndColumnNumbers {
-  $breaks = _Private\translation_unit_reveal($script)->getLineBreaks();
+  $tu = _Private\translation_unit_reveal($script);
+  $breaks = $tu->getLineBreaks();
 
   list($start, $end_exclusive) = _Private\source_range_reveal($range);
-  $end_exclusive ??= C\lastx($breaks);
+  $end_exclusive ??= $tu->getSourceEndOffset();
 
   $count = C\count($breaks);
   $i = $count - 1;
