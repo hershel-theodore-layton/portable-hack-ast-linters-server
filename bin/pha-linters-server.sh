@@ -6,7 +6,8 @@ VSCODE_EXTENSIONS="./.vscode/extensions.json"
 VSCODE_SETTINGS="./.vscode/settings.json"
 DOCKER_COMPOSE_YML="./docker-compose.yml"
 RESOURCE_NAME="portable-hack-ast-linters-server-bundled.resource"
-RESOURCE="$(find . -type f -name "$RESOURCE_NAME" | head -n 1)"
+RESOURCE=""
+RESOURCE_SPECIFIED=No
 PORT_NUMBER=10641
 REPO_AUTH=Yes
 SETUP_DOCKER_NATIVE_ENV=No
@@ -111,14 +112,22 @@ compile_repo_auth() {
   sha1sum "$RESOURCE" > "$VAR/sha1sum.txt"
 }
 
-while getopts "p:b:r:htgsdi" opt; do
+option_error() {
+  echo "$1" >&2
+  print_help_text >&2
+  exit 1
+}
+
+while getopts ":p:b:r:htgsdi" opt; do
   case "$opt" in
     h)  print_help_text && exit 0
       ;;
     b)  RESOURCE=$OPTARG
+        RESOURCE_SPECIFIED=Yes
         TRUSTS_RESOURCE=Yes
       ;;
     r)  RESOURCE=$OPTARG
+        RESOURCE_SPECIFIED=Yes
         TRUSTS_RESOURCE=Yes
       ;;
     p)  PORT_NUMBER=$OPTARG
@@ -133,14 +142,37 @@ while getopts "p:b:r:htgsdi" opt; do
       ;;
     i)  REPO_AUTH="no"
       ;;
-    *) echo "Unknown flag $opt"
+    \?) option_error "Unknown option: -$OPTARG"
+      ;;
+    :)  option_error "Option -$OPTARG requires an argument"
       ;;
   esac
 done
+shift "$((OPTIND - 1))"
+
+if [ "$#" -ne 0 ]; then
+  option_error "Unexpected positional argument: $1"
+fi
+
+case "$PORT_NUMBER" in
+  ''|*[!0-9]*) option_error "Port must be an integer from 1 to 65535"
+    ;;
+esac
+if ! { [ "$PORT_NUMBER" -ge 1 ] && [ "$PORT_NUMBER" -le 65535 ]; } 2>/dev/null; then
+  option_error "Port must be an integer from 1 to 65535"
+fi
 
 if [ ! -f .hhconfig ]; then
     echo "Are you in the root directory of your project?" >&2
     exit 1
+fi
+
+if [ "$RESOURCE_SPECIFIED" = "No" ]; then
+  RESOURCE="$(find . -type f -name "$RESOURCE_NAME" | head -n 1)"
+fi
+if [ ! -f "$RESOURCE" ]; then
+  echo "Bundle file not found: $RESOURCE" >&2
+  exit 1
 fi
 
 if [ "$SETUP_DOCKER_NATIVE_ENV" = "Yes" ]; then
