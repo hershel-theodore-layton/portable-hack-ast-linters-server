@@ -6,7 +6,8 @@
     "hhvm": ">=4.153",
     "hershel-theodore-layton/portable-hack-ast": "dev-master",
     "hershel-theodore-layton/portable-hack-ast-extras": "dev-master",
-    "hershel-theodore-layton/portable-hack-ast-linters": "dev-master"
+    "hershel-theodore-layton/portable-hack-ast-linters": "dev-master",
+    "hershel-theodore-layton/hhvm-four-shim": "<1"
   },
   "bin": ["bin/pha-linters-server.sh", "bin/pha-sign-hack-source.sh"]
 }

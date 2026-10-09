@@ -3,7 +3,7 @@ namespace HTL\PhaLintersServer;
 
 use namespace HH;
 use namespace HH\Lib\{C, IO, Str, Vec};
-use namespace HTL\Pha;
+use namespace HTL\{HH4Shim, Pha};
 use function dirname, file_exists;
 
 <<__EntryPoint>>
@@ -19,12 +19,12 @@ async function main_async()[defaults]: Awaitable<void> {
   }
 
   if (file_exists(dirname(__DIR__).'/.hhvmconfig.hdf')) {
-    $project_root = dirname(__DIR__) as string;
+    $project_root = HH4Shim\to_mixed(dirname(__DIR__)) as string;
   } else {
-    $project_root = dirname(__DIR__) as string
-      |> dirname($$) as string
-      |> dirname($$) as string
-      |> dirname($$) as string;
+    $project_root = HH4Shim\to_mixed(dirname(__DIR__)) as string
+      |> HH4Shim\to_mixed(dirname($$)) as string
+      |> HH4Shim\to_mixed(dirname($$)) as string
+      |> HH4Shim\to_mixed(dirname($$)) as string;
   }
 
   $input = IO\request_input();
