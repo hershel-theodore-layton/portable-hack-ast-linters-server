@@ -72,13 +72,15 @@ $SERVER_SH
 # The hardcoded bundle path is always used.
 $SERVER_SH -s -g -b ...
 
-# AFK setup which builds and runs the first portable-hack-ast-server-bundle.resource
+# AFK setup which builds and runs the first portable-hack-ast-linters-server-bundled.resource
 # Skips the trust prompt, should only be used if you trust every file in the directory.
 $SERVER_SH -t
 
 # AFK setup, point $SERVER_SH to a bundle, skips the prompt.
-# Recommended setup for CI pipelines
-$SERVER_SH -b "vendor/hershel-theodore-layton/portable-hack-ast-server/bin/portable-hack-ast-server-bundle.resource"
+$SERVER_SH -b "vendor/hershel-theodore-layton/portable-hack-ast-linters-server/bin/portable-hack-ast-linters-server-bundled.resource"
+
+# Lint once for CI, print diagnostics, and exit (0 when clean, 1 for lint errors).
+hhvm vendor/hershel-theodore-layton/portable-hack-ast-linters-server/bin/portable-hack-ast-linters-server-bundled.resource lint-all text
 ```
 
 When running interactively, you may see the following prompt:
