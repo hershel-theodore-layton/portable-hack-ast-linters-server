@@ -4,7 +4,7 @@ namespace HTL\PhaLintersServer;
 use namespace HH;
 use namespace HH\Lib\{C, IO, Str, Vec};
 use namespace HTL\{HH4Shim, Pha};
-use function dirname, file_exists, getcwd;
+use function dirname, file_exists;
 
 <<__EntryPoint>>
 async function main_async()[defaults]: Awaitable<void> {
@@ -18,7 +18,7 @@ async function main_async()[defaults]: Awaitable<void> {
     return;
   }
 
-  $project_root = getcwd() as string;
+  $project_root = __DIR__;
   while (!file_exists($project_root.'/.hhconfig')) {
     $parent = HH4Shim\to_mixed(dirname($project_root)) as string;
     invariant($parent !== $project_root, 'Project root not found.');
