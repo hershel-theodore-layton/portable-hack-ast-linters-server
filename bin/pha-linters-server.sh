@@ -1,8 +1,9 @@
 #!/bin/sh
 set -eu
+replace=yes
+legacy=yes
 
 port=10641
-global=no
 setup=no
 launch_mode=server
 bundled=no
@@ -10,10 +11,9 @@ trusted=no
 resource=
 
 usage() {
-  echo "Usage: $0 [-p PORT] [-g] [-s] [-d] [-t] [-e | -b PATH | -r PATH]"
+  echo "Usage: $0 [-p PORT] [-s] [-d] [-t] [-e | -b PATH | -r PATH]"
   echo '  -e  Use the resource embedded in this script.'
   echo '  -b, -r PATH  Use and trust an external resource.'
-  echo '  -g  Cache the compiled repository under /var/tmp.'
   echo '  -s  Set up VS Code for Docker Native development.'
   echo '  -d  Run as a daemon.'
   echo '  -t  Trust the discovered external resource.'
@@ -28,8 +28,8 @@ option_error() {
 while getopts ':hp:b:r:gsdite' option; do
   case "$option" in
     h) usage; exit 0 ;;
+    g) ;;
     p) port=$OPTARG ;;
-    g) global=yes ;;
     s) setup=yes ;;
     d) launch_mode=daemon ;;
     i) option_error 'Interpreter mode (-i) is no longer supported.' ;;
@@ -49,6 +49,9 @@ if ! { [ "$port" -ge 1 ] && [ "$port" -le 65535 ]; }; then
   option_error 'Port must be an integer from 1 to 65535'
 fi
 test -f .hhconfig || option_error 'Run this script from the project root.'
+if [ "$replace" = yes ] && [ "$bundled" != yes ]; then
+  option_error 'Replacement launchers require the embedded resource (-e).'
+fi
 if [ "$bundled" = yes ]; then
   test -z "$resource" || option_error '-e cannot be combined with -b or -r.'
 else
@@ -84,84 +87,148 @@ JSON
 }
 JSON
 fi
-
-name=$(basename "$0")
-source_dir=".var/hack-compiler/$name"
-cache_dir="$PWD/.var/portable-hack-ast-linters-server"
-if [ "$global" = yes ]; then
-  cache_dir=/var/tmp/portable-hack-ast-linters-server
+if [ "$launch_mode" = daemon ]; then
+  command -v setsid > /dev/null || {
+    echo 'Daemon mode requires setsid.' >&2
+    exit 1
+  }
 fi
-mkdir -p "$cache_dir"
-if [ "$bundled" = yes ]; then
-  mkdir -p "$source_dir"
-  resource="$source_dir/source.resource"
-  fingerprint="$(sha1sum "$0" | cut -d ' ' -f 1):$PWD"
-else
-  fingerprint=$(sha1sum "$resource")
-fi
-changed=yes
-if [ -f "$cache_dir/sha1sum.txt" ] &&
-   [ "$(cat "$cache_dir/sha1sum.txt")" = "$fingerprint" ]; then
-  if [ -f "$cache_dir/hhvm.hhbc" ]; then
-    changed=no
+work_root="${TMPDIR:-/tmp}/hack-compiler"
+mkdir -p "$work_root"
+work_dir=$(mktemp -d "$work_root/server.XXXXXX")
+server_pid=
+cleanup() {
+  if [ -n "$server_pid" ]; then
+    kill -INT "$server_pid" 2>/dev/null || true
+    wait "$server_pid" 2>/dev/null || true
   fi
-fi
-
-if [ -f "$cache_dir/www.pid" ]; then
-  pid=$(cat "$cache_dir/www.pid")
-  identity=$(curl --silent --max-time 5 "http://localhost:$port/?action=identify-yourself" || true)
-  if [ "$identity" = 'HTL\PhaLintersServer' ]; then
-    if [ "$changed" = no ]; then
-      echo 'Previous server is identical, nothing to do.'
-      exit 0
-    fi
-    echo 'Previous server is different, replacing it.'
-    kill -INT "$pid"
-    attempts=0
-    while kill -0 "$pid" 2>/dev/null && [ "$attempts" -lt 50 ]; do
-      sleep 0.1
-      attempts=$((attempts + 1))
-    done
-  else
-    echo 'Previous server left a dangling www.pid.'
-  fi
-  rm -f "$cache_dir/www.pid"
-fi
-
-trap 'if [ "$bundled" = yes ]; then rm -f "$resource"; fi' 0
+  rm -rf "$work_dir"
+}
+trap cleanup 0
 trap 'exit 1' HUP INT TERM
-if [ "$changed" = yes ] && [ "$trusted" = no ]; then
+
+if [ "$trusted" = no ]; then
   echo "Found the following resource file: $resource"
   echo "If you trust it, type 'I trust this resource' to build and run it."
   read -r confirmation
   test "$confirmation" = 'I trust this resource' || exit 1
 fi
-if [ "$changed" = yes ]; then
-  if [ "$bundled" = yes ]; then
-    tail -n +167 "$0" > "$resource"
-  fi
-  if hhvm --hphp --help 2>&1 | grep -q -- '--target'; then
-    set -- --target hhbc
-  fi
-  hhvm --hphp "$@" "$resource" --output-dir "$cache_dir"
-  set --
-  if [ "$bundled" = yes ]; then rm "$resource"; fi
+if [ "$bundled" = yes ]; then
+  resource=source.resource
+  tail -n +234 "$0" > "$work_dir/$resource"
 fi
-printf '%s\n' "$fingerprint" > "$cache_dir/sha1sum.txt"
-
-if [ "$launch_mode" = daemon ]; then
-  set -- -dhhvm.log.file=/dev/null
+if [ "$replace" = yes ]; then hhvm --lint "$work_dir/$resource" > /dev/null; fi
+if hhvm --hphp --help 2>&1 | grep -q -- '--target'; then
+  set -- --target hhbc
 fi
+if [ "$bundled" = yes ]; then set -- "$@" --input-dir "$work_dir"; fi
+hhvm --hphp "$@" "$resource" --output-dir "$work_dir"
+set --
+if [ "$legacy" = yes ]; then set -- -dhhvm.jit_retranslate_all_request=5; fi
+if [ "$bundled" = yes ]; then rm "$work_dir/$resource"; fi
 export HACK_COMPILER_SERVER_FILE=$(realpath "$0")
-hhvm -m "$launch_mode" -p "$port" --no-config \
-  -vServer.AllowRunAsRoot=1 \
-  -dhhvm.repo.authoritative=true \
-  "-dhhvm.repo.path=$cache_dir/hhvm.hhbc" \
-  "-dhhvm.server.global_document=$resource" \
-  "-dhhvm.server.allowed_files[0]=$resource" \
-  -dhhvm.jit_retranslate_all_request=5 \
-  '-dhhvm.php_file.extensions[resource]=1' \
-  "-dhhvm.pid_file=$cache_dir/www.pid" "$@"
+nonce=$(basename "$work_dir")
+pid_namespace=$(readlink /proc/self/ns/pid)
+
+# 0: compatible server, 1: no listener, 2: failed or unrecognized handshake.
+handshake() {
+  handshake_status=0
+  handshake_reply=$(curl --noproxy '*' --fail --silent --max-time 1 \
+    "http://127.0.0.1:$port/?__hack_compiler_handshake=$nonce") || handshake_status=$?
+  if [ "$handshake_status" -eq 7 ]; then return 1; fi
+  if [ "$handshake_status" -ne 0 ]; then return 2; fi
+  case "$handshake_reply" in
+    "hack-compiler/1:$nonce:$pid_namespace:"*) ;;
+    *) return 2 ;;
+  esac
+  handshake_reply=${handshake_reply#"hack-compiler/1:$nonce:$pid_namespace:"}
+  handshake_instance=${handshake_reply%:*}
+  handshake_pid=${handshake_reply##*:}
+  case "$handshake_instance" in ''|*[!a-zA-Z0-9.]*) return 2 ;; esac
+  case "$handshake_pid" in ''|*[!0-9]*) return 2 ;; esac
+  test "$handshake_pid" -gt 1 || return 2
+}
+
+if handshake; then
+  previous_pid=$handshake_pid
+  previous_instance=$handshake_instance
+  echo "Replacing server on port $port."
+  if ! kill -INT "$previous_pid"; then
+    echo "Could not stop the previous server on port $port." >&2
+    exit 1
+  fi
+  attempts=0
+  while :; do
+    if handshake; then
+      if [ "$handshake_pid" != "$previous_pid" ] ||
+         [ "$handshake_instance" != "$previous_instance" ]; then
+        echo "Port $port changed owners while replacing the server." >&2
+        exit 1
+      fi
+    elif [ "$?" -eq 1 ]; then
+      break
+    fi
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 50 ]; then
+      echo "Previous server did not release port $port." >&2
+      exit 1
+    fi
+    sleep 0.1
+  done
+elif [ "$?" -ne 1 ]; then
+  echo "Port $port did not complete the hack-compiler handshake; leaving it running." >&2
+  exit 1
+fi
+
+export HACK_COMPILER_SERVER_INSTANCE=$nonce
+if [ "$launch_mode" = daemon ]; then
+  set -- "$@" -dhhvm.log.file=/dev/null
+fi
+if [ "$replace" = no ]; then
+  set -- "$@" "-dhhvm.pid_file=$work_dir/www.pid"
+fi
+start_server() {
+  if [ "$launch_mode" = daemon ]; then
+    set -- setsid hhvm "$@"
+  else
+    set -- hhvm "$@"
+  fi
+  exec "$@" -m server -p "$port" --no-config \
+    -vServer.AllowRunAsRoot=1 \
+    -vServer.ExitOnBindFail=true \
+    -dhhvm.repo.authoritative=true \
+    "-dhhvm.repo.path=$work_dir/hhvm.hhbc" \
+    "-dhhvm.server.global_document=$resource" \
+    "-dhhvm.server.allowed_files[0]=$resource" \
+    '-dhhvm.php_file.extensions[resource]=1'
+}
+if [ "$launch_mode" = daemon ]; then
+  start_server "$@" > /dev/null 2>&1 &
+else
+  start_server "$@" &
+fi
+server_pid=$!
+while :; do
+  if [ "$replace" = yes ]; then
+    if handshake && [ "$handshake_instance" = "$nonce" ]; then break; fi
+  elif [ -s "$work_dir/www.pid" ]; then
+    break
+  fi
+  if ! kill -0 "$server_pid" 2>/dev/null; then
+    wait "$server_pid"
+    exit 1
+  fi
+  sleep 0.1
+done
+rm -rf "$work_dir"
+if [ "$launch_mode" = daemon ]; then
+  server_pid=
+  exit 0
+fi
+server_status=0
+wait "$server_pid" || server_status=$?
+server_pid=
+exit "$server_status"
 exit 0
 __HACK_COMPILER_RESOURCE__
 ///// src/all_files.hack /////
@@ -542,6 +609,14 @@ use function dirname, file_exists;
 
 <<__EntryPoint>>
 async function main_async()[defaults]: Awaitable<void> {
+  $hack_compiler_nonce = (\HH\global_get('_GET') as dict<_, _>)['__hack_compiler_handshake'] ?? null;
+  if ($hack_compiler_nonce is string) {
+    \header('Content-Type: text/plain');
+    echo 'hack-compiler/1:'.$hack_compiler_nonce.':'.
+      (\readlink('/proc/self/ns/pid') as string).':'.
+      (\getenv('HACK_COMPILER_SERVER_INSTANCE') as string).':'.(string)\getmypid();
+    exit(0);
+  }
   $cli_argv = HH\global_get('argv') as ?vec<_>;
   if (is_likely_cli() && idx($cli_argv, 1) === 'sign-file') {
     invariant(

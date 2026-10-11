@@ -6,9 +6,9 @@ _A non-Hack distribution of PhaLinters to allow HTL packages to use portable-hac
 
 HTL containers recently became Docker Native. A simple `docker compose up`
 will automate a lot of the process described in [how to use](#how-to-use).
-The `CMD` of the [Dockerfile](./Dockerfile) passes `-s -g -e`.
+The `CMD` of the [Dockerfile](./Dockerfile) passes `-s -e`.
 This sets up your `.vscode/settings.json` for local development, runs the
-embedded bundle, and caches the compiled repository under `/var/tmp`.
+embedded bundle, and removes the temporary compiled repository after startup.
 
 If this is your first time developing HTL, VSCode will display this prompt
 after a restart:
@@ -66,11 +66,20 @@ $SERVER_SH -h
 $SERVER_SH -e
 
 # Set up VS Code for Docker Native development
-$SERVER_SH -e -s -g
+$SERVER_SH -e -s
 
-# Supply your own bundle path
-$SERVER_SH -b /path/to/file.resource
+# Run the embedded bundle in the background
+$SERVER_SH -e -d
 ```
+
+The embedded server supports self-upgrade. Starting it again on the same port
+compiles the new bundle, then replaces the running server using the compiler's
+handshake. Servers from before this handshake was introduced must be stopped
+manually once before upgrading.
+
+Self-upgrade requires the embedded bundle (`-e`). To serve an external resource,
+use `hack-compiler-serve-resource.sh -b /path/to/file.resource` from the
+[Hack Compiler](https://github.com/hershel-theodore-layton/hack-compiler) package.
 
 ### Dependency hacking
 

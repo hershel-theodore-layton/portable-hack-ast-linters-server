@@ -20,6 +20,7 @@ async function build_async()[defaults]: Awaitable<void> {
   $launcher = HackCompiler\wrap_resource(
     $resource,
     HackCompiler\CompileMode::SERVER_OBSOLETE,
+    true,
   );
   await HackCompiler\write_source_async(
     $resource,
