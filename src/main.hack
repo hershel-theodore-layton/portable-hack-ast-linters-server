@@ -35,7 +35,7 @@ async function main_async()[defaults]: Awaitable<void> {
 
   $lint_functions = all_linters($license_header);
 
-  $request = HH\global_get('_REQUEST') as ?dict<_, _>;
+  $request = HH\global_get('_GET') as ?dict<_, _>;
   $argv = HH\global_get('argv') as ?vec<_>;
 
   $action = idx($request, 'action') ?? idx($argv, 1)
