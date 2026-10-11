@@ -6,6 +6,17 @@ cd "$project_root"
 launcher="$project_root/bin/pha-linters-server.sh"
 test_dir=$(mktemp -d)
 export TMPDIR="$test_dir"
+mkdir -p "$test_dir/project/src"
+touch "$test_dir/project/.hhconfig"
+cat > "$test_dir/project/src/example.hack" <<'HACK'
+/** Server upgrade test is MIT licensed. */
+namespace SelfUpgradeTest;
+
+function example()[]: string {
+  return "double quoted";
+}
+HACK
+cd "$test_dir/project"
 port=${SERVER_TEST_PORT:-10649}
 server_pid=
 cleanup() {
@@ -37,8 +48,11 @@ start_server() {
   test "$(curl --noproxy '*' --fail --silent --max-time 5 \
     "http://127.0.0.1:$port/?action=identify-yourself")" = 'HTL\PhaLintersServer'
   test "$(curl --noproxy '*' --fail --silent --max-time 5 \
-    --data-binary @src/lib/is_likely_cli.hack \
-    "http://127.0.0.1:$port/?action=lint-input&format=vscode-json")" = '[]'
+    "http://127.0.0.1:$port/?action=lint-all&format=vscode-json")" != '[]'
+  curl --noproxy '*' --fail --silent --max-time 5 \
+    "http://127.0.0.1:$port/?action=lint-all&format=text" > "$test_dir/lint.txt"
+  grep -q 'src/example.hack' "$test_dir/lint.txt"
+  grep -q 'prefer_single_quoted_string_literals' "$test_dir/lint.txt"
 }
 
 start_server
