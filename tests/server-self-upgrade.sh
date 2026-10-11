@@ -44,6 +44,7 @@ start_server() {
     ''|*[!0-9]*) echo 'Invalid server PID' >&2; exit 1 ;;
   esac
   test "$server_pid" -gt 1
+  test -d "$test_dir/hack-compiler"
   test -z "$(find "$test_dir/hack-compiler" -mindepth 1 -print -quit)"
   test "$(curl --noproxy '*' --fail --silent --max-time 5 \
     "http://127.0.0.1:$port/?action=identify-yourself")" = 'HTL\PhaLintersServer'
