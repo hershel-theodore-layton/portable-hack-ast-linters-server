@@ -72,17 +72,9 @@ $SERVER_SH -e -s
 $SERVER_SH -e -d
 ```
 
-The embedded server supports self-upgrade. Starting it again on the same port
-compiles the new bundle, then replaces the running server using the compiler's
-handshake. Servers from before this handshake was introduced must be stopped
-manually once before upgrading.
-
-Replacement applies to any self-upgrade-enabled Hack Compiler server on that
-port in the same PID namespace. A foreground launcher exits when its server is
-replaced; for Docker Native development, upgrade by restarting the container.
-
-Self-upgrade requires the embedded bundle (`-e`). To serve an external resource,
-use `hack-compiler-serve-resource.sh -b /path/to/file.resource` from the
+The embedded server supports self-upgrade, which requires the embedded bundle
+(`-e`). To serve an external resource, use
+`hack-compiler-serve-resource.sh -b /path/to/file.resource` from the
 [Hack Compiler](https://github.com/hershel-theodore-layton/hack-compiler) package.
 
 ### Dependency hacking
