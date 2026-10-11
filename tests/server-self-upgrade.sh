@@ -6,6 +6,15 @@ cd "$project_root"
 launcher="$project_root/bin/pha-linters-server.sh"
 test_dir=$(mktemp -d)
 export TMPDIR="$test_dir"
+server_pid=
+cleanup() {
+  if [ -n "$server_pid" ]; then
+    kill -INT "$server_pid" 2>/dev/null || true
+  fi
+  rm -rf "$test_dir"
+}
+trap cleanup 0
+trap 'exit 1' HUP INT TERM
 mkdir -p "$test_dir/project/src"
 touch "$test_dir/project/.hhconfig"
 cat > "$test_dir/project/src/example.hack" <<'HACK'
@@ -17,17 +26,26 @@ function example()[]: string {
 }
 HACK
 cd "$test_dir/project"
-port=${SERVER_TEST_PORT:-10649}
-server_pid=
-cleanup() {
-  if [ -n "$server_pid" ]; then
-    kill -INT "$server_pid" 2>/dev/null || true
-  fi
-  rm -rf "$test_dir"
+if [ -n "${SERVER_TEST_PORT:-}" ]; then
+  port=$SERVER_TEST_PORT
+else
+  cat > "$test_dir/port.hack" <<'HACK'
+<<__EntryPoint>>
+function choose_port()[defaults]: void {
+  $error_number = 0;
+  $error_message = '';
+  $socket = \stream_socket_server(
+    'tcp://127.0.0.1:0',
+    inout $error_number,
+    inout $error_message,
+  );
+  invariant($socket !== false, 'Could not allocate a test port.');
+  $address = \stream_socket_get_name($socket, false) as string;
+  echo \substr($address, \strrpos($address, ':') + 1);
 }
-trap cleanup 0
-trap 'exit 1' HUP INT TERM
-
+HACK
+  port=$(hhvm -dhhvm.jit=0 "$test_dir/port.hack")
+fi
 start_server() {
   if ! timeout 60 sh "$launcher" -e -d -p "$port" > "$test_dir/server.log" 2>&1; then
     cat "$test_dir/server.log" >&2
