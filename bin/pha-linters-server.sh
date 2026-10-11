@@ -138,7 +138,7 @@ if [ "$changed" = yes ] && [ "$trusted" = no ]; then
 fi
 if [ "$changed" = yes ]; then
   if [ "$bundled" = yes ]; then
-    tail -n +166 "$0" > "$resource"
+    tail -n +167 "$0" > "$resource"
   fi
   if hhvm --hphp --help 2>&1 | grep -q -- '--target'; then
     set -- --target hhbc
@@ -152,6 +152,7 @@ printf '%s\n' "$fingerprint" > "$cache_dir/sha1sum.txt"
 if [ "$launch_mode" = daemon ]; then
   set -- -dhhvm.log.file=/dev/null
 fi
+export HACK_COMPILER_SERVER_FILE=$(realpath "$0")
 hhvm -m "$launch_mode" -p "$port" --no-config \
   -vServer.AllowRunAsRoot=1 \
   -dhhvm.repo.authoritative=true \
@@ -551,7 +552,7 @@ async function main_async()[defaults]: Awaitable<void> {
     return;
   }
 
-  $project_root = __DIR__;
+  $project_root = \dirname((\getenv('HACK_COMPILER_SERVER_FILE') as string));
   while (!file_exists($project_root.'/.hhconfig')) {
     $parent = HH4Shim\to_mixed(dirname($project_root)) as string;
     invariant($parent !== $project_root, 'Project root not found.');
