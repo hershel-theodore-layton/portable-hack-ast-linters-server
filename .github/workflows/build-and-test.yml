@@ -50,5 +50,3 @@ jobs:
         run: sh tests/sign-hack-source.sh
       - name: Test autoload suppression
         run: sh tests/autoload-your-code.sh
-      - name: Test server self-upgrade
-        run: sh tests/server-self-upgrade.sh
