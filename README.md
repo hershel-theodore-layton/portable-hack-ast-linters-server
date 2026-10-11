@@ -6,10 +6,9 @@ _A non-Hack distribution of PhaLinters to allow HTL packages to use portable-hac
 
 HTL containers recently became Docker Native. A simple `docker compose up`
 will automate a lot of the process described in [how to use](#how-to-use).
-The `CMD` of the [Dockerfile](./Dockerfile) passes `-s -g -b ...`.
-This will set up your `.vscode/settings.json` for local development,
-install the lint server globally (in the Docker container), and trust only the
-specified bundle.
+The `CMD` of the [Dockerfile](./Dockerfile) passes `-s -g -e`.
+This sets up your `.vscode/settings.json` for local development, runs the
+embedded bundle, and caches the compiled repository under `/var/tmp`.
 
 If this is your first time developing HTL, VSCode will display this prompt
 after a restart:
@@ -60,39 +59,18 @@ can be spawned using the `vendor/bin/pha-linters-server.sh` script.
 In the examples below `$SERVER_SH` should expand to the script path above.
 
 ```SH
-# Print help text and exit
+# Print help text
 $SERVER_SH -h
 
-# Interactive setup, scan for the bundle and prompts you to trust it.
-# Hosts the http server on port 10641, or the port specified with `-p`.
-$SERVER_SH
+# Run the embedded bundle on port 10641.
+$SERVER_SH -e
 
-# ASK setup, will setup `.vscode/settings.json` for local HTL development.
-# The installation directory is hidden away in `/var/tmp` of the Docker container.
-# The hardcoded bundle path is always used.
-$SERVER_SH -s -g -b ...
+# Set up VS Code for Docker Native development
+$SERVER_SH -e -s -g
 
-# AFK setup which builds and runs the first portable-hack-ast-linters-server-bundled.resource
-# Skips the trust prompt, should only be used if you trust every file in the directory.
-$SERVER_SH -t
-
-# AFK setup, point $SERVER_SH to a bundle, skips the prompt.
-$SERVER_SH -b "vendor/hershel-theodore-layton/portable-hack-ast-linters-server/bin/portable-hack-ast-linters-server-bundled.resource"
-
-# Lint once for CI, print diagnostics, and exit (0 when clean, 1 for lint errors).
-hhvm vendor/hershel-theodore-layton/portable-hack-ast-linters-server/bin/portable-hack-ast-linters-server-bundled.resource lint-all text
+# Supply your own bundle path
+$SERVER_SH -b /path/to/file.resource
 ```
-
-When running interactively, you may see the following prompt:
-
-```
-Found the following resource file.
-./path/to/portable-hack-ast-linters-server-bundled.resource
-If you trust the resource above, type 'I trust this resource' to build and run it.
-```
-
-When you type `I trust this resource`, you understand the risks involved with
-compiling and running this resource.
 
 ### Dependency hacking
 
@@ -119,20 +97,7 @@ developing this package requires the ini setting `hhvm.autoload.enabled=true`.
 Downstream consumers don't need native autoloading, since the bundle includes
 all the dependencies in a single file.
 
-When you are testing live (not the bundle itself), you can start the server using:
-
-```SH
-hhvm -m server -p 8080 -vServer.AllowRunAsRoot=1 -dhhvm.server.global_document=src/main.hack
-```
-
-If you want to test the bundle, use the following command:
-
-```SH
-./build.sh && bin/pha-linters-server.sh -p 8080 \
--b bin/portable-hack-ast-linters-server-bundled.resource
-```
-
-This will rebuild, recompile and start the lint-server.
+Run `bin/build.hack` to regenerate the embedded launcher and standalone resource.
 
 [^1]:
     This extension is available on open-vsx.org at the time of writing.

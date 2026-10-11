@@ -3,7 +3,7 @@ src/ export-ignore
 tests/ export-ignore
 .hhconfig export-ignore
 .hhvmconfig.hdf export-ignore
-build.sh export-ignore
+bin/build.hack export-ignore
 composer.dev.json export-ignore
 .dockerignore export-ignore
 docker-compose.yml export-ignore

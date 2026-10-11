@@ -18,13 +18,11 @@ async function main_async()[defaults]: Awaitable<void> {
     return;
   }
 
-  if (file_exists(dirname(__DIR__).'/.hhvmconfig.hdf')) {
-    $project_root = HH4Shim\to_mixed(dirname(__DIR__)) as string;
-  } else {
-    $project_root = HH4Shim\to_mixed(dirname(__DIR__)) as string
-      |> HH4Shim\to_mixed(dirname($$)) as string
-      |> HH4Shim\to_mixed(dirname($$)) as string
-      |> HH4Shim\to_mixed(dirname($$)) as string;
+  $project_root = __DIR__;
+  while (!file_exists($project_root.'/.hhconfig')) {
+    $parent = HH4Shim\to_mixed(dirname($project_root)) as string;
+    invariant($parent !== $project_root, 'Project root not found.');
+    $project_root = $parent;
   }
 
   $input = IO\request_input();
