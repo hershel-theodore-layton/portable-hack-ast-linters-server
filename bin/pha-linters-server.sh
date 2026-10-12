@@ -88,6 +88,10 @@ JSON
 JSON
 fi
 if [ "$launch_mode" = daemon ]; then
+  command -v curl > /dev/null || {
+    echo 'Daemon mode requires curl.' >&2
+    exit 1
+  }
   command -v setsid > /dev/null || {
     echo 'Daemon mode requires setsid.' >&2
     exit 1
@@ -115,7 +119,7 @@ if [ "$trusted" = no ]; then
 fi
 if [ "$bundled" = yes ]; then
   resource=source.resource
-  tail -n +234 "$0" > "$work_dir/$resource"
+  tail -n +242 "$0" > "$work_dir/$resource"
 fi
 if [ "$replace" = yes ]; then hhvm --lint "$work_dir/$resource" > /dev/null; fi
 if hhvm --hphp --help 2>&1 | grep -q -- '--target'; then
@@ -212,7 +216,11 @@ while :; do
   if [ "$replace" = yes ]; then
     if handshake && [ "$handshake_instance" = "$nonce" ]; then break; fi
   elif [ -s "$work_dir/www.pid" ]; then
-    break
+    if [ "$launch_mode" != daemon ] ||
+       curl --noproxy '*' --silent --head --max-time 1 \
+         "http://127.0.0.1:$port/" > /dev/null; then
+      break
+    fi
   fi
   if ! kill -0 "$server_pid" 2>/dev/null; then
     wait "$server_pid"
