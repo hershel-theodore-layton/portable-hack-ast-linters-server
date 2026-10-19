@@ -1,5 +1,38 @@
 #!/bin/sh
 set -eu
+
+# Extract the embedded gzip stream without starting another HHVM process.
+hack_compiler_extract() {
+  tail -n +276 "$1" | gzip -dc > "$2"
+}
+
+# Quote each argument before rebuilding the two argument lists in POSIX sh.
+hack_compiler_server_quote() {
+  hack_compiler_server_value=$1
+  printf "'"
+  while case "$hack_compiler_server_value" in *\'*) true ;; *) false ;; esac; do
+    printf '%s' "${hack_compiler_server_value%%\'*}" "'\\''"
+    hack_compiler_server_value=${hack_compiler_server_value#*\'}
+  done
+  printf "%s' " "$hack_compiler_server_value"
+}
+
+hack_compiler_server_mode=launcher
+hack_compiler_server_hhvm_arguments=
+hack_compiler_server_launcher_arguments=
+for hack_compiler_server_argument in "$@"; do
+  case "$hack_compiler_server_mode:$hack_compiler_server_argument" in
+    launcher:--hhvm-args) hack_compiler_server_mode=hhvm ;;
+    hhvm:--) hack_compiler_server_mode=remaining ;;
+    hhvm:*)
+      hack_compiler_server_hhvm_arguments="$hack_compiler_server_hhvm_arguments$(hack_compiler_server_quote "$hack_compiler_server_argument")"
+      ;;
+    *)
+      hack_compiler_server_launcher_arguments="$hack_compiler_server_launcher_arguments$(hack_compiler_server_quote "$hack_compiler_server_argument")"
+      ;;
+  esac
+done
+eval "set -- $hack_compiler_server_launcher_arguments"
 replace=yes
 legacy=yes
 
@@ -11,7 +44,7 @@ trusted=no
 resource=
 
 usage() {
-  echo "Usage: $0 [-p PORT] [-s] [-d] [-t] [-e | -b PATH | -r PATH]"
+  echo "Usage: $0 [-p PORT] [-s] [-d] [-t] [-e | -b PATH | -r PATH] [--hhvm-args OPTIONS [--]]"
   echo '  -e  Use the resource embedded in this script.'
   echo '  -b, -r PATH  Use and trust an external resource.'
   echo '  -s  Set up VS Code for Docker Native development.'
@@ -119,7 +152,7 @@ if [ "$trusted" = no ]; then
 fi
 if [ "$bundled" = yes ]; then
   resource=source.resource
-  tail -n +242 "$0" > "$work_dir/$resource"
+  hack_compiler_extract "$0" "$work_dir/$resource"
 fi
 if [ "$replace" = yes ]; then hhvm --lint "$work_dir/$resource" > /dev/null; fi
 if hhvm --hphp --help 2>&1 | grep -q -- '--target'; then
@@ -188,6 +221,7 @@ export HACK_COMPILER_SERVER_INSTANCE=$nonce
 if [ "$launch_mode" = daemon ]; then
   set -- "$@" -dhhvm.log.file=/dev/null
 fi
+eval "set -- \"\$@\" $hack_compiler_server_hhvm_arguments"
 if [ "$replace" = no ]; then
   set -- "$@" "-dhhvm.pid_file=$work_dir/www.pid"
 fi
@@ -239,11889 +273,310 @@ server_pid=
 exit "$server_status"
 exit 0
 __HACK_COMPILER_RESOURCE__
-///// src/all_files.hack /////
-namespace HTL\PhaLintersServer;
-/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{Keyset, Str, Vec};
-use function glob;
-
-function all_files(
-  string $project_root,
-  keyset<string> $base_directories,
-  int $directory_search_depth,
-)[defaults]: keyset<string> {
-  return Vec\map(
-    $base_directories,
-    $dir ==> Vec\range(0, $directory_search_depth)
-      |> Vec\map(
-        $$,
-        $stars ==> glob(
-          $project_root.'/'.$dir.Str\repeat('/*', $stars).'/*.hack',
-        ) as vec<_>,
-      ),
-  )
-    |> Vec\flatten($$)
-    |> Vec\flatten($$)
-    |> Vec\map($$, $x ==> $x as string)
-    |> Keyset\sort($$);
-}
-
-///// src/all_linters.hack /////
-namespace HTL\PhaLintersServer;
-/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
-use namespace HTL\PhaLinters;
-
-function all_linters(string $license_header)[]: vec<LintFunction> {
-  $known_pragma_prefixes = keyset['PhaLinters'];
-
-  $linters = vec[
-    PhaLinters\assignment_to_empty_list_tuple_or_shape_linter<>,
-    PhaLinters\async_function_and_method_linter<>,
-    PhaLinters\autoload_your_code_linter<>,
-    PhaLinters\camel_cased_methods_underscored_functions_linter<>,
-    PhaLinters\concat_merge_or_union_expression_can_be_simplified_linter<>,
-    PhaLinters\context_list_must_be_explicit_linter<>,
-    PhaLinters\count_expression_can_be_simplified_linter<>,
-    PhaLinters\dict_literal_keys_must_be_unique_linter<>,
-    PhaLinters\dont_await_in_a_loop_linter<>,
-    PhaLinters\dont_create_forwarding_lambdas_linter<>,
-    PhaLinters\dont_discard_new_expressions_linter<>,
-    PhaLinters\dont_use_asio_join_linter<>,
-    PhaLinters\dont_use_hack_collections_linter<>,
-    PhaLinters\final_or_abstract_classes_linter<>,
-    PhaLinters\generated_file_may_not_be_modified_manually_linter<>,
-    PhaLinters\getter_method_could_have_a_context_list_linter<>,
-    PhaLinters\group_use_statement_alphabetization_linter<>,
-    PhaLinters\group_use_statement_could_be_removed_linter<>,
-    PhaLinters\group_use_statement_could_be_simplified_linter<>,
-    PhaLinters\group_use_statements_linter<>,
-    PhaLinters\keywords_should_be_lowercase_linter<>,
-    PhaLinters\lambda_parameter_list_parentheses_can_be_removed_linter<>,
-    PhaLinters\must_use_braces_for_control_flow_linter<>,
-    PhaLinters\method_constant_resolves_to_enclosing_lambda_linter<>,
-    PhaLinters\negated_is_expression_does_not_need_parens_linter<>,
-    PhaLinters\namespace_private_symbol_linter<>,
-    PhaLinters\namespace_private_use_clause_linter<>,
-    PhaLinters\no_elseif_linter<>,
-    PhaLinters\no_empty_statements_linter<>,
-    PhaLinters\no_final_method_in_final_classes_linter<>,
-    PhaLinters\no_newline_at_start_of_control_flow_block_linter<>,
-    PhaLinters\no_php_equality_linter<>,
-    PhaLinters\no_string_interpolation_linter<>,
-    PhaLinters\pragma_could_not_be_parsed_linter<>,
-    PhaLinters\prefer_lambdas_linter<>,
-    PhaLinters\prefer_require_once_linter<>,
-    PhaLinters\prefer_semicolon_bodied_namespace_linter<>,
-    PhaLinters\prefer_single_quoted_string_literals_linter<>,
-    PhaLinters\prefer_use_clause_over_fully_qualified_names_linter<>
-      |> PhaLinters\Support\disable_in_generated_source($$),
-    PhaLinters\region_comments_must_be_balanced_linter<>,
-    PhaLinters\shout_case_enum_members_linter<>,
-    PhaLinters\solitary_escape_sequences_should_be_disambiguated_linter<>,
-    PhaLinters\unreachable_code_linter<>,
-    PhaLinters\unused_pipe_variable_linter<>,
-    PhaLinters\unused_use_clause_linter<>,
-    PhaLinters\unused_variable_linter<>,
-    PhaLinters\use_statement_alphabetization_linter<>,
-    PhaLinters\use_statement_could_be_removed_linter<>,
-    PhaLinters\use_statement_order_linter<>,
-    PhaLinters\use_statement_with_as_linter<>,
-    PhaLinters\use_statement_with_leading_backslash_linter<>,
-    PhaLinters\use_statement_without_kind_linter<>,
-    PhaLinters\variable_name_must_be_lowercase_linter<>,
-    PhaLinters\whitespace_linter<>,
-  ];
-
-  $linters[] = ($script, $_, $_, $_, $pragma_map) ==>
-    PhaLinters\pragma_prefix_unknown_linter(
-      $script,
-      $pragma_map,
-      $known_pragma_prefixes,
-    );
-
-  $linters[] = ($script, $_, $_, $_, $pragma_map) ==>
-    PhaLinters\license_header_linter($script, $pragma_map, $license_header);
-
-  $linters[] = ($script, $syntax_index, $_, $_, $pragma_map) ==>
-    PhaLinters\shape_type_additional_field_intent_should_be_explicit_linter(
-      $script,
-      $syntax_index,
-      $pragma_map,
-      '/*_*/',
-    );
-
-  return $linters;
-}
-
-///// src/lib/LintFunction.hack /////
-namespace HTL\PhaLintersServer;
-/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
-use namespace HTL\{Pha, PhaLinters};
-
-type LintFunction = (function(
-  Pha\Script,
-  Pha\SyntaxIndex,
-  Pha\TokenIndex,
-  Pha\Resolver,
-  Pha\PragmaMap,
-)[]: vec<PhaLinters\LintError>);
-
-///// src/lib/encode_errors_as_human_readable_text.hack /////
-namespace HTL\PhaLintersServer;
-/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\PhaLinters;
-
-function encode_errors_as_human_readable_text(
-  dict<string, vec<PhaLinters\LintError>> $lint_errors,
-)[]: string {
-  $error_count = 0;
-  foreach ($lint_errors as $errors) {
-    $error_count += C\count($errors);
-  }
-
-  if ($error_count === 0) {
-    return "No errors!\n";
-  }
-
-  $errors_remaining = Str\format(
-    "%d lint-error%s remaining...\n",
-    $error_count,
-    $error_count > 1 ? 's' : '',
-  );
-
-  return Vec\map_with_key(
-    $lint_errors,
-    ($path, $errors) ==> Vec\map($errors, $e ==> $e->toString().' of '.$path)
-      |> Str\join($$, "\n\n"),
-  )
-    |> Str\join($$, "\n\n").$errors_remaining."\n";
-}
-
-///// src/lib/encode_errors_as_vscode_compatible_json.hack /////
-namespace HTL\PhaLintersServer;
-/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\{Pha, PhaLinters};
-use function json_encode_pure;
-use const JSON_UNESCAPED_SLASHES, JSON_UNESCAPED_UNICODE;
-
-function encode_errors_as_vscode_compatible_json(
-  dict<string, vec<PhaLinters\LintError>> $lint_errors,
-)[]: string {
-  $_json_encode_error = null;
-  return Vec\map_with_key(
-    $lint_errors,
-    ($path, $errs) ==> Vec\map(
-      $errs,
-      $e ==> shape(
-        'severity' => 2,
-        'path' => $path,
-        'message' => $e->getLinterNameWithoutNamespaceAndLinter(),
-        'range' => to_vscode_range($e->getPosition()),
-        'source' => 'Portable Hack AST Linters Server',
-        'relatedInformation' => vec[shape(
-          'location' => shape(
-            'range' => to_vscode_range($e->getPosition()),
-          ),
-          'message' => $e->getDescription(),
-        )],
-        'autofix' => $e->getPatches()
-          |> $$ is null
-            ? vec[]
-            : Pha\_Private\patch_set_reveal($$)->getReplacements()
-          |> Vec\map(
-            $$,
-            $r ==> shape(
-              'range' => to_vscode_range($r->getPosition()),
-              'replaceWith' => $r->getText(),
-            ),
-          ),
-      ),
-    ),
-  )
-    |> Vec\flatten($$)
-    |> json_encode_pure(
-      $$,
-      inout $_json_encode_error,
-      JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
-    ) as string;
-}
-
-///// src/lib/is_likely_cli.hack /////
-namespace HTL\PhaLintersServer;
-/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\IO;
-
-/**
- * If request_error is available, we are in CLI mode.
- * This is a simple check to make sure that the web server
- * does not accidentally expose signing functionality.
- */
-function is_likely_cli()[defaults]: bool {
-  return IO\request_error() is nonnull;
-}
-
-///// src/lib/lint_all_files.hack /////
-namespace HTL\PhaLintersServer;
-/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Dict, File};
-use namespace HTL\{Pha, PhaLinters};
-
-async function lint_all_files_async(
-  string $project_root,
-  vec<LintFunction> $lint_functions,
-  keyset<string> $base_directories,
-  int $directory_search_depth = 60,
-)[defaults]: Awaitable<dict<string, vec<PhaLinters\LintError>>> {
-  $paths = all_files($project_root, $base_directories, $directory_search_depth);
-  $files = await Dict\map_async($paths, async $p ==> {
-    $file = File\open_read_only($p);
-    using $file->closeWhenDisposed();
-    using $file->tryLockx(File\LockType::SHARED);
-    return shape('path' => $p, 'contents' => await $file->readAllAsync());
-  });
-
-  $ctx = Pha\create_context();
-  $out = dict[];
-
-  foreach ($files as $file) {
-    $contents = $file['contents'];
-    $errors = lint_hack_code($contents, inout $ctx, $lint_functions);
-    if (!C\is_empty($errors)) {
-      $out[$file['path']] = $errors;
-    }
-  }
-
-  return $out;
-}
-
-///// src/lib/lint_hack_code.hack /////
-namespace HTL\PhaLintersServer;
-/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\{Pha, PhaLinters};
-
-function lint_hack_code(
-  string $code,
-  inout Pha\Context $ctx,
-  vec<LintFunction> $lint_functions,
-)[]: vec<PhaLinters\LintError> {
-  list($script, $ctx) = Pha\parse($code, $ctx);
-  $syntax_index = Pha\create_syntax_kind_index($script);
-  $token_index = Pha\create_token_kind_index($script);
-  $resolver = Pha\create_name_resolver($script, $syntax_index, $token_index);
-  $pragma_map = Pha\create_pragma_map($script, $syntax_index);
-
-  return Vec\map(
-    $lint_functions,
-    $l ==> $l($script, $syntax_index, $token_index, $resolver, $pragma_map),
-  )
-    |> Vec\flatten($$)
-    |> Vec\filter($$, $e ==> !$e->isIgnored());
-}
-
-///// src/lib/sign_file.hack /////
-namespace HTL\PhaLintersServer;
-/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\File;
-use namespace HTL\{Pha, PhaLinters};
-
-async function sign_file_async(string $path)[defaults]: Awaitable<void> {
-  $file = File\open_read_write($path);
-  using $file->closeWhenDisposed();
-  using $file->tryLockx(File\LockType::EXCLUSIVE);
-  $source = await $file->readAllAsync();
-  list($script, $_) = Pha\parse($source, Pha\create_context());
-  $index = Pha\create_syntax_kind_index($script);
-  $pragmas = Pha\create_pragma_map($script, $index);
-  $signed = PhaLinters\Support\insert_digest($script, $pragmas);
-  $file->seek(0);
-  $file->truncate();
-  await $file->writeAllAsync($signed);
-}
-
-///// src/lib/snif_license_header_async.hack /////
-namespace HTL\PhaLintersServer;
-/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, File, IO, Vec};
-use function glob, is_file, is_readable;
-
-async function snif_license_header_async(
-  string $project_root,
-)[defaults]: Awaitable<?string> {
-  $glob = (string $path) ==>
-    Vec\map(glob($path) as vec<_>, (mixed $x) ==> $x as string);
-
-  $path = C\find(
-    Vec\concat(
-      $glob($project_root.'/src/*.hack'),
-      $glob($project_root.'/src/*/*.hack'),
-    ),
-    $path ==> is_file($path) && is_readable($path),
-  );
-
-  if ($path is null) {
-    return null;
-  }
-
-  $file = File\open_read_only($path);
-  using $file->closeWhenDisposed();
-  using $file->tryLockx(File\LockType::SHARED);
-
-  $br = new IO\BufferedReader($file);
-  return await $br->readUntilAsync('*/');
-}
-
-///// src/lib/to_vscode_range.hack /////
-namespace HTL\PhaLintersServer;
-/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-
-function to_vscode_range(Pha\LineAndColumnNumbers $x)[]: shape(
-  'start' => shape('line' => int, 'character' => int /*_*/),
-  'end' => shape('line' => int, 'character' => int /*_*/),
-  /*_*/
-) {
-  return shape(
-    'start' => shape(
-      'line' => $x->getStartLine(),
-      'character' => $x->getStartColumn(),
-    ),
-    'end' => shape(
-      'line' => $x->getEndLine(),
-      'character' => $x->getEndColumn(),
-    ),
-  );
-}
-
-///// src/main.hack /////
-namespace HTL\PhaLintersServer;
-/** portable-hack-ast-linters-server is MIT licensed, see /LICENSE. */
-
-use namespace HH;
-use namespace HH\Lib\{C, IO, Str, Vec};
-use namespace HTL\{HH4Shim, Pha};
-use function dirname, file_exists;
-
-<<__EntryPoint>>
-async function main_async()[defaults]: Awaitable<void> {
-  $hack_compiler_nonce = (\HH\global_get('_GET') as dict<_, _>)['__hack_compiler_handshake'] ?? null;
-  if ($hack_compiler_nonce is string) {
-    \header('Content-Type: text/plain');
-    echo 'hack-compiler/1:'.$hack_compiler_nonce.':'.
-      (\readlink('/proc/self/ns/pid') as string).':'.
-      (\getenv('HACK_COMPILER_SERVER_INSTANCE') as string).':'.(string)\getmypid();
-    exit(0);
-  }
-  $cli_argv = HH\global_get('argv') as ?vec<_>;
-  if (is_likely_cli() && idx($cli_argv, 1) === 'sign-file') {
-    invariant(
-      $cli_argv is nonnull && C\count($cli_argv) === 3,
-      'Usage: pha-sign-hack-source.sh FILE',
-    );
-    await sign_file_async($cli_argv[2] as string);
-    return;
-  }
-
-  $project_root = \dirname((\getenv('HACK_COMPILER_SERVER_FILE') as string));
-  while (!file_exists($project_root.'/.hhconfig')) {
-    $parent = HH4Shim\to_mixed(dirname($project_root)) as string;
-    invariant($parent !== $project_root, 'Project root not found.');
-    $project_root = $parent;
-  }
-
-  $input = IO\request_input();
-  $output = IO\request_output();
-
-  $license_header = await snif_license_header_async($project_root) ??
-    '/** This project is unlicensed. No license has been granted. */';
-
-  $lint_functions = all_linters($license_header);
-
-  $request = HH\global_get('_GET') as ?dict<_, _>;
-  $argv = HH\global_get('argv') as ?vec<_>;
-
-  $action = idx($request, 'action') ?? idx($argv, 1)
-    |> $$ ?as string ?? 'lint-all';
-
-  $format = idx($request, 'format') ?? idx($argv, 2)
-    |> $$ ?as string ?? 'text';
-
-  $directories = idx($request, 'directories') ?? idx($argv, 3)
-    |> $$ ?as string ?? 'src,tests'
-    |> Str\split($$, ',');
-
-  switch ($action) {
-    case 'identify-yourself':
-      await $output->writeAllAsync('HTL\PhaLintersServer');
-      return;
-    case 'lint-all':
-      $lint_errors = await lint_all_files_async(
-        $project_root,
-        $lint_functions,
-        keyset($directories),
-      );
-      break;
-    case 'lint-input':
-      $code = await $input->readAllAsync();
-      $ctx = Pha\create_context();
-      $lint_errors = lint_hack_code($code, inout $ctx, $lint_functions)
-        |> C\is_empty($$) ? dict[] : dict['' => $$];
-      break;
-    default:
-      await $output->writeAllAsync(
-        'Invalid mode argument, expected one of [lint-all, lint-input]',
-      );
-      exit(1);
-  }
-
-  switch ($format) {
-    case 'text':
-      await $output->writeAllAsync(
-        encode_errors_as_human_readable_text($lint_errors),
-      );
-      exit(C\is_empty(Vec\flatten($lint_errors)) ? 0 : 1);
-
-    case 'vscode-json':
-      await $output->writeAllAsync(
-        encode_errors_as_vscode_compatible_json($lint_errors),
-      );
-      exit(C\is_empty(Vec\flatten($lint_errors)) ? 0 : 1);
-
-    default:
-      await $output->writeAllAsync(
-        'Invalid format argument, expected one of [text, vscode-json]',
-      );
-      exit(1);
-  }
-}
-
-///// vendor/hershel-theodore-layton/hhvm-four-shim/src/hadva.hack /////
-namespace HTL\HH4Shim;
-/** hhvm-four-shim is MIT licensed, see /LICENSE */
-
-use function gettype;
-
-/**
- * Returns `dict<_, _>` on HHVM 4.103+.
- * Returns `darray<_, _>` on HHVM 4.102.
- */
-function array_to_shape(mixed $array)[]: mixed {
-  invariant(
-    $array is dict<_, _>,
-    'Expected a shape, got %s',
-    gettype($array) as string,
-  );
-  return $array;
-}
-
-/**
- * Returns `vec<_>` on HHVM 4.103+.
- * Returns `varray<_>` on HHVM 4.102.
- */
-function array_to_tuple(mixed $array)[]: mixed {
-  invariant(
-    $array is vec<_>,
-    'Expected a tuple, got %s',
-    gettype($array) as string,
-  );
-  return $array;
-}
-
-/**
- * Like array_to_shape, but the type information is retained.
- */
-function downgrade_dictish<Tk as arraykey, Tv>(
-  dict<Tk, Tv> $dict,
-)[]: AnyArray<Tk, Tv> {
-  return $dict;
-}
-
-/**
- * Like array_to_tuple, but the type information is retained.
- */
-function downgrade_vecish<T>(vec<T> $vec)[]: AnyArray<int, T> {
-  return $vec;
-}
-
-/**
- * Returns true for `darray<_, _>` and `dict<_, _>`.
- */
-function is_dictish(mixed $mixed)[]: bool {
-  return $mixed is dict<_, _>;
-}
-
-/**
- * Returns true for `varray<_>` and `vec<_>`.
- */
-function is_vecish(mixed $mixed)[]: bool {
-  return $mixed is vec<_>;
-}
-
-///// vendor/hershel-theodore-layton/hhvm-four-shim/src/to_mixed.hack /////
-namespace HTL\HH4Shim;
-/** hhvm-four-shim is MIT licensed, see /LICENSE */
-
-/**
- * Newer hh_client versions know more about the type of the values in your
- * program. It complains about useless `as`, which are required to satisfy older
- * versions of hh_client. By casting to `mixed` on all platforms first, we can
- * keep performing the `as` cast that newer hh_client versions would have
- * considered useless.
- */
-function to_mixed(mixed $mixed)[]: mixed {
-  return $mixed;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/PragmaMap.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-
-final class PragmaMap {
-  public function __construct(
-    private vec<(Syntax, LineAndColumnNumbers, vec<string>)> $pragmas,
-  )[] {}
-
-  public function getOverlappingPragmas(
-    LineAndColumnNumbers $target,
-  )[]: vec<vec<string>> {
-    return Vec\filter(
-      $this->pragmas,
-      $t ==> $target->getEndLine() >= $t[1]->getStartLine() &&
-        $target->getStartLine() <= $t[1]->getEndLine(),
-    )
-      |> Vec\map($$, $t ==> $t[2]);
-  }
-
-  public function getAllPragmas(
-  )[]: vec<(Syntax, LineAndColumnNumbers, vec<string>)> {
-    return $this->pragmas;
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/NameResolver.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-final class NameResolver {
-  /**
-   * Generated by scanning public sources and printing distinct parent kinds.
-   * Then, by reasoning about the ancestors, determine the kind.
-   */
-  private (function(Pha\Node)[]: bool)
-    $isAsIsContext,
-    $isFunctionContext,
-    $isQualifiedName,
-    $isTypeContext,
-    $isValidName,
-    $isXhp;
-
-  public function __construct(
-    Pha\Script $script,
-    private vec<NamespaceResolution> $namespaceResolution,
-    private dict<NodeId, string> $resolvedNames,
-    private dict<string, string> $aliasedNamespaces,
-    private keyset<string> $autoImportedFunctions,
-    private keyset<string> $autoImportedTypes,
-  )[] {
-    $this->isAsIsContext =
-      Pha\create_syntax_matcher($script, Pha\KIND_PREFIXED_STRING);
-    $this->isFunctionContext = Pha\create_syntax_matcher(
-      $script,
-      Pha\KIND_FUNCTION_CALL_EXPRESSION,
-      Pha\KIND_FUNCTION_POINTER_EXPRESSION,
-    );
-    $this->isQualifiedName =
-      Pha\create_syntax_matcher($script, Pha\KIND_QUALIFIED_NAME);
-    $this->isTypeContext = Pha\create_syntax_matcher(
-      $script,
-      Pha\KIND_CONSTRUCTOR_CALL,
-      Pha\KIND_GENERIC_TYPE_SPECIFIER,
-      Pha\KIND_SCOPE_RESOLUTION_EXPRESSION,
-      Pha\KIND_SIMPLE_TYPE_SPECIFIER,
-      Pha\KIND_TYPE_PARAMETER,
-    );
-    $this->isValidName = Pha\create_matcher(
-      $script,
-      vec[Pha\KIND_QUALIFIED_NAME],
-      vec[Pha\KIND_NAME, Pha\KIND_XHP_CLASS_NAME, Pha\KIND_XHP_ELEMENT_NAME],
-      vec[],
-    );
-    $this->isXhp = Pha\create_token_matcher(
-      $script,
-      Pha\KIND_XHP_CLASS_NAME,
-      Pha\KIND_XHP_ELEMENT_NAME,
-    );
-  }
-
-  public function bubbleQualifiedName(
-    Pha\Node $name,
-    vec<Pha\Syntax> $ancestors,
-  )[]: Pha\Node {
-    return C\find($ancestors, $this->isQualifiedName) ?? $name;
-  }
-
-  public function resolveName(
-    Pha\Node $name,
-    vec<Pha\Syntax> $ancestors,
-    string $compressed_code,
-  )[]: (string, NillableSyntax) {
-    $parent = $ancestors[0];
-    if (!($this->isValidName)($name)) {
-      return tuple($compressed_code, NIL);
-    }
-
-    // XHP names are a special case, they use `:` as a namespace separator.
-    // By making those names look like regular qualified names,
-    // we can treat them as normal names for the purposes of resolving names.
-    $compressed_code = Str\replace($compressed_code, ':', '\\');
-
-    if (Str\starts_with($compressed_code, '\\')) {
-      return tuple(Str\strip_prefix($compressed_code, '\\'), NIL);
-    }
-
-    if (($this->isAsIsContext)($parent)) {
-      return tuple($compressed_code, NIL);
-    }
-
-    $resolved_name = idx($this->resolvedNames, node_get_id($name));
-    if ($resolved_name is nonnull) {
-      return tuple($resolved_name, NIL);
-    }
-
-    $kind = $this->determineKind($name, $parent, $compressed_code);
-
-    if ($kind === UseKind::TYPE && static::isBuiltinType($compressed_code)) {
-      return tuple($compressed_code, NIL);
-    }
-
-    if ($kind === UseKind::CONST && static::isBuiltinConst($compressed_code)) {
-      return tuple($compressed_code, NIL);
-    }
-
-    $parts = Str\split($compressed_code, '\\');
-    $first_part = $parts[0];
-    $suffix = Vec\slice($parts, 1) |> Str\join($$, '\\') |> '\\'.$$;
-    $original_namespace =
-      C\findx($this->namespaceResolution, $n ==> $n->isInRange($name));
-
-    for (
-      $namespace = $original_namespace;
-      $namespace is nonnull;
-      $namespace = $namespace->getParent()
-    ) {
-      $use = idx($namespace->getUses(), $kind, vec[])
-        |> C\find($$, $u ==> $u->getLocalName() === $first_part);
-
-      if ($use is nonnull) {
-        return tuple(
-          $kind === UseKind::NAMESPACE
-            ? $use->getPrefix().$suffix
-            : $use->getPrefix().$use->getPreAliasName(),
-          $use->getClause(),
-        );
-      }
-    }
-
-    if ($kind === UseKind::NAMESPACE) {
-      $aliased_namespace = idx($this->aliasedNamespaces, $first_part);
-      if ($aliased_namespace is nonnull) {
-        return tuple($aliased_namespace.$suffix, NIL);
-      }
-    }
-
-    if (
-      $kind === UseKind::FUNCTION &&
-      C\contains_key($this->autoImportedFunctions, $first_part)
-    ) {
-      return tuple($first_part, NIL);
-    }
-
-    if (
-      $kind === UseKind::TYPE &&
-      C\contains_key($this->autoImportedTypes, $first_part)
-    ) {
-      return tuple($first_part, NIL);
-    }
-
-    return tuple($original_namespace->getName().$compressed_code, NIL);
-  }
-
-  private function determineKind(
-    Pha\Node $node,
-    Pha\Syntax $parent,
-    string $compressed_code,
-  )[]: UseKind {
-    if (($this->isQualifiedName)($node)) {
-      return UseKind::NAMESPACE;
-    }
-
-    if (($this->isXhp)($node)) {
-      return Str\contains($compressed_code, '\\')
-        ? UseKind::NAMESPACE
-        : UseKind::TYPE;
-    }
-
-    if (($this->isFunctionContext)($parent)) {
-      return UseKind::FUNCTION;
-    }
-
-    if (($this->isTypeContext)($parent)) {
-      return UseKind::TYPE;
-    }
-
-    return UseKind::CONST;
-  }
-
-  private static function isBuiltinConst(string $const_name)[]: bool {
-    return
-      Str\starts_with($const_name, '__') && Str\ends_with($const_name, '__');
-  }
-
-  private static function isBuiltinType(string $type_name)[]: bool {
-    return $type_name === '_' ||
-      Str\starts_with($type_name, '__') ||
-      C\contains(BUILTIN_CONTEXT_NAMES, $type_name);
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/implementation_types/Resolver.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
-newtype Resolver = NameResolver;
-
-function resolver_hide(NameResolver $resolver)[]: Resolver {
-  return $resolver;
-}
-
-function resolver_reveal(Resolver $resolver)[]: NameResolver {
-  return $resolver;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/AUTO_IMPORTED_FUNCTIONS.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
-// @see https://github.com/facebook/hhvm/blob/09f6283fcdbdac9b4ec19768d809ee7d2012e612/hphp/hack/src/parser/hh_autoimport.ml
-const keyset<string> AUTO_IMPORTED_FUNCTIONS = keyset[
-  'asio_get_current_context_idx',
-  'asio_get_running_in_context',
-  'asio_get_running',
-  'class_meth',
-  'darray',
-  'dict',
-  // Added by hand
-  'die',
-  // Added by hand
-  'exit',
-  'fun',
-  'heapgraph_create',
-  'heapgraph_dfs_edges',
-  'heapgraph_dfs_nodes',
-  'heapgraph_edge',
-  'heapgraph_foreach_edge',
-  'heapgraph_foreach_node',
-  'heapgraph_foreach_root',
-  'heapgraph_node_in_edges',
-  'heapgraph_node_out_edges',
-  'heapgraph_node',
-  'heapgraph_stats',
-  'idx',
-  'idx_readonly',
-  'inst_meth',
-  'invariant_callback_register',
-  'invariant_violation',
-  'invariant',
-  'is_darray',
-  'is_dict',
-  'is_keyset',
-  'is_varray',
-  'is_vec',
-  'keyset',
-  'meth_caller',
-  'objprof_get_data',
-  'objprof_get_paths',
-  'server_warmup_status',
-  'thread_mark_stack',
-  'thread_memory_stats',
-  'type_structure',
-  'type_structure_for_alias',
-  'varray',
-  'vec',
-  'xenon_get_data',
-];
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/AUTO_IMPORTED_TYPES.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
-// @see https://github.com/facebook/hhvm/blob/09f6283fcdbdac9b4ec19768d809ee7d2012e612/hphp/hack/src/parser/hh_autoimport.ml
-const keyset<string> AUTO_IMPORTED_TYPES = keyset[
-  'AnyArray',
-  'AsyncFunctionWaitHandle',
-  'AsyncGenerator',
-  'AsyncGeneratorWaitHandle',
-  'AsyncIterator',
-  'AsyncKeyedIterator',
-  'Awaitable',
-  'AwaitAllWaitHandle',
-  'classname',
-  'Collection',
-  'ConcurrentWaitHandle',
-  'ConditionWaitHandle',
-  'Container',
-  'darray',
-  'dict',
-  'ExternalThreadEventWaitHandle',
-  'IMemoizeParam',
-  'UNSAFESingletonMemoizeParam',
-  'ImmMap',
-  'ImmSet',
-  'ImmVector',
-  'InvariantException',
-  'Iterable',
-  'Iterator',
-  'KeyedContainer',
-  'KeyedIterable',
-  'KeyedIterator',
-  'KeyedTraversable',
-  'keyset',
-  'Map',
-  'ObjprofObjectStats',
-  'ObjprofPathsStats',
-  'ObjprofStringStats',
-  'Pair',
-  'RescheduleWaitHandle',
-  'ResumableWaitHandle',
-  'Set',
-  'Shapes',
-  'SleepWaitHandle',
-  'StaticWaitHandle',
-  'supportdyn',
-  'Traversable',
-  'typename',
-  'TypeStructure',
-  'TypeStructureKind',
-  'varray_or_darray',
-  'varray',
-  'vec_or_dict',
-  'vec',
-  'Vector',
-  'WaitableWaitHandle',
-  'XenonSample',
-];
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/BUILTIN_CONTEXT_NAMES.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
-// @see https://github.com/facebook/hhvm/blob/09f6283fcdbdac9b4ec19768d809ee7d2012e612/hphp/hack/src/parser/hh_autoimport.ml
-const vec<string> BUILTIN_CONTEXT_NAMES = vec[
-  'defaults',
-  'write_props',
-  'leak_safe',
-  'leak_safe_shallow',
-  'leak_safe_local',
-  'zoned',
-  'zoned_shallow',
-  'zoned_local',
-  'zoned_with',
-  'read_globals',
-  'globals',
-  'rx',
-  'rx_shallow',
-  'rx_local',
-];
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/NamespaceResolution.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-
-final class NamespaceResolution {
-  private NodeId $startsAt;
-  private NodeId $endsAt;
-
-  public function __construct(
-    Pha\Syntax $starts_at,
-    Pha\Node $ends_at,
-    private string $name,
-    private dict<UseKind, vec<UseInfo>> $uses,
-    private ?NamespaceResolution $parent,
-  )[] {
-    $this->startsAt = node_get_id($starts_at);
-    $this->endsAt = node_get_id($ends_at);
-  }
-
-  public function getName()[]: string {
-    return $this->parent is null
-      ? $this->name
-      : $this->parent->getName().$this->name;
-  }
-
-  public function getParent()[]: ?NamespaceResolution {
-    return $this->parent;
-  }
-
-  public function getUses()[]: dict<UseKind, vec<UseInfo>> {
-    return $this->uses;
-  }
-
-  public function isInRange(Pha\Node $node)[]: bool {
-    return
-      node_is_between_or_at_boundary($node, $this->startsAt, $this->endsAt);
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/UseInfo.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-
-final class UseInfo {
-  public function __construct(
-    private UseKind $kind,
-    private Pha\Syntax $clause,
-    private string $prefix,
-    private string $localName,
-    private string $preAliasName,
-  )[] {}
-
-  public function getClause()[]: Pha\Syntax {
-    return $this->clause;
-  }
-
-  public function getKind()[]: UseKind {
-    return $this->kind;
-  }
-
-  public function getLocalName()[]: string {
-    return $this->localName;
-  }
-
-  public function getPreAliasName()[]: string {
-    return $this->preAliasName;
-  }
-
-  public function getPrefix()[]: string {
-    return $this->prefix;
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/namespace_resolution/UseKind.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
-enum UseKind: int {
-  CONST = 0;
-  FUNCTION = 1;
-  NAMESPACE = 2;
-  TYPE = 3;
-  NONE = 4;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/_Private/three_way_zip.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Math};
-
-function three_way_zip<T1, T2, T3>(
-  Traversable<T1> $first,
-  Traversable<T2> $second,
-  Traversable<T3> $third,
-)[]: vec<(T1, T2, T3)> {
-  $one = vec($first);
-  $two = vec($second);
-  $three = vec($third);
-
-  $result = vec[];
-  $lesser_count = Math\minva(C\count($one), C\count($two), C\count($three));
-
-  for ($i = 0; $i < $lesser_count; ++$i) {
-    $result[] = tuple($one[$i], $two[$i], $three[$i]);
-  }
-
-  return $result;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/create_name_resolver.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Dict, Str, Vec};
-use type HTL\Pha\_Private\{NameResolver, NamespaceResolution, UseInfo, UseKind};
-
-/**
- * @param $aliased_namespaces When using the `hhvm.aliased_namespaces` ini +
- * `auto_namespace_map` hhconfig settings, some default namespaces are used.
- * So for example, mapping `Vec` to `HH\Lib\Vec` acts as if every file started
- * with `if (!exists(use clause "Vec")) use namespace HH\Lib\Vec as Vec;`.
- * You can pass the result of `\ini_get("hhvm.aliased_namespaces")` to make
- * `resolve_name` take your pre-resolved names into account.
- *
- * @param $auto_imported_functions a list of functions that are available in any
- * Hack file without an explicit use clause. If your HHVM version has different
- * auto-imported names, and you care, you can pass a different list of names.
- *
- * @param $auto_imported_types a list of types that are available in any
- * Hack file without an explicit use clause. If your HHVM version has different
- * auto-imported names, and you care, you can pass a different list of names.
- */
-function create_name_resolver(
-  Script $script,
-  SyntaxIndex $syntax_index,
-  TokenIndex $token_index,
-  dict<string, string> $aliased_namespaces = dict[],
-  ?keyset<string> $auto_imported_functions = null,
-  ?keyset<string> $auto_imported_types = null,
-)[]: Resolver {
-  $auto_imported_functions ??= _Private\AUTO_IMPORTED_FUNCTIONS;
-  $auto_imported_types ??= _Private\AUTO_IMPORTED_TYPES;
-
-  $is_const = create_token_matcher($script, KIND_CONST);
-  $is_function = create_token_matcher($script, KIND_FUNCTION);
-  $is_function_declaration_header =
-    create_syntax_matcher($script, KIND_FUNCTION_DECLARATION_HEADER);
-  $is_methodish_declaration =
-    create_syntax_matcher($script, KIND_METHODISH_DECLARATION);
-  $is_missing = create_syntax_matcher($script, KIND_MISSING);
-  $is_namespace = create_token_matcher($script, KIND_NAMESPACE);
-  $is_namespace_body = create_syntax_matcher($script, KIND_NAMESPACE_BODY);
-  $is_namespace_declaration_header =
-    create_syntax_matcher($script, KIND_NAMESPACE_DECLARATION_HEADER);
-  $is_namespace_group_use_declaration =
-    create_syntax_matcher($script, KIND_NAMESPACE_GROUP_USE_DECLARATION);
-  $is_namespace_use_clause =
-    create_syntax_matcher($script, KIND_NAMESPACE_USE_CLAUSE);
-  $is_namespace_use_or_group_use_declaration = create_syntax_matcher(
-    $script,
-    KIND_NAMESPACE_USE_DECLARATION,
-    KIND_NAMESPACE_GROUP_USE_DECLARATION,
-  );
-  $is_qualified_name = create_syntax_matcher($script, KIND_QUALIFIED_NAME);
-  $is_type = create_token_matcher($script, KIND_TYPE);
-
-  $get_function_name = create_member_accessor($script, MEMBER_FUNCTION_NAME);
-  $get_namespace_body = create_member_accessor($script, MEMBER_NAMESPACE_BODY);
-  $get_namespace_declarations =
-    create_member_accessor($script, MEMBER_NAMESPACE_DECLARATIONS)
-    |> returns_syntax($$);
-  $get_namespace_group_use_prefix =
-    create_member_accessor($script, MEMBER_NAMESPACE_GROUP_USE_PREFIX);
-  $get_namespace_header =
-    create_member_accessor($script, MEMBER_NAMESPACE_HEADER)
-    |> returns_syntax($$);
-  $get_namespace_name = create_member_accessor($script, MEMBER_NAMESPACE_NAME);
-  $get_namespace_use_clauses = create_member_accessor(
-    $script,
-    MEMBER_NAMESPACE_USE_CLAUSES,
-    MEMBER_NAMESPACE_GROUP_USE_CLAUSES,
-  )
-    |> returns_syntax($$);
-  $get_namespace_use_alias =
-    create_member_accessor($script, MEMBER_NAMESPACE_USE_ALIAS);
-  $get_namespace_use_name =
-    create_member_accessor($script, MEMBER_NAMESPACE_USE_NAME);
-  $get_namespace_use_kind = create_member_accessor(
-    $script,
-    MEMBER_NAMESPACE_USE_KIND,
-    MEMBER_NAMESPACE_GROUP_USE_KIND,
-  );
-
-  $namespaces = () ==> {
-    $declaration_list =
-      node_get_first_childx($script, SCRIPT_NODE) |> as_syntax($$);
-
-    $to_use_infos = $uses ==> Vec\map($uses, $use ==> {
-      $use = as_syntax($use);
-      $kind = $get_namespace_use_kind($use);
-      if ($is_const($kind)) {
-        $kind = UseKind::CONST;
-      } else if ($is_function($kind)) {
-        $kind = UseKind::FUNCTION;
-      } else if ($is_namespace($kind)) {
-        $kind = UseKind::NAMESPACE;
-      } else if ($is_type($kind)) {
-        $kind = UseKind::TYPE;
-      } else {
-        $kind = UseKind::NONE;
-      }
-
-      if ($is_namespace_group_use_declaration($use)) {
-        $prefix = $get_namespace_group_use_prefix($use)
-          |> node_get_code_compressed($script, $$);
-      } else {
-        $prefix = '';
-      }
-
-      $make_use_infos_for_kind = $kind ==> $get_namespace_use_clauses($use)
-        |> list_get_items_of_children($script, $$)
-        |> Vec\map($$, as_syntax<>)
-        |> Vec\map(
-          $$,
-          $clause ==> {
-            $use_name_text = $get_namespace_use_name($clause)
-              |> node_get_code_compressed($script, $$);
-
-            $last_part = Str\split($use_name_text, '\\') |> C\lastx($$);
-
-            $alias = $get_namespace_use_alias($clause);
-            if ($is_missing($alias)) {
-              $local_name = $last_part;
-            } else {
-              $local_name = node_get_code_compressed($script, $alias);
-            }
-
-            return new UseInfo(
-              $kind,
-              $clause,
-              $kind === UseKind::NAMESPACE
-                ? $prefix.$use_name_text
-                : Str\strip_suffix($prefix.$use_name_text, $last_part),
-              $local_name,
-              $last_part,
-            );
-          },
-        );
-
-      return $kind === UseKind::NONE
-        ? Vec\concat(
-            vec[$make_use_infos_for_kind(UseKind::NAMESPACE)],
-            vec[$make_use_infos_for_kind(UseKind::TYPE)],
-          )
-          |> Vec\flatten($$)
-        : $make_use_infos_for_kind($kind);
-    })
-      |> Vec\flatten($$)
-      |> Dict\group_by($$, $u ==> $u->getKind());
-
-    $namespace_blocks =
-      index_get_nodes_by_kind($syntax_index, KIND_NAMESPACE_DECLARATION)
-      |> Vec\map($$, $n ==> {
-        $scope = $get_namespace_body($n)
-          |> $is_namespace_body($$)
-            ? as_syntax($$) |> $get_namespace_declarations($$)
-            : $declaration_list;
-
-        $uses = node_get_children($script, $scope)
-          |> Vec\filter($$, $is_namespace_use_or_group_use_declaration);
-
-        $name = $get_namespace_header($n)
-          |> $get_namespace_name($$)
-          |> node_get_code_compressed($script, $$).'\\';
-
-        return shape(
-          'namespace' =>
-            $is_namespace_body($get_namespace_body($n)) ? $n : SCRIPT_NODE,
-          'scope' => $scope,
-          'uses' => $to_use_infos($uses),
-          'name' => $name,
-        );
-      });
-
-    if (C\is_empty($namespace_blocks)) {
-      $namespace_blocks = vec[
-        shape(
-          'namespace' => SCRIPT_NODE,
-          'scope' => $declaration_list,
-          'uses' => $to_use_infos(
-            node_get_children($script, $declaration_list)
-              |> Vec\filter($$, $is_namespace_use_or_group_use_declaration),
-          ),
-          'name' => '',
-        ),
-      ];
-    }
-
-    $namespaces = dict[];
-
-    foreach ($namespace_blocks as $block) {
-      $parent = C\find(
-        node_get_ancestors($script, $block['namespace']),
-        $a ==> C\contains_key($namespaces, node_get_source_order($a)),
-      )
-        |> $$ is null ? null : $namespaces[node_get_source_order($$)];
-
-      $namespaces[node_get_source_order($block['namespace'])] =
-        new NamespaceResolution(
-          $block['scope'],
-          node_get_last_descendant_or_self($script, $block['scope']),
-          $block['name'],
-          $block['uses'],
-          $parent,
-        );
-    }
-
-    return Vec\reverse($namespaces);
-  }();
-
-  $get_closest_namespace = $node ==>
-    C\find($namespaces, $n ==> $n->isInRange($node));
-
-  $is_a_parent_that_should_be_resolved_as_is = create_syntax_matcher(
-    $script,
-    KIND_CONTEXT_CONST_DECLARATION,
-    KIND_ENUMERATOR,
-    KIND_ENUM_CLASS_ENUMERATOR,
-    KIND_MARKUP_SUFFIX,
-    KIND_MEMBER_SELECTION_EXPRESSION,
-    KIND_NAMESPACE_GROUP_USE_DECLARATION,
-    KIND_NAMESPACE_USE_CLAUSE,
-    KIND_QUALIFIED_NAME,
-    KIND_SAFE_MEMBER_SELECTION_EXPRESSION,
-    KIND_SCOPE_RESOLUTION_EXPRESSION,
-    KIND_TYPE_PARAMETER,
-  );
-
-  $get_a_member_that_should_be_resolved_as_is = create_member_accessor(
-    $script,
-    MEMBER_CONTEXT_CONST_NAME,
-    MEMBER_ENUM_CLASS_ENUMERATOR_NAME,
-    MEMBER_ENUMERATOR_NAME,
-    MEMBER_MARKUP_SUFFIX_NAME,
-    MEMBER_MEMBER_NAME,
-    MEMBER_NAMESPACE_GROUP_USE_PREFIX,
-    MEMBER_NAMESPACE_USE_ALIAS,
-    MEMBER_SAFE_MEMBER_NAME,
-    MEMBER_SCOPE_RESOLUTION_NAME,
-    MEMBER_TYPE_NAME,
-  );
-
-  // Many places where a name token can appear don't need to be resolved,
-  // for example `$x->noNeedToResolveThisUseAsIs`.
-  $should_be_resolved_as_is = ($grand_parent, $parent, $node) ==>
-    $is_a_parent_that_should_be_resolved_as_is($parent) &&
-      $get_a_member_that_should_be_resolved_as_is($parent) === $node ||
-    // This check needs to be performed separately, because KIND_NAMESPACE_USE_CLAUSE
-    // has two members that need to be resolved as-is, alias and name.
-    // You therefore can't include this in the member accessor.
-    $is_namespace_use_clause($parent) &&
-      $get_namespace_use_name($parent) === $node ||
-    // Function names are resolved using local rules, but method names are as-is.
-    $is_methodish_declaration($grand_parent) &&
-      $is_function_declaration_header($parent) &&
-      $get_function_name($parent) === $node ||
-    // Namespace declarations that aren't namespace blocks don't inherit prefixes.
-    $is_namespace_declaration_header($parent) &&
-      !$is_namespace_body($get_namespace_body($grand_parent));
-
-  $is_a_parent_that_should_be_resolved_locally = create_syntax_matcher(
-    $script,
-    KIND_ALIAS_DECLARATION,
-    KIND_CLASSISH_DECLARATION,
-    KIND_CONTEXT_ALIAS_DECLARATION,
-    KIND_CONSTANT_DECLARATOR,
-    KIND_ENUM_CLASS_DECLARATION,
-    KIND_ENUM_DECLARATION,
-    KIND_FUNCTION_DECLARATION_HEADER,
-    KIND_NAMESPACE_DECLARATION_HEADER,
-    KIND_TYPE_CONST_DECLARATION,
-  );
-
-  $get_a_member_that_should_be_resolved_locally = create_member_accessor(
-    $script,
-    MEMBER_ALIAS_NAME,
-    MEMBER_CLASSISH_NAME,
-    MEMBER_CTX_ALIAS_NAME,
-    MEMBER_CONSTANT_DECLARATOR_NAME,
-    MEMBER_ENUM_CLASS_NAME,
-    MEMBER_ENUM_NAME,
-    MEMBER_FUNCTION_NAME,
-    MEMBER_NAMESPACE_NAME,
-    MEMBER_TYPE_CONST_NAME,
-  );
-
-  // In declarations, the declared name should be resolved in the local namespace.
-  // `namespace A; function b(): void {}` is `\A\b`.
-  $should_be_resolved_with_local_rules = ($parent, $node) ==>
-    $is_a_parent_that_should_be_resolved_locally($parent) &&
-    $get_a_member_that_should_be_resolved_locally($parent) === $node;
-
-  $resolve_name = $n ==> {
-    $name_text = node_get_code_compressed($script, $n);
-    $parent = node_get_parent($script, $n) |> as_syntax($$);
-    $grand_parent = syntax_get_parent($script, $parent);
-
-    if ($should_be_resolved_as_is($grand_parent, $parent, $n)) {
-      return $name_text;
-    }
-
-    if ($should_be_resolved_with_local_rules($parent, $n)) {
-      return $get_closest_namespace($n)
-        |> $$ is null ? $name_text : $$->getName().$name_text;
-    }
-
-    return null;
-  };
-
-  return index_get_nodes_by_kind($token_index, KIND_NAME)
-    |> Vec\map(
-      $$,
-      $n ==> node_get_ancestors($script, $n)
-        |> C\find($$, $is_qualified_name) ?? $n,
-    )
-    |> Vec\unique_by($$, node_get_id<>)
-    |> Dict\pull($$, $resolve_name, node_get_id<>)
-    |> Dict\filter_nulls($$)
-    |> new NameResolver(
-      $script,
-      $namespaces,
-      $$,
-      $aliased_namespaces,
-      $auto_imported_functions,
-      $auto_imported_types,
-    )
-    |> _Private\resolver_hide($$);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/create_pragma_map.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-
-function create_pragma_map(
-  Script $script,
-  SyntaxIndex $syntax_index,
-)[]: PragmaMap {
-  $source = node_get_code($script, SCRIPT_NODE);
-
-  $is_expression_statement =
-    create_syntax_matcher($script, KIND_EXPRESSION_STATEMENT);
-
-  $get_function_call_arguments =
-    create_member_accessor($script, MEMBER_FUNCTION_CALL_ARGUMENT_LIST)
-    |> returns_syntax($$);
-  $get_function_call_receiver =
-    create_member_accessor($script, MEMBER_FUNCTION_CALL_RECEIVER);
-  $get_constructor_arguments =
-    create_member_accessor($script, MEMBER_CONSTRUCTOR_CALL_ARGUMENT_LIST)
-    |> returns_syntax($$);
-  $get_constructor_type =
-    create_member_accessor($script, MEMBER_CONSTRUCTOR_CALL_TYPE);
-  $get_vec_members =
-    create_member_accessor($script, MEMBER_VECTOR_INTRINSIC_MEMBERS)
-    |> returns_syntax($$);
-
-  $parse_arguments = $node_list ==>
-    list_get_items_of_children($script, $node_list)
-    |> Vec\map($$, $a ==> node_get_code_compressed($script, $a));
-
-  $parse_attributes = () ==> {
-    $pragma_to_scope = $p ==> syntax_get_parent($script, $p)
-      |> syntax_get_parent($script, $$)
-      |> syntax_get_parent($script, $$)
-      |> syntax_get_parent($script, $$)
-      |> node_get_source_range($script, $$)
-      |> source_range_to_line_and_column_numbers($script, $$);
-
-    $pragmas = index_get_nodes_by_kind($syntax_index, KIND_CONSTRUCTOR_CALL)
-      |> Vec\filter(
-        $$,
-        $c ==> $get_constructor_type($c)
-          |> node_get_code_compressed($script, $$) === 'Pragmas',
-      );
-
-    $effects = Vec\map(
-      $pragmas,
-      $p ==> $get_constructor_arguments($p)
-        |> list_get_items_of_children($script, $$)
-        |> Vec\map(
-          $$,
-          $vec ==>
-            as_syntax($vec) |> $get_vec_members($$) |> $parse_arguments($$),
-        ),
-    );
-
-    $out = vec[];
-    foreach ($pragmas as $i => $pragma) {
-      $scope = $pragma_to_scope($pragma);
-      foreach ($effects[$i] as $effect) {
-        $out[] = tuple($pragma, $scope, $effect);
-      }
-    }
-
-    return $out;
-  };
-
-  $parse_directives = () ==> {
-    $pragma_to_scope = $p ==> node_get_ancestors($script, $p)
-      |> C\find($$, $is_expression_statement) ?? $p
-      |> node_get_source_range($script, $$)
-      |> source_range_to_line_and_column_numbers($script, $$)
-      |> new LineAndColumnNumbers(
-        $$->getStartLine(),
-        $$->getStartColumn(),
-        $$->getEndLine() + 1,
-        $$->getEndColumn(),
-      );
-
-    $pragmas =
-      index_get_nodes_by_kind($syntax_index, KIND_FUNCTION_CALL_EXPRESSION)
-      |> Vec\filter(
-        $$,
-        $f ==> $get_function_call_receiver($f)
-          |> node_get_code_compressed($script, $$) === 'pragma',
-      );
-
-    $effects = Vec\map(
-      $pragmas,
-      $p ==> $get_function_call_arguments($p) |> $parse_arguments($$),
-    );
-
-    return _Private\three_way_zip(
-      $pragmas,
-      Vec\map($pragmas, $pragma_to_scope),
-      $effects,
-    );
-  };
-
-  $pragma_lines = vec[];
-
-  if (Str\contains($source, 'use type HTL\\Pragma\\Pragmas;')) {
-    $pragma_lines = $parse_attributes();
-  }
-
-  if (Str\contains($source, 'use function HTL\\Pragma\\pragma;')) {
-    $pragma_lines = Vec\concat($pragma_lines, $parse_directives());
-  }
-
-  return new PragmaMap($pragma_lines);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/public_types.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
-type Resolver = _Private\Resolver;
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-extras/src/resolve_name.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast-extras is MIT licensed, see /LICENSE. */
-
-function resolve_name(
-  Resolver $resolver,
-  Script $script,
-  NillableNode $node,
-)[]: string {
-  return resolve_name_and_use_clause($resolver, $script, $node)[0];
-}
-
-function resolve_name_and_use_clause(
-  Resolver $resolver,
-  Script $script,
-  NillableNode $node,
-)[]: (string, NillableSyntax) {
-  if ($node === NIL) {
-    return tuple('', NIL);
-  }
-
-  $node = _Private\cast_away_nil($node);
-
-  $resolver = _Private\resolver_reveal($resolver);
-  $ancestors = node_get_syntax_ancestors($script, $node);
-  $node = $resolver->bubbleQualifiedName($node, $ancestors);
-  $compressed_code = node_get_code_compressed($script, $node);
-
-  return $resolver->resolveName($node, $ancestors, $compressed_code);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/LintError.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-final class LintError {
-  public function __construct(
-    private string $linterName,
-    private string $description,
-    private Pha\Node $blamedNode,
-    private Pha\LineAndColumnNumbers $position,
-    private string $code,
-    private bool $isIgnored,
-    private ?Pha\Patches $patches,
-  )[] {}
-
-  public static function create(
-    Pha\Script $script,
-    Pha\PragmaMap $pragma_map,
-    Pha\Node $blamed_node,
-    string $linter_name,
-    string $description,
-  )[]: this {
-    return static::createWithPatches(
-      $script,
-      $pragma_map,
-      $blamed_node,
-      $linter_name,
-      $description,
-      null,
-    );
-  }
-
-  public static function createWithPatches(
-    Pha\Script $script,
-    Pha\PragmaMap $pragma_map,
-    Pha\Node $blamed_node,
-    string $linter_name,
-    string $description,
-    ?Pha\Patches $patches,
-  )[]: this {
-    $position = Pha\node_get_line_and_column_numbers($script, $blamed_node);
-    return new static(
-      $linter_name,
-      $description,
-      $blamed_node,
-      $position,
-      Pha\node_get_code($script, $blamed_node),
-      static::isIgnoredImpl($pragma_map, $position, $linter_name),
-      $patches,
-    );
-  }
-
-  /**
-   * Identical to `::create()`, but indicates that the option to add patches
-   * was considered and not taken, instead of not being implemented (just yet).
-   */
-  public static function createWithoutPatches(
-    Pha\Script $script,
-    Pha\PragmaMap $pragma_map,
-    Pha\Node $blamed_node,
-    string $linter_name,
-    string $description,
-  )[]: this {
-    return static::createWithPatches(
-      $script,
-      $pragma_map,
-      $blamed_node,
-      $linter_name,
-      $description,
-      null,
-    );
-  }
-
-  public function getBlamedNode()[]: Pha\Node {
-    return $this->blamedNode;
-  }
-
-  public function getDescription()[]: string {
-    return $this->description;
-  }
-
-  public function getLinterName()[]: string {
-    return $this->linterName;
-  }
-
-  public function getLinterNameWithoutNamespaceAndLinter()[]: string {
-    return static::stripLinterSuffix($this->linterName);
-  }
-
-  public function getPatches()[]: ?Pha\Patches {
-    return $this->patches;
-  }
-
-  public function getPosition()[]: Pha\LineAndColumnNumbers {
-    return $this->position;
-  }
-
-  public function isIgnored()[]: bool {
-    return $this->isIgnored;
-  }
-
-  public function toString()[]: string {
-    return Str\format(
-      "Error(%s): %s\n-----\n%s\n-----\nOn line: %d",
-      $this->getLinterName(),
-      $this->getDescription(),
-      $this->code,
-      $this->position->getEndLine(),
-    );
-  }
-
-  private static function isIgnoredImpl(
-    Pha\PragmaMap $pragma_map,
-    Pha\LineAndColumnNumbers $position,
-    string $linter_name,
-  )[]: bool {
-    return $pragma_map->getOverlappingPragmas($position)
-      |> Vec\filter(
-        $$,
-        $p ==> Str\trim($p[0], '"\'')
-          |> $$ === 'PhaLinters' || $$ === 'HTL\PhaLinters',
-      )
-      |> Vec\flatten($$)
-      |> Vec\map($$, $str ==> Str\trim($str, '"\''))
-      |> Vec\filter($$, $str ==> Str\starts_with($str, 'fixme:'))
-      |> Vec\map($$, $str ==> Str\strip_prefix($str, 'fixme:'))
-      |> C\contains($$, static::stripLinterSuffix($linter_name));
-  }
-
-  private static function stripLinterSuffix(string $linter_name)[]: string {
-    return Str\split($linter_name, '\\')
-      |> C\lastx($$)
-      |> Str\strip_suffix($$, '_linter')
-      |> Str\strip_suffix($$, 'Linter');
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/async_function_and_method_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{Str, Vec};
-use namespace HTL\Pha;
-
-function async_function_and_method_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-  ?vec<string> $allowed_suffixes = null,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $get_return_type =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_TYPE);
-
-  $is_async = $decl ==> $get_return_type($decl)
-    |> Support\get_first_token($script, $$)
-    |> Pha\token_get_text($script, Pha\as_token_or_nil($$)) === 'Awaitable';
-
-  return Support\enforce_naming(
-    $script,
-    $syntax_index,
-    ($name, $decl) ==> $is_async($decl) &&
-      !Str\ends_with($name, '_async') &&
-      !Str\ends_with($name, '_asyncx'),
-    ($name, $decl) ==> $is_async($decl) &&
-      !Str\starts_with($name, 'test') &&
-      !Str\ends_with($name, 'Async') &&
-      !Str\ends_with($name, 'Asyncx'),
-    $allowed_suffixes,
-  )
-    |> Vec\map(
-      $$,
-      $n ==> LintError::create(
-        $script,
-        $pragma_map,
-        $n,
-        $linter,
-        'Please use an async suffix (_async, _asyncx, Async, or Asyncx).',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/camel_cased_methods_underscored_functions_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Regex, Str, Vec};
-use namespace HTL\Pha;
-
-function camel_cased_methods_underscored_functions_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-  ?vec<string> $allowed_suffixes = null,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $get_return_type =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_TYPE);
-
-  $is_factory_func = ($decl, string $name) ==> $get_return_type($decl)
-    |> Pha\node_get_code($script, $$)
-    |> Str\trim($$)
-    |> Str\split($$, '\\')
-    |> C\last($$) ?? ''
-    |> Str\split($$, '<', 2)
-    |> C\first($$) === $name;
-
-  return Support\enforce_naming(
-    $script,
-    $syntax_index,
-    ($name, $decl) ==> !Str\starts_with($name, '__') &&
-      !Regex\matches($name, re'/^[a-z0-9_]+$/') &&
-      !$is_factory_func($decl, $name),
-    ($name, $decl) ==> {
-      return !C\any(
-        vec['__', 'test_', 'provide_'],
-        $prefix ==> Str\starts_with($name, $prefix),
-      ) &&
-        !Regex\matches($name, re'/^[a-z][a-zA-Z0-9]*$/') &&
-        !$is_factory_func($decl, $name);
-    },
-    $allowed_suffixes,
-  )
-    |> Vec\map(
-      $$,
-      $n ==> LintError::create(
-        $script,
-        $pragma_map,
-        $n,
-        $linter,
-        'Methods must use camelCase() and functions must use snake_case().',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/dont_await_in_a_loop_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-function dont_await_in_a_loop_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $token_index,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  // Only includes possible direct statement parents of the await expression.
-  // Those marked with `// (...)` indicate that the await must be an expression
-  // inside of the parens, not the body, since these structures usually have
-  // a statement list `{}` as their body. If you do something like:
-  // `if (...) await x;` this fails to hold.
-  $is_statement = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_DO_STATEMENT, // (...)
-    Pha\KIND_ECHO_STATEMENT,
-    Pha\KIND_EXPRESSION_STATEMENT,
-    Pha\KIND_FOR_STATEMENT, // (...)
-    Pha\KIND_FOREACH_STATEMENT, // (...)
-    Pha\KIND_IF_STATEMENT, // (...)
-    Pha\KIND_RETURN_STATEMENT,
-    Pha\KIND_SWITCH_STATEMENT, // (...)
-    Pha\KIND_THROW_STATEMENT,
-    Pha\KIND_USING_STATEMENT_BLOCK_SCOPED, // (...)
-    Pha\KIND_USING_STATEMENT_FUNCTION_SCOPED, // (...)
-    Pha\KIND_WHILE_STATEMENT, // (...)
-  );
-  $is_boundary = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_ANONYMOUS_FUNCTION,
-    Pha\KIND_AWAITABLE_CREATION_EXPRESSION,
-    Pha\KIND_FUNCTION_DECLARATION,
-    Pha\KIND_LAMBDA_EXPRESSION,
-    Pha\KIND_METHODISH_DECLARATION,
-    Pha\KIND_DO_STATEMENT,
-    Pha\KIND_FOR_STATEMENT,
-    Pha\KIND_FOREACH_STATEMENT,
-    Pha\KIND_WHILE_STATEMENT,
-  );
-  $is_loop = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_DO_STATEMENT,
-    Pha\KIND_FOR_STATEMENT,
-    Pha\KIND_FOREACH_STATEMENT,
-    Pha\KIND_WHILE_STATEMENT,
-  );
-  $is_terminal_statement = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_RETURN_STATEMENT,
-    Pha\KIND_THROW_STATEMENT,
-  );
-  $is_prefix_unary_expression =
-    Pha\create_syntax_matcher($script, Pha\KIND_PREFIX_UNARY_EXPRESSION);
-  $is_for_or_foreach_statement = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_FOR_STATEMENT,
-    Pha\KIND_FOREACH_STATEMENT,
-  );
-
-  $get_non_looping_part_of_loop = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_FOR_INITIALIZER,
-    Pha\MEMBER_FOREACH_COLLECTION,
-  );
-
-  return Vec\filter(
-    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_AWAIT),
-    $await ==> {
-      if (!$is_prefix_unary_expression(Pha\node_get_parent($script, $await))) {
-        return false;
-      }
-
-      $boundary = Pha\node_get_syntax_ancestors($script, $await)
-        |> C\findx($$, $is_boundary);
-
-      if (
-        !$is_loop($boundary) ||
-        $is_for_or_foreach_statement($boundary) &&
-          C\contains(
-            Pha\node_get_ancestors($script, $await),
-            $get_non_looping_part_of_loop($boundary),
-          )
-      ) {
-        return false;
-      }
-
-      $statement = Pha\node_get_ancestors($script, $await)
-        |> C\findx($$, $is_statement);
-
-      // Allow an await in a loop if this block ends with a
-      // return or throw statement, since no effective parallelism is lost.
-      return Pha\node_get_parent($script, $statement)
-        |> Pha\node_get_children($script, $$)
-        |> Vec\slice($$, C\find_key($$, $n ==> $n === $statement) as nonnull)
-        |> !C\any($$, $is_terminal_statement);
-    },
-  )
-    |> Vec\map(
-      $$,
-      $await_token ==> LintError::createWithoutPatches(
-        $script,
-        $pragma_map,
-        // Blame the whole expression, not just the token.
-        Pha\token_get_parent($script, $await_token),
-        $linter,
-        'Do not await in a loop.',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/dont_create_forwarding_lambdas_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-function dont_create_forwarding_lambdas_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-  shape(
-    ?'no_error_for_lambdas_with_typed_parameters_or_return' => bool,
-    /*_*/
-  ) $options = shape(),
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $ignore_typed_lambdas =
-    $options['no_error_for_lambdas_with_typed_parameters_or_return'] ?? false;
-
-  $is_await = Pha\create_token_matcher($script, Pha\KIND_AWAIT);
-  $is_decorated_expression =
-    Pha\create_syntax_matcher($script, Pha\KIND_DECORATED_EXPRESSION);
-  $is_dot_dot_dot = Pha\create_token_matcher($script, Pha\KIND_DOT_DOT_DOT);
-  $is_function_call_expression =
-    Pha\create_syntax_matcher($script, Pha\KIND_FUNCTION_CALL_EXPRESSION);
-  $is_inout = Pha\create_token_matcher($script, Pha\KIND_INOUT);
-  $is_name_or_var = Pha\create_matcher(
-    $script,
-    vec[Pha\KIND_QUALIFIED_NAME, Pha\KIND_VARIABLE_SYNTAX],
-    vec[Pha\KIND_NAME],
-    vec[],
-  );
-  $is_parent_or_self =
-    Pha\create_token_matcher($script, Pha\KIND_SELF, Pha\KIND_PARENT);
-  $is_prefix_unary_expression =
-    Pha\create_syntax_matcher($script, Pha\KIND_PREFIX_UNARY_EXPRESSION);
-  $is_scope_resolution_expression =
-    Pha\create_syntax_matcher($script, Pha\KIND_SCOPE_RESOLUTION_EXPRESSION);
-  $is_variable_expression =
-    Pha\create_syntax_matcher($script, Pha\KIND_VARIABLE_SYNTAX);
-
-  $get_argument_list =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CALL_ARGUMENT_LIST)
-    |> Pha\returns_syntax($$);
-  $get_function_receiver =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CALL_RECEIVER);
-  $get_lambda_async =
-    Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_ASYNC);
-  $get_lambda_body =
-    Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_BODY);
-  $get_lambda_parameters =
-    Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_PARAMETERS)
-    |> Pha\returns_syntax($$);
-  $get_lambda_return_type =
-    Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_TYPE);
-  $get_lambda_signature =
-    Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_SIGNATURE);
-  $get_parameter_call_convention =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_CALL_CONVENTION);
-  $get_parameter_default_value =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_DEFAULT_VALUE);
-  $get_parameter_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_NAME);
-  $get_parameter_type =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_TYPE);
-  $get_unary_operator =
-    Pha\create_member_accessor($script, Pha\MEMBER_PREFIX_UNARY_OPERATOR);
-  $get_unary_operand =
-    Pha\create_member_accessor($script, Pha\MEMBER_PREFIX_UNARY_OPERAND);
-  $get_scope_resolution_qualifier =
-    Pha\create_member_accessor($script, Pha\MEMBER_SCOPE_RESOLUTION_QUALIFIER);
-
-  $is_typed_lambda = ($sig, $parameters) ==>
-    C\any($parameters, $p ==> !Pha\is_missing($get_parameter_type($p))) ||
-    !Pha\is_missing($get_lambda_return_type($sig));
-
-  $convert_parameters = $parameters ==> Vec\map(
-    $parameters,
-    $p ==> shape(
-      'name' => $get_parameter_name($p)
-        |> Support\get_last_token($script, $$)
-        |> Pha\token_get_text($script, $$),
-      'call_conv' => $get_parameter_name($p)
-        |> Support\get_last_token($script, $$)
-        |> Support\get_previous_token($script, $$)
-        |> $is_dot_dot_dot($$)
-          ? Support\CallingCovention::VARIADIC
-          : (
-              !Pha\is_missing($get_parameter_call_convention($p))
-                ? Support\CallingCovention::INOUT
-                : Support\CallingCovention::PLAIN
-            ),
-      'has_default' => !Pha\is_missing($get_parameter_default_value($p)),
-    ),
-  );
-
-  $extract_qualifying_argument_list = $call ==> {
-    if (!$is_function_call_expression($call)) {
-      return Pha\NIL;
-    }
-    $call = Pha\as_syntax($call);
-
-    $receiver = $get_function_receiver($call);
-    if (
-      $is_name_or_var($receiver) ||
-      (
-        $is_scope_resolution_expression($receiver) &&
-        !$is_parent_or_self(
-          Pha\as_syntax($receiver) |> $get_scope_resolution_qualifier($$),
-        )
-      )
-    ) {
-      return $get_argument_list($call);
-    }
-
-    return Pha\NIL;
-  };
-
-  $get_lambda_argument_list = $lambda ==> {
-    $body = $get_lambda_body($lambda);
-
-    if (!Pha\is_syntax($body)) {
-      return Pha\NIL;
-    }
-
-    $body = Pha\as_syntax($body);
-
-    if (Pha\is_missing($get_lambda_async($lambda))) {
-      return $extract_qualifying_argument_list($body);
-    }
-
-    if (
-      !$is_prefix_unary_expression($body) ||
-      !$is_await($get_unary_operator($body))
-    ) {
-      return Pha\NIL;
-    }
-
-    return $extract_qualifying_argument_list($get_unary_operand($body));
-  };
-
-  $get_parameters = $lambda ==> {
-    $sig = $get_lambda_signature($lambda);
-
-    if (Pha\is_token($sig)) {
-      return vec[shape(
-        'name' => Pha\token_get_text($script, Pha\as_token($sig)),
-        'call_conv' => Support\CallingCovention::PLAIN,
-        'has_default' => false,
-      )];
-    }
-
-    $sig = Pha\as_syntax($sig);
-    $parameters = $get_lambda_parameters($sig)
-      |> Pha\list_get_items_of_children($script, $$)
-      |> Vec\map($$, Pha\as_syntax<>);
-
-    if ($ignore_typed_lambdas && $is_typed_lambda($sig, $parameters)) {
-      return vec[shape(
-        'name' => 'Lambda with typehint, okay. (Given a fake default param.)',
-        'has_default' => true,
-        'call_conv' => Support\CallingCovention::OTHER,
-      )];
-    }
-
-    return $convert_parameters($parameters);
-  };
-
-  $get_arguments = $argument_list ==> Vec\map(
-    Pha\list_get_items_of_children($script, $argument_list),
-    $a ==> {
-      $first_token = Support\get_first_token($script, $a);
-      $call_conv = $is_decorated_expression($a)
-        ? (
-            $is_inout($first_token)
-              ? Support\CallingCovention::INOUT
-              : Support\CallingCovention::VARIADIC
-          )
-        : (
-            $is_variable_expression($a)
-              ? Support\CallingCovention::PLAIN
-              : Support\CallingCovention::OTHER
-          );
-
-      return shape(
-        'name' =>
-          Pha\token_get_text($script, Support\get_last_token($script, $a)),
-        'call_conv' => $call_conv,
-      );
-    },
-  );
-
-  return Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_LAMBDA_EXPRESSION)
-    |> Vec\filter($$, $lambda ==> {
-      $argument_list = $get_lambda_argument_list($lambda);
-
-      if ($argument_list === Pha\NIL) {
-        return false;
-      }
-
-      $argument_list = Pha\as_nonnil($argument_list);
-      $params = $get_parameters($lambda);
-
-      if (
-        C\any($params, $p ==> $p['has_default']) ||
-        C\count(Pha\node_get_children($script, $argument_list)) !==
-          C\count($params)
-      ) {
-        return false;
-      }
-
-      $args = $get_arguments(Pha\as_nonnil($argument_list));
-
-      foreach ($args as $i => $a) {
-        $p = $params[$i];
-        if ($p['call_conv'] !== $a['call_conv'] || $p['name'] !== $a['name']) {
-          return false;
-        }
-      }
-
-      return true;
-    })
-    |> Vec\map(
-      $$,
-      $lambda ==> LintError::create(
-        $script,
-        $pragma_map,
-        $lambda,
-        $linter,
-        'This lambda just forwards to the inner function. '.
-        'Pass the inner function directly instead.',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/dont_discard_new_expressions_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function dont_discard_new_expressions_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_object_creation_expression =
-    Pha\create_syntax_matcher($script, Pha\KIND_OBJECT_CREATION_EXPRESSION);
-
-  $get_expression = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_EXPRESSION_STATEMENT_EXPRESSION,
-  );
-
-  return
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_EXPRESSION_STATEMENT)
-    |> Vec\filter(
-      $$,
-      $e ==> $get_expression($e) |> $is_object_creation_expression($$),
-    )
-    |> Vec\map(
-      $$,
-      $stmt ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $stmt,
-        $linter,
-        'You are ignoring the new object. Please use it or assign it to `$_`.',
-        Pha\patches($script, Pha\patch_node(
-          $stmt,
-          '$_ = '.
-          Pha\node_get_code_without_leading_or_trailing_trivia($script, $stmt),
-          shape('trivia' => Pha\RetainTrivia::BOTH),
-        )),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/dont_use_asio_join_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-function dont_use_asio_join_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $token_index,
-  Pha\Resolver $resolver,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_qualified_name =
-    Pha\create_syntax_matcher($script, Pha\KIND_QUALIFIED_NAME);
-
-  return Pha\index_get_nodes_by_kind($token_index, Pha\KIND_NAME)
-    |> Vec\map(
-      $$,
-      $n ==>
-        C\find(Pha\node_get_ancestors($script, $n), $is_qualified_name) ?? $n,
-    )
-    |> Vec\unique_by($$, Pha\node_get_id<>)
-    |> Vec\filter(
-      $$,
-      $n ==>
-        Pha\resolve_name($resolver, $script, $n) |> $$ === 'HH\\Asio\\join',
-    )
-    |> Vec\map(
-      $$,
-      $n ==> LintError::createWithoutPatches(
-        $script,
-        $pragma_map,
-        $n,
-        $linter,
-        "Don't use Asio\join().",
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/final_or_abstract_classes_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-function final_or_abstract_classes_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_class = Pha\create_token_matcher($script, Pha\KIND_CLASS);
-  $is_abstract_or_final =
-    Pha\create_token_matcher($script, Pha\KIND_ABSTRACT, Pha\KIND_FINAL);
-
-  $get_class_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_CLASSISH_NAME);
-  $get_class_keyword =
-    Pha\create_member_accessor($script, Pha\MEMBER_CLASSISH_KEYWORD);
-  $get_classish_modifiers =
-    Pha\create_member_accessor($script, Pha\MEMBER_CLASSISH_MODIFIERS);
-
-  return
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_CLASSISH_DECLARATION)
-    |> Vec\filter(
-      $$,
-      $c ==> $is_class($get_class_keyword($c)) &&
-        (
-          $get_classish_modifiers($c)
-          |> Pha\node_get_children($script, $$)
-          |> !C\any($$, $is_abstract_or_final)
-        ),
-    )
-    |> Vec\map(
-      $$,
-      $c ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $get_class_name($c),
-        $linter,
-        'Classes should be abstract or final.',
-        Pha\patches($script, Pha\patch_node(
-          $c,
-          'final '.
-          Pha\node_get_code_without_leading_or_trailing_trivia($script, $c),
-          shape('trivia' => Pha\RetainTrivia::BOTH),
-        )),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/group_use_statement_alphabetization_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-function group_use_statement_alphabetization_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $get_clauses =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_GROUP_USE_CLAUSES)
-    |> Pha\returns_syntax($$);
-
-  $get_use_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_NAME);
-
-  $get_uses_to_be_sorted = $group_use ==> $get_clauses($group_use)
-    |> Pha\list_get_items_of_children($script, $$);
-
-  $autofix = $group_use ==> {
-    $old_order = $get_uses_to_be_sorted($group_use);
-    $new_order = Vec\sort_by(
-      $old_order,
-      $c ==> Pha\as_syntax($c)
-        |> $get_use_name($$)
-        |> Pha\node_get_code_compressed($script, $$),
-    );
-    return Vec\zip($old_order, $new_order)
-      |> Vec\map(
-        $$,
-        $tuple ==> vec[
-          Pha\patch_node(
-            $tuple[0],
-            Pha\node_get_code_without_leading_or_trailing_trivia(
-              $script,
-              $tuple[1],
-            ),
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          ),
-        ],
-      )
-      |> Vec\flatten($$)
-      |> Pha\patches($script, ...$$);
-  };
-
-  return Pha\index_get_nodes_by_kind(
-    $syntax_index,
-    Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
-  )
-    |> Vec\filter(
-      $$,
-      $group_use ==> $get_uses_to_be_sorted($group_use)
-        |> Vec\map(
-          $$,
-          $clause ==> Pha\as_syntax($clause)
-            |> $get_use_name($$)
-            |> Pha\node_get_code_compressed($script, $$),
-        )
-        |> !C\is_sorted($$),
-    )
-    |> Vec\map(
-      $$,
-      $group_use ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $group_use,
-        $linter,
-        'Group use clauses should be sorted alphabetically.',
-        $autofix($group_use),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/group_use_statements_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Dict, Str, Vec};
-use namespace HTL\Pha;
-
-function group_use_statements_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  // If you have multiple namespaces per file, "why else would you use namespace blocks?",
-  // this linter will ignore this file. This is no better than HHAST, which will
-  // report errors and suggest fixes that change the semantics: hhvm/hhast#307.
-  // I have decided that I won't add logic to support namespace nesting.
-  // I won't object to a PR that adds this support.
-  if (
-    C\any(Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_BODY))
-  ) {
-    return vec[];
-  }
-
-  $is_const = Pha\create_token_matcher($script, Pha\KIND_CONST);
-  $is_function = Pha\create_token_matcher($script, Pha\KIND_FUNCTION);
-  $is_name = Pha\create_token_matcher($script, Pha\KIND_NAME);
-  $is_namespace = Pha\create_token_matcher($script, Pha\KIND_NAMESPACE);
-  $is_type = Pha\create_token_matcher($script, Pha\KIND_TYPE);
-
-  $get_kind = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_NAMESPACE_USE_KIND,
-    Pha\MEMBER_NAMESPACE_GROUP_USE_KIND,
-  );
-
-  $get_grouped_prefix =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_GROUP_USE_PREFIX);
-  $get_clauses =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_CLAUSES)
-    |> Pha\returns_syntax($$);
-  $get_clause_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_NAME);
-
-  $no_prefix = '';
-  $parse_clause_prefix = $clause ==> {
-    $name = $get_clause_name($clause);
-    if ($is_name($name)) {
-      return $no_prefix;
-    }
-
-    return Pha\node_get_code_compressed($script, $name)
-      |> Str\split($$, '\\')
-      |> Vec\slice($$, 0, C\count($$) - 1)
-      |> Str\join($$, '\\');
-  };
-
-  $parse_group_prefix = $use ==> $get_grouped_prefix($use)
-    |> Pha\node_get_code_compressed($script, $$)
-    |> Str\strip_suffix($$, '\\');
-
-  $get_kind_as_enum = $use ==> $get_kind($use)
-    |> $is_const($$)
-      ? Support\UseKind::CONST
-      : (
-          $is_function($$)
-            ? Support\UseKind::FUNCTION
-            : (
-                $is_namespace($$)
-                  ? Support\UseKind::NAMESPACE
-                  : (
-                      $is_type($$)
-                        ? Support\UseKind::TYPE
-                        : Support\UseKind::NONE
-                    )
-              )
-        );
-
-  $use_clauses = Pha\index_get_nodes_by_kind(
-    $syntax_index,
-    Pha\KIND_NAMESPACE_USE_DECLARATION,
-  )
-    |> Dict\group_by($$, $get_kind_as_enum)
-    |> Dict\map(
-      $$,
-      $uses ==> Vec\map(
-        $uses,
-        $u ==> Pha\as_syntax($u)
-          |> $get_clauses($$)
-          |> Pha\list_get_items_of_children($script, $$),
-      )
-        |> Vec\flatten($$)
-        |> Vec\map($$, Pha\as_syntax<>),
-    );
-
-  $grouped_uses = Pha\index_get_nodes_by_kind(
-    $syntax_index,
-    Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
-  )
-    |> Dict\group_by($$, $get_kind_as_enum);
-
-  // Just give up if the script contains any use clauses without a kind.
-  if (
-    C\contains_key($use_clauses, Support\UseKind::NONE) ||
-    C\contains_key($grouped_uses, Support\UseKind::NONE)
-  ) {
-    return vec[];
-  }
-
-  return Vec\map(Support\REAL_USE_KINDS, $kind ==> {
-    $prefixes = Vec\concat(
-      idx($use_clauses, $kind, vec[])
-        |> Vec\map($$, $x ==> tuple($x, $parse_clause_prefix($x))),
-      idx($grouped_uses, $kind, vec[])
-        |> Vec\map($$, $x ==> tuple($x, $parse_group_prefix($x))),
-    );
-
-    $seen_prefixes = keyset[];
-    foreach ($prefixes as list($node, $prefix)) {
-      if ($prefix === $no_prefix) {
-        continue;
-      }
-
-      if (C\contains_key($seen_prefixes, $prefix)) {
-        yield $node;
-      }
-
-      $seen_prefixes[] = $prefix;
-    }
-  })
-    |> Vec\map($$, vec<>)
-    |> Vec\flatten($$)
-    |> Vec\map(
-      $$,
-      $n ==> LintError::create(
-        $script,
-        $pragma_map,
-        $n,
-        $linter,
-        'This use directive can be grouped with a previous use directive.',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/license_header_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str};
-use namespace HTL\Pha;
-
-function license_header_linter(
-  Pha\Script $script,
-  Pha\PragmaMap $pragma_map,
-  string $expected_license_header,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_markup_section =
-    Pha\create_syntax_matcher($script, Pha\KIND_MARKUP_SECTION);
-
-  $first_thing = Pha\node_get_first_childx($script, Pha\SCRIPT_NODE)
-    |> Pha\node_get_children($script, $$)
-    |> C\findx($$, $n ==> !$is_markup_section($n));
-
-  return Pha\node_get_descendants($script, $first_thing)
-    |> C\any(
-      $$,
-      $n ==> Pha\is_trivium($n) &&
-        Str\contains(Pha\node_get_code($script, $n), $expected_license_header),
-    )
-      ? vec[]
-      : vec[LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        C\firstx($$),
-        $linter,
-        'Expected to find your license header at the top of this file: '.
-        $expected_license_header,
-        Pha\patches($script, Pha\patch_node(
-          $first_thing,
-          $expected_license_header.
-          "\n".
-          Pha\node_get_code($script, $first_thing),
-        )),
-      )];
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/must_use_braces_for_control_flow_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function must_use_braces_for_control_flow_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_compound_statement_or_if_statement = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_COMPOUND_STATEMENT,
-    Pha\KIND_IF_STATEMENT,
-  );
-
-  $get_body = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_DO_BODY,
-    Pha\MEMBER_ELSE_STATEMENT,
-    Pha\MEMBER_IF_STATEMENT,
-    Pha\MEMBER_FOR_BODY,
-    Pha\MEMBER_FOREACH_BODY,
-    Pha\MEMBER_WHILE_BODY,
-  );
-
-  $is_braceless = $node ==>
-    $get_body($node) |> !$is_compound_statement_or_if_statement($$);
-
-  return Vec\concat(
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_DO_STATEMENT),
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_ELSE_CLAUSE),
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_IF_STATEMENT),
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_FOR_STATEMENT),
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_FOREACH_STATEMENT),
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_WHILE_STATEMENT),
-  )
-    |> Vec\filter($$, $is_braceless)
-    |> Vec\map(
-      $$,
-      $n ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $n,
-        $linter,
-        'Use curly braces {} for control flow.',
-        Pha\patches($script, Pha\patch_node(
-          $get_body($n),
-          $get_body($n)
-            |> Pha\node_get_code($script, $$)
-            |> "{\n ".$$.'}',
-        )),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/namespace_private_symbol_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-/**
- * This linter complements namespace_private_use_clause_linter.
- * That linter gives an early notice if the namespace use declaration imports
- * something private from a namespace you don't share a prefix with.
- * This is still valuable for a quicker feedback loop.
- *
- * This linter does the heavy lifting and scans through the body of your code
- * to see if you are using qualified names to "outsmart" the first linter.
- */
-function namespace_private_symbol_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $token_index,
-  Pha\Resolver $resolver,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_namespace_declaration =
-    Pha\create_syntax_matcher($script, Pha\KIND_NAMESPACE_DECLARATION);
-  $is_qualified_name =
-    Pha\create_syntax_matcher($script, Pha\KIND_QUALIFIED_NAME);
-
-  $get_namespace_header =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_HEADER)
-    |> Pha\returns_syntax($$);
-  $get_namespace_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_NAME);
-
-  $main_namespace =
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_DECLARATION)
-    |> C\first($$);
-
-  return Pha\index_get_nodes_by_kind($token_index, Pha\KIND_NAME)
-    |> Vec\map(
-      $$,
-      $n ==>
-        C\find(Pha\node_get_ancestors($script, $n), $is_qualified_name) ?? $n,
-    )
-    |> Vec\unique_by($$, Pha\node_get_id<>)
-    |> Vec\filter(
-      $$,
-      $n ==> {
-        $name = Pha\resolve_name($resolver, $script, $n);
-
-        $public_and_private_part = Str\split($name, '\\__Private', 2)
-          |> C\count($$) !== 1 ? $$ : Str\split(C\onlyx($$), '\\_Private', 2);
-
-        if (C\count($public_and_private_part) === 1) {
-          return false;
-        }
-
-        $nearest_namespace = C\find(
-          Pha\node_get_syntax_ancestors($script, $n),
-          $is_namespace_declaration,
-        ) ??
-          $main_namespace;
-
-        if ($nearest_namespace is null) {
-          return true;
-        }
-
-        $namespace_prefix = $get_namespace_header($nearest_namespace)
-          |> $get_namespace_name($$)
-          |> Pha\resolve_name($resolver, $script, $$)
-          |> Str\split($$, '\\')
-          |> C\firstx($$);
-
-        return !Str\starts_with($name, $namespace_prefix);
-      },
-    )
-    |> Vec\map(
-      $$,
-      $n ==> LintError::createWithoutPatches(
-        $script,
-        $pragma_map,
-        $n,
-        $linter,
-        'This constant/function/type comes from a private namespace. '.
-        'This namespace does not share a common prefix with your current namespace.',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/namespace_private_use_clause_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-/**
- * This linter is but one part of namespace_private_linter.
- * It detects use clauses that access foreign `_Private` (or `__Private`)
- * namespaces, but will not scan the expressions / statements for references
- * formed with qualified names.
- *
- * ```
- * namespace A\AThing;
- * use namespace A\Something\_Private; // << allowed
- * use namespace B\_Private; // << lint error
- *
- * const int X = B\_Private\X; // << Ignored
- * const int FROM_C = _Private\X; // << Ignored
- * ```
- */
-function namespace_private_use_clause_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  // If you have multiple namespaces per file, "why else would you use namespace blocks?",
-  // this linter will ignore this file. I won't object to a PR that adds this support.
-  if (
-    C\any(Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_BODY))
-  ) {
-    return vec[];
-  }
-
-  $is_name = Pha\create_token_matcher($script, Pha\KIND_NAME);
-
-  $get_namespace_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_NAME);
-
-  $current_namespace = Pha\index_get_nodes_by_kind(
-    $syntax_index,
-    Pha\KIND_NAMESPACE_DECLARATION_HEADER,
-  )
-    |> C\first($$); // C\only() does not exist, and C\onlyx() would throw for 0.
-
-  if ($current_namespace is null) {
-    $namespace_prefix = '';
-  } else {
-    $name = $get_namespace_name($current_namespace);
-
-    if ($is_name($name)) {
-      $namespace_prefix =
-        Pha\as_token($name) |> Pha\token_get_text($script, $$);
-    } else {
-      $namespace_prefix = Pha\as_syntax($name)
-        |> Pha\node_get_code_compressed($script, $$)
-        |> Str\split($$, '\\')[0];
-    }
-  }
-
-  return Support\get_flattened_namespace_uses(
-    $script,
-    Pha\index_get_nodes_by_kind(
-      $syntax_index,
-      Pha\KIND_NAMESPACE_USE_DECLARATION,
-    ),
-    Pha\index_get_nodes_by_kind(
-      $syntax_index,
-      Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
-    ),
-  )
-    |> Vec\flatten($$)
-    |> Vec\filter($$, $v ==> {
-      list(, $use_text) = $v;
-      $public_and_private_part = Str\split($use_text, '\\__Private', 2)
-        |> C\count($$) !== 1 ? $$ : Str\split(C\onlyx($$), '\\_Private', 2);
-      return C\count($public_and_private_part) > 1 &&
-        !Str\starts_with($public_and_private_part[0], $namespace_prefix);
-    })
-    |> Vec\map(
-      $$,
-      $v ==> LintError::createWithoutPatches(
-        $script,
-        $pragma_map,
-        $v[0],
-        $linter,
-        'This use declaration includes a private namespace. '.
-        'This namespace does not share a common prefix with your current namespace.',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/no_elseif_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function no_elseif_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $token_index,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  return Vec\map(
-    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_ELSEIF),
-    $f ==> LintError::createWithPatches(
-      $script,
-      $pragma_map,
-      $f,
-      $linter,
-      'Use else if instead of elseif. '.
-      'This syntax will be removed in a future version of HHVM.',
-      Pha\patches($script, Pha\patch_node(
-        $f,
-        'else if',
-        shape('trivia' => Pha\RetainTrivia::BOTH),
-      )),
-    ),
-  );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/no_empty_statements_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{Str, Vec};
-use namespace HTL\Pha;
-
-function no_empty_statements_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_always_empty_expression = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_ANONYMOUS_FUNCTION,
-    Pha\KIND_CAST_EXPRESSION,
-    Pha\KIND_COLLECTION_LITERAL_EXPRESSION,
-    Pha\KIND_DARRAY_INTRINSIC_EXPRESSION,
-    Pha\KIND_DICTIONARY_INTRINSIC_EXPRESSION,
-    Pha\KIND_IS_EXPRESSION,
-    Pha\KIND_ISSET_EXPRESSION,
-    Pha\KIND_KEYSET_INTRINSIC_EXPRESSION,
-    Pha\KIND_LAMBDA_EXPRESSION,
-    Pha\KIND_LITERAL,
-    Pha\KIND_MISSING,
-    Pha\KIND_NAME_EXPRESSION,
-    Pha\KIND_SUBSCRIPT_EXPRESSION,
-    Pha\KIND_VECTOR_INTRINSIC_EXPRESSION,
-    Pha\KIND_VARIABLE_SYNTAX,
-    Pha\KIND_VARRAY_INTRINSIC_EXPRESSION,
-  );
-
-  $is_binary_expression =
-    Pha\create_syntax_matcher($script, Pha\KIND_BINARY_EXPRESSION);
-
-  $is_parenthesized_expression =
-    Pha\create_syntax_matcher($script, Pha\KIND_PARENTHESIZED_EXPRESSION);
-
-  $is_side_effecty_operator = Pha\create_token_matcher(
-    $script,
-    Pha\KIND_AMPERSAND_EQUAL,
-    Pha\KIND_BAR_EQUAL,
-    Pha\KIND_CARAT_EQUAL,
-    Pha\KIND_DOT_EQUAL,
-    Pha\KIND_EQUAL,
-    Pha\KIND_GREATER_THAN_GREATER_THAN_EQUAL,
-    Pha\KIND_LESS_THAN_LESS_THAN_EQUAL,
-    Pha\KIND_MINUS_EQUAL,
-    Pha\KIND_PERCENT_EQUAL,
-    Pha\KIND_PLUS_EQUAL,
-    Pha\KIND_QUESTION_QUESTION_EQUAL,
-    Pha\KIND_SLASH_EQUAL,
-    Pha\KIND_STAR_EQUAL,
-    Pha\KIND_STAR_STAR_EQUAL,
-    // The `|>` operator has no side-effect, but this common idiom needs to be ok.
-    // `some_cumbersome_expr |> side_effecty_function($$);`
-    // This is preferred when this results in easier to read code.
-    // It is not always possible to use a discard statement `$_ = ...`,
-    // since the type of this expression may be void.
-    // Assigning void to `$_` is not allowed.
-    Pha\KIND_BAR_GREATER_THAN,
-  );
-
-  $get_binop_operator =
-    Pha\create_member_accessor($script, Pha\MEMBER_BINARY_OPERATOR);
-
-  $get_expression = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_EXPRESSION_STATEMENT_EXPRESSION,
-  );
-
-  $get_parenthesized_expression_expression = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_PARENTHESIZED_EXPRESSION_EXPRESSION,
-  );
-
-  $expression_is_empty = $node ==> {
-    while ($is_parenthesized_expression($node)) {
-      $node = $get_parenthesized_expression_expression(Pha\as_syntax($node));
-    }
-
-    return $is_always_empty_expression($node) ||
-      (
-        $is_binary_expression($node) &&
-        (
-          $node
-          |> Pha\as_syntax($$)
-          |> $get_binop_operator($$)
-          |> !$is_side_effecty_operator($$)
-        )
-      );
-  };
-
-  return
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_EXPRESSION_STATEMENT)
-    |> Vec\map($$, $get_expression)
-    |> Vec\filter($$, $expression_is_empty)
-    |> Vec\map(
-      $$,
-      $expr ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $expr,
-        $linter,
-        'You are not using the result of this expression. '.
-        'You can silence this warning by assigning it to `$_`.',
-        Pha\node_get_code_without_leading_or_trailing_trivia($script, $expr)
-          // a `;` is an empty statement, but `$_ = ;` is not a valid statement.
-          |> Str\trim($$) !== ''
-            ? Pha\patches($script, Pha\patch_node(
-              $expr,
-              '$_ = '.$$,
-              shape('trivia' => Pha\RetainTrivia::BOTH),
-            ))
-            : null,
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/no_final_method_in_final_classes_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-function no_final_method_in_final_classes_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_classish_declaration =
-    Pha\create_syntax_matcher($script, Pha\KIND_CLASSISH_DECLARATION);
-  $is_final = Pha\create_token_matcher($script, Pha\KIND_FINAL);
-
-  $get_classish_modifiers =
-    Pha\create_member_accessor($script, Pha\MEMBER_CLASSISH_MODIFIERS);
-  $get_method_function_decl = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_METHODISH_FUNCTION_DECL_HEADER,
-  )
-    |> Pha\returns_syntax($$);
-  $get_function_modifiers =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_MODIFIERS);
-  $get_function_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_NAME);
-
-  $any_child_is_final = $node ==>
-    C\any(Pha\node_get_children($script, $node), $is_final);
-
-  return
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_METHODISH_DECLARATION)
-    |> Vec\filter(
-      $$,
-      $method ==> (
-        $get_method_function_decl($method)
-        |> $get_function_modifiers($$)
-        |> $any_child_is_final($$)
-      ) &&
-        (
-          Pha\node_get_syntax_ancestors($script, $method)
-          |> C\findx($$, $is_classish_declaration)
-          |> $get_classish_modifiers($$)
-          |> $any_child_is_final($$)
-        ),
-    )
-    |> Vec\map(
-      $$,
-      $f ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $get_method_function_decl($f) |> $get_function_name($$),
-        $linter,
-        'Remove the final keyword. The surrounding class is already final.',
-        Pha\patches(
-          $script,
-          $get_method_function_decl($f)
-            |> $get_function_modifiers($$)
-            |> Pha\node_get_children($script, $$)
-            |> C\findx($$, $is_final)
-            |> Pha\patch_node(
-              $$,
-              '',
-              shape('trivia' => Pha\RetainTrivia::LEADING),
-            ),
-        ),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/no_newline_at_start_of_control_flow_block_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function no_newline_at_start_of_control_flow_block_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_eol = Pha\create_trivium_matcher($script, Pha\KIND_END_OF_LINE);
-  $is_function_body = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_FUNCTION_DECLARATION,
-    Pha\KIND_LAMBDA_EXPRESSION,
-    Pha\KIND_METHODISH_DECLARATION,
-  );
-
-  $get_closing_curly =
-    Pha\create_member_accessor($script, Pha\MEMBER_COMPOUND_RIGHT_BRACE);
-  $get_statements =
-    Pha\create_member_accessor($script, Pha\MEMBER_COMPOUND_STATEMENTS);
-
-  $get_first_statement_or_closing_curly = $compound ==>
-    $get_statements($compound)
-    |> Pha\node_get_first_child($script, $$)
-    |> $$ === Pha\NIL ? $get_closing_curly($compound) : Pha\as_nonnil($$);
-
-  return Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_COMPOUND_STATEMENT)
-    |> Vec\filter(
-      $$,
-      $stmt ==> Pha\node_get_parent($script, $stmt) |> !$is_function_body($$),
-    )
-    |> Vec\map(
-      $$,
-      $stmt ==> $get_first_statement_or_closing_curly($stmt)
-        |> Support\get_first_token($script, $$)
-        |> Pha\node_get_first_child($script, $$),
-    )
-    |> Vec\filter($$, $is_eol)
-    |> Vec\map($$, Pha\as_nonnil<>)
-    |> Vec\map(
-      $$,
-      $eol ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        Pha\as_nonnil($eol),
-        $linter,
-        'Control flow blocks may not start with an empty line.',
-        Pha\patches($script, Pha\patch_node($eol, '')),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/no_php_equality_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function no_php_equality_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $token_index,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_eq = Pha\create_token_matcher($script, Pha\KIND_EQUAL_EQUAL);
-
-  return Vec\concat(
-    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_EQUAL_EQUAL),
-    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_EXCLAMATION_EQUAL),
-  )
-    |> Vec\map(
-      $$,
-      $n ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $n,
-        $linter,
-        'Do not use `==` or `!=`. '.
-        'The behaviors of these operators are difficult to explain.',
-        Pha\patches(
-          $script,
-          Pha\patch_node(
-            $n,
-            $is_eq($n) ? '===' : '!==',
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          ),
-        ),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/no_string_interpolation_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function no_string_interpolation_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $token_index,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  return Vec\concat(
-    Pha\index_get_nodes_by_kind(
-      $token_index,
-      Pha\KIND_DOUBLE_QUOTED_STRING_LITERAL_HEAD,
-    ),
-    Pha\index_get_nodes_by_kind(
-      $token_index,
-      Pha\KIND_HEREDOC_STRING_LITERAL_HEAD,
-    ),
-  )
-    |> Vec\map(
-      $$,
-      $h ==> LintError::create(
-        $script,
-        $pragma_map,
-        Pha\node_get_parent($script, $h),
-        $linter,
-        'Avoid string interpolation, consider concatenation or Str\\format(...).',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/prefer_lambdas_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function prefer_lambdas_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  return Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_ANONYMOUS_FUNCTION)
-    |> Vec\map(
-      $$,
-      $f ==> LintError::create(
-        $script,
-        $pragma_map,
-        $f,
-        $linter,
-        'Prefer `() ==> {}` lambdas over `function () {}`.',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/prefer_require_once_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{Str, Vec};
-use namespace HTL\Pha;
-
-function prefer_require_once_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_require_once = Pha\create_token_matcher($script, Pha\KIND_REQUIRE_ONCE);
-  $get_require_keyword =
-    Pha\create_member_accessor($script, Pha\MEMBER_INCLUSION_REQUIRE)
-    |> Pha\returns_token($$);
-
-  return
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_INCLUSION_EXPRESSION)
-    |> Vec\map($$, $get_require_keyword)
-    |> Vec\filter($$, $require_token ==> !$is_require_once($require_token))
-    |> Vec\map(
-      $$,
-      $n ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        Pha\node_get_parent($script, $n),
-        $linter,
-        Str\format(
-          'Use require_once instead of %s.',
-          Pha\token_get_text($script, $n),
-        ),
-        Pha\patches(
-          $script,
-          Pha\patch_node(
-            $n,
-            'require_once',
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          ),
-        ),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/prefer_single_quoted_string_literals_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-function prefer_single_quoted_string_literals_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $token_index,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  // hackfmt-ignore
-  $escape_sequences = vec[
-    '\\e', // ANSI escape
-    '\\f', // form feed
-    '\\t', // horizontal tab
-    '\\r', // carriage return
-    '\\n', // newline
-    '\\u', // Unicode code point
-    '\\v', // vertical tab
-    '\\x', // hex
-    "'", // single quote
-    '\\"', // escaped double quote
-    '\$', // anti-variable interpolation
-    '\\0', '\\1', '\\2', '\\3', '\\4', '\\5', '\\6', '\\7' // octal
-  ];
-
-  return Pha\index_get_nodes_by_kind(
-    $token_index,
-    Pha\KIND_DOUBLE_QUOTED_STRING_LITERAL,
-  )
-    |> Vec\map(
-      $$,
-      $t ==> shape(
-        'node' => $t,
-        'contents' => Pha\token_get_text($script, $t)
-          |> Str\strip_prefix($$, '"')
-          |> Str\strip_suffix($$, '"'),
-      ),
-    )
-    |> Vec\filter(
-      $$,
-      $shape ==>
-        !C\any($escape_sequences, $e ==> Str\contains($shape['contents'], $e)),
-    )
-    |> Vec\map(
-      $$,
-      $shape ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $shape['node'],
-        $linter,
-        'This could be a single quoted string.',
-        Pha\patches(
-          $script,
-          Pha\patch_node(
-            $shape['node'],
-            "'".$shape['contents']."'",
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          ),
-        ),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/shout_case_enum_members_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{Str, Vec};
-use namespace HTL\Pha;
-
-function shout_case_enum_members_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $get_enumerator =
-    Pha\create_member_accessor($script, Pha\MEMBER_ENUMERATOR_NAME)
-    |> Pha\returns_token($$);
-
-  return Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_ENUMERATOR)
-    |> Vec\filter(
-      $$,
-      $e ==> $get_enumerator($e)
-        |> Pha\token_get_text($script, $$)
-        |> Str\uppercase($$) !== $$,
-    )
-    |> Vec\map(
-      $$,
-      $e ==> LintError::create(
-        $script,
-        $pragma_map,
-        $e,
-        $linter,
-        'Rename this enum member to SHOUT_CASE.',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/unreachable_code_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function unreachable_code_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $node_is_list = Pha\create_syntax_matcher($script, Pha\KIND_NODE_LIST);
-  $creates_unreachable_code = $stmt ==> Pha\node_get_parent($script, $stmt)
-    |> $node_is_list($$) && Pha\node_get_last_child($script, $$) !== $stmt;
-
-  return Vec\concat(
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_BREAK_STATEMENT),
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_CONTINUE_STATEMENT),
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_RETURN_STATEMENT),
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_THROW_STATEMENT),
-  )
-    |> Vec\filter($$, $creates_unreachable_code)
-    |> Vec\map(
-      $$,
-      $n ==> LintError::createWithoutPatches(
-        $script,
-        $pragma_map,
-        $n,
-        $linter,
-        'The code after this statement is unreachable.',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/unused_pipe_variable_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-function unused_pipe_variable_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_dollar_dollar = Pha\create_token_matcher($script, Pha\KIND_DOLLAR_DOLLAR);
-  $is_pipe_arrow = Pha\create_token_matcher($script, Pha\KIND_BAR_GREATER_THAN);
-
-  $get_binop_operator =
-    Pha\create_member_accessor($script, Pha\MEMBER_BINARY_OPERATOR);
-  $get_binop_rhs =
-    Pha\create_member_accessor($script, Pha\MEMBER_BINARY_RIGHT_OPERAND);
-
-  $is_pipe_expression = $binop ==>
-    $get_binop_operator($binop) |> $is_pipe_arrow($$);
-
-  $rhs_uses_dollar_dollar = $binop ==> $get_binop_rhs($binop)
-    |> Pha\node_get_descendants($script, $$)
-    |> C\any($$, $is_dollar_dollar);
-
-  return Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_BINARY_EXPRESSION)
-    |> Vec\filter(
-      $$,
-      $expr ==> $is_pipe_expression($expr) && !$rhs_uses_dollar_dollar($expr),
-    )
-    |> Vec\map(
-      $$,
-      $n ==> LintError::createWithoutPatches(
-        $script,
-        $pragma_map,
-        $n,
-        $linter,
-        'You did not use the $$ variable on the right hand side of the `|>`.',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/unused_use_clause_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Keyset, Vec};
-use namespace HTL\Pha;
-
-function unused_use_clause_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $token_index,
-  Pha\Resolver $resolver,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $used_clauses = Vec\concat(
-    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_NAME),
-    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_XHP_CLASS_NAME),
-    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_XHP_ELEMENT_NAME),
-  )
-    |> Vec\map(
-      $$,
-      $n ==> Pha\resolve_name_and_use_clause($resolver, $script, $n)[1],
-    )
-    |> Vec\filter($$, $c ==> $c !== Pha\NIL)
-    |> Vec\map($$, Pha\as_syntax<>)
-    |> Keyset\map($$, Pha\node_get_id<>);
-
-  return
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_USE_CLAUSE)
-    |> Vec\filter(
-      $$,
-      $c ==> !C\contains_key($used_clauses, Pha\node_get_id($c)),
-    )
-    |> Vec\map(
-      $$,
-      $c ==> LintError::create(
-        $script,
-        $pragma_map,
-        $c,
-        $linter,
-        'This use clause is not used.',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/unused_variable_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Dict, Math, Str, Vec};
-use namespace HTL\Pha;
-
-// This linter implements unused_variable_linter.
-//
-// It also doubles as unused_parameter_linter.
-// It also triples as unused_lambda_parameter_linter.
-//
-// These linters are all variations on a theme.
-function unused_variable_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $token_index,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $build_matcher = ($first, ...$rest) ==>
-    Pha\create_syntax_matcher($script, $first, ...$rest);
-
-  $is_abstract = Pha\create_token_matcher($script, Pha\KIND_ABSTRACT);
-  $is_assignment_operator = Support\assignment_operator_matcher($script);
-  $is_binary_expression = $build_matcher(Pha\KIND_BINARY_EXPRESSION);
-  $is_classish_declaration = $build_matcher(Pha\KIND_CLASSISH_DECLARATION);
-  $is_decl_header = $build_matcher(Pha\KIND_FUNCTION_DECLARATION_HEADER);
-  $is_foreach = $build_matcher(Pha\KIND_FOREACH_STATEMENT);
-  $is_interface = Pha\create_token_matcher($script, Pha\KIND_INTERFACE);
-  $is_lambda = $build_matcher(Pha\KIND_LAMBDA_EXPRESSION);
-  $is_lambda_signature = $build_matcher(Pha\KIND_LAMBDA_SIGNATURE);
-  $is_list_expression = $build_matcher(Pha\KIND_LIST_EXPRESSION);
-  $is_property_access = $build_matcher(
-    Pha\KIND_MEMBER_SELECTION_EXPRESSION,
-    Pha\KIND_SCOPE_RESOLUTION_EXPRESSION,
-  );
-  $is_methodish_declaration = $build_matcher(Pha\KIND_METHODISH_DECLARATION);
-  $is_node_list = $build_matcher(Pha\KIND_NODE_LIST);
-  $is_parameter_declaration = $build_matcher(Pha\KIND_PARAMETER_DECLARATION);
-  $is_plus_plus_or_minus_minus =
-    Pha\create_token_matcher($script, Pha\KIND_PLUS_PLUS, Pha\KIND_MINUS_MINUS);
-  $is_scope = $build_matcher(
-    Pha\KIND_FUNCTION_DECLARATION,
-    Pha\KIND_LAMBDA_EXPRESSION,
-    Pha\KIND_METHODISH_DECLARATION,
-  );
-  $is_scope_resolution_expression =
-    $build_matcher(Pha\KIND_SCOPE_RESOLUTION_EXPRESSION);
-  $is_unary_expression = $build_matcher(
-    Pha\KIND_PREFIX_UNARY_EXPRESSION,
-    Pha\KIND_POSTFIX_UNARY_EXPRESSION,
-  );
-  $is_using_statement = $build_matcher(
-    Pha\KIND_USING_STATEMENT_BLOCK_SCOPED,
-    Pha\KIND_USING_STATEMENT_FUNCTION_SCOPED,
-  );
-
-  $get_binop_lhs =
-    Pha\create_member_accessor($script, Pha\MEMBER_BINARY_LEFT_OPERAND)
-    |> Pha\returns_syntax($$);
-  $get_binop_operator =
-    Pha\create_member_accessor($script, Pha\MEMBER_BINARY_OPERATOR);
-  $get_binop_rhs =
-    Pha\create_member_accessor($script, Pha\MEMBER_BINARY_RIGHT_OPERAND);
-  $get_class_keyword =
-    Pha\create_member_accessor($script, Pha\MEMBER_CLASSISH_KEYWORD);
-  $get_foreach_key =
-    Pha\create_member_accessor($script, Pha\MEMBER_FOREACH_KEY);
-  $get_foreach_value =
-    Pha\create_member_accessor($script, Pha\MEMBER_FOREACH_VALUE);
-  $get_method_decl_header = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_METHODISH_FUNCTION_DECL_HEADER,
-  )
-    |> Pha\returns_syntax($$);
-  $get_func_decl_header_modifiers =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_MODIFIERS);
-  $get_lambda_signature =
-    Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_SIGNATURE);
-  $get_list_expr_members =
-    Pha\create_member_accessor($script, Pha\MEMBER_LIST_MEMBERS);
-  $get_parameter_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_NAME);
-  $get_parameter_visibility =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_VISIBILITY);
-  $get_scope_resolution_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_SCOPE_RESOLUTION_NAME);
-  $get_unary_operand = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_PREFIX_UNARY_OPERAND,
-    Pha\MEMBER_POSTFIX_UNARY_OPERAND,
-  );
-  $get_unary_operator = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_PREFIX_UNARY_OPERATOR,
-    Pha\MEMBER_POSTFIX_UNARY_OPERATOR,
-  );
-  $get_using_expressions = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_USING_BLOCK_EXPRESSIONS,
-    Pha\MEMBER_USING_FUNCTION_EXPRESSION,
-  )
-    |> Pha\returns_syntax($$);
-  $get_variable_token =
-    Pha\create_member_accessor($script, Pha\MEMBER_VARIABLE_EXPRESSION);
-
-  $is_assignment_expression = $node ==> $is_binary_expression($node) &&
-    $is_assignment_operator($get_binop_operator($node));
-
-  $is_promoted_constructor_parameter = (Pha\Token $token) ==>
-    Pha\node_get_syntax_ancestors($script, $token)
-    |> C\find($$, $is_parameter_declaration)
-    |> $$ is nonnull && !Pha\is_missing($get_parameter_visibility($$));
-
-  // Assignments to members are not local to the function.
-  // This assignment should be classified as a use of `$v`: `$v->prop = 0`.
-  $assignment_has_non_local_effects = (
-    Pha\Syntax $assignment,
-    Pha\Token $var,
-  ) ==> Pha\node_get_syntax_ancestors($script, $var)
-    |> Support\vec_take_while_inclusive($$, $node ==> $node !== $assignment)
-    |> C\any($$, $is_property_access);
-
-  $inout_scopes = Pha\index_get_nodes_by_kind($token_index, Pha\KIND_INOUT)
-    |> Vec\map(
-      $$,
-      $i ==> Pha\token_get_parent($script, $i)
-        |> !$is_parameter_declaration($$)
-          ? null
-          : shape(
-              'name' => $get_parameter_name($$)
-                |> Pha\node_get_code_compressed($script, $$),
-              'scope' =>
-                C\findx(Pha\node_get_ancestors($script, $$), $is_scope),
-            ),
-    )
-    |> Vec\filter_nulls($$)
-    |> Dict\group_by($$, $shape ==> $shape['name'])
-    |> Dict\map($$, $shapes ==> Vec\map($shapes, $s ==> $s['scope']));
-
-  $classify_use = ($variable): ?Support\TUnusedVariableLinterUsage ==> {
-    // `C::$property` makes `$property` look like a local, which it is not.
-    // `$class_name::$property` still means `$class_name` is a local.
-    $parent = Pha\token_get_parent($script, $variable);
-    if (
-      $is_scope_resolution_expression($parent) &&
-      $get_scope_resolution_name($parent) === $variable
-    ) {
-      return null;
-    }
-
-    $ret = shape(
-      'is_assignment' => false,
-      'disposable_assignment' => null,
-      'param_of_func' => Pha\NIL,
-      'param_of_lambda' => Pha\NIL,
-      'scopes' => vec[],
-      'var' => $variable,
-      'var_name' => Pha\token_get_text($script, $variable),
-    );
-
-    $is_param =
-      $is_parameter_declaration(Pha\node_get_parent($script, $variable));
-
-    $assigns_to_var_local = ($loop_node): bool ==> $is_foreach($loop_node) &&
-      (
-        $get_foreach_key($loop_node) === $variable ||
-        $get_foreach_value($loop_node) === $variable
-      ) ||
-      (
-        $is_assignment_expression($loop_node) &&
-        Support\get_first_token($script, $loop_node) === $variable &&
-        !$assignment_has_non_local_effects($loop_node, $variable)
-      ) ||
-      (
-        $is_unary_expression($loop_node) &&
-        $is_plus_plus_or_minus_minus($get_unary_operator($loop_node)) &&
-        Support\get_first_token($script, $get_unary_operand($loop_node)) ===
-          $variable &&
-        !$assignment_has_non_local_effects($loop_node, $variable)
-      ) ||
-      (
-        $is_list_expression($loop_node) &&
-        !$assignment_has_non_local_effects($loop_node, $variable) &&
-        // Only mark `$a` and `$c` as assigned: `$list($a[$b], $c)`
-        C\any(
-          $get_list_expr_members($loop_node)
-            |> Pha\node_get_children($script, $$),
-          $mem ==> Support\get_first_token($script, $mem) === $variable,
-        )
-      );
-
-    foreach (Pha\node_get_syntax_ancestors($script, $variable) as $node) {
-      if ($assigns_to_var_local($node)) {
-        $ret['is_assignment'] = true;
-      } else if ($is_using_statement($node)) {
-        $ret['disposable_assignment'] ??= $get_using_expressions($node)
-          |> $is_node_list($$)
-            ? Pha\list_get_items_of_children($script, $$)
-            : vec[$$]
-          |> Vec\filter($$, $is_binary_expression)
-          |> Vec\map($$, Pha\as_syntax<>)
-          |> C\find(
-            $$,
-            $x ==> $get_binop_lhs($x) |> $get_variable_token($$) === $variable,
-          );
-      } else if ($is_decl_header($node)) {
-        // Very uncommon, let's ignore it. Nasty oversight
-        // `function foo((function(int): int) $lambda = $a ==> $a)`.
-        if (!C\is_empty($ret['scopes'])) {
-          return null;
-        }
-        $ret['param_of_func'] = $node;
-      } else if ($is_lambda_signature($node)) {
-        $ret['param_of_lambda'] = Pha\syntax_get_parent($script, $node);
-      } else if (
-        $is_lambda($node) && $get_lambda_signature($node) === $variable
-      ) {
-        $ret['param_of_lambda'] = $node;
-      }
-
-      if ($is_scope($node)) {
-        $ret['scopes'][] = $node;
-        // Any assignment to an `inout` variable should be treated as a use.
-        // Reason being, they have effects on the outer scopes / the caller.
-        if (
-          !$is_param &&
-          C\contains(idx($inout_scopes, $ret['var_name'], vec[]), $node)
-        ) {
-          $ret['is_assignment'] = false;
-        }
-      }
-    }
-
-    return C\is_empty($ret['scopes']) ? null : $ret;
-  };
-
-  $apply_shadowing_rules = (
-    vec<Support\TUnusedVariableLinterUsage> $usages,
-  ): vec<Support\TUnusedVariableLinterAfterShadowing> ==> {
-    $lambda_params =
-      Vec\filter($usages, $u ==> $u['param_of_lambda'] !== Pha\NIL)
-      |> Vec\map(
-        $$,
-        $u ==> shape(
-          'lambda' => Pha\as_nonnil($u['param_of_lambda']),
-          'var_name' => $u['var_name'],
-        ),
-      )
-      // Sorting by index DESC, so inner lambdas appear before outer lambdas.
-      // `$x ==> $x ==> $x + $y`, where the outer $x is shadowed by the second $x.
-      // The outer $x goes unused and should probably have been $y.
-      // The above expression closes over a $y in function scope.
-      |> Vec\sort_by($$, $u ==> -Pha\node_get_source_order($u['lambda']));
-
-    return Vec\map(
-      $usages,
-      $u ==> shape(
-        'is_assignment' => $u['is_assignment'] ||
-          $u['param_of_func'] !== Pha\NIL ||
-          $u['param_of_lambda'] !== Pha\NIL,
-        'disposable_assignment' => $u['disposable_assignment'],
-        'owners' => C\find(
-          $lambda_params,
-          $l ==> $l['var_name'] === $u['var_name'] &&
-            C\contains(
-              Pha\node_get_ancestors($script, $u['var']),
-              $l['lambda'],
-            ),
-        )
-          |> Shapes::idx($$, 'lambda')
-          |> $$ is null ? $u['scopes'] : vec[$$],
-        'var' => $u['var'],
-        'var_name' => $u['var_name'],
-      ),
-    );
-  };
-
-  $is_abstract_scope = $owner ==> {
-    if (!$is_methodish_declaration($owner)) {
-      return false;
-    }
-
-    $classish = Pha\node_get_syntax_ancestors($script, $owner)
-      |> C\findx($$, $is_classish_declaration);
-
-    return $is_interface($get_class_keyword($classish)) ||
-      C\any(
-        $get_method_decl_header($owner)
-          |> $get_func_decl_header_modifiers($$)
-          |> Pha\node_get_children($script, $$),
-        $is_abstract,
-      );
-  };
-
-  list($assignments, $usages) =
-    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_VARIABLE_TOKEN)
-    |> Vec\map($$, $classify_use)
-    |> Vec\filter_nulls($$)
-    |> Vec\filter($$, $u ==> $u['var_name'] !== '$this')
-    |> $apply_shadowing_rules($$)
-    |> Vec\partition($$, $u ==> $u['is_assignment']);
-
-  $usages_by_name = Dict\group_by($usages, $u ==> $u['var_name']);
-
-  $is_unused = (Support\TUnusedVariableLinterAfterShadowing $a) ==>
-    !Str\starts_with($a['var_name'], '$_') &&
-    !$is_promoted_constructor_parameter($a['var']) &&
-    !C\any($a['owners'], $is_abstract_scope) &&
-    !C\any(
-      idx($usages_by_name, $a['var_name'], vec[]),
-      $u ==> C\contains(
-        $u['owners'],
-        // Picking the maximum owner (the inmost lambda), because of this code:
-        // $b = 4;
-        // () ==> { $b = 5; } // << This $b assignment is unused.
-        // use_of($b);
-        Math\max_by($a['owners'], Pha\node_get_source_order<>),
-      ),
-    );
-
-  return Vec\filter($assignments, $is_unused)
-    |> Vec\map(
-      $$,
-      $a ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        Pha\token_get_parent($script, $a['var']),
-        $linter,
-        'This variable is unused.'.
-        (
-          $a['disposable_assignment'] is nonnull
-            ? ' Did you know that naming your `using` variables is optional?'
-            : ''
-        ),
-        $a['disposable_assignment']
-          |> $$ is nonnull
-            ? Pha\patches($script, Pha\patch_node(
-              $$,
-              Pha\node_get_code($script, $get_binop_rhs($$)),
-              shape('trivia' => Pha\RetainTrivia::LEADING),
-            ))
-            : Pha\patches($script, Pha\patch_node(
-              $a['var'],
-              Pha\token_get_text($script, $a['var'])
-                |> Str\strip_prefix($$, '$')
-                |> '$_'.$$,
-              shape('trivia' => Pha\RetainTrivia::BOTH),
-            )),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/use_statement_with_as_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function use_statement_with_as_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $get_as = Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_AS);
-  $has_as = $n ==> $get_as($n) |> !Pha\is_missing($$);
-
-  return
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_USE_CLAUSE)
-    |> Vec\filter($$, $has_as)
-    |> Vec\map(
-      $$,
-      $n ==> LintError::create(
-        $script,
-        $pragma_map,
-        $n,
-        $linter,
-        'Use statements may not use the `as` keyword.',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/use_statement_with_leading_backslash_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function use_statement_with_leading_backslash_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_backslash = Pha\create_token_matcher($script, Pha\KIND_BACKSLASH);
-
-  $get_leading_backslash = $node ==> Support\get_first_token($script, $node);
-  $get_prefix = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_NAMESPACE_USE_NAME,
-    Pha\MEMBER_NAMESPACE_GROUP_USE_PREFIX,
-  );
-
-  return Vec\concat(
-    Pha\index_get_nodes_by_kind(
-      $syntax_index,
-      Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
-    ),
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_USE_CLAUSE),
-  )
-    |> Vec\map($$, $n ==> $get_prefix($n) |> $get_leading_backslash($$))
-    |> Vec\filter($$, $is_backslash)
-    |> Vec\map(
-      $$,
-      $n ==> Pha\as_nonnil($n)
-        |> LintError::createWithPatches(
-          $script,
-          $pragma_map,
-          $$,
-          $linter,
-          'The leading backslashes in use declarations do not have an effect. '.
-          'You may remove them.',
-          Pha\patches(
-            $script,
-            Pha\patch_node(
-              $$,
-              '',
-              shape('trivia' => Pha\RetainTrivia::LEADING),
-            ),
-          ),
-        ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/use_statement_without_kind_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function use_statement_without_kind_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $get_kind = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_NAMESPACE_USE_KIND,
-    Pha\MEMBER_NAMESPACE_GROUP_USE_KIND,
-  );
-
-  $kind_is_missing = $use_clause ==>
-    $get_kind($use_clause) |> Pha\is_missing($$);
-
-  return Vec\concat(
-    Pha\index_get_nodes_by_kind(
-      $syntax_index,
-      Pha\KIND_NAMESPACE_USE_DECLARATION,
-    ),
-    Pha\index_get_nodes_by_kind(
-      $syntax_index,
-      Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
-    ),
-  )
-    |> Vec\filter($$, $kind_is_missing)
-    |> Vec\map(
-      $$,
-      $n ==> LintError::createWithoutPatches(
-        $script,
-        $pragma_map,
-        $n,
-        $linter,
-        'Must use namespace kind (`type` or `namespace`).',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/hhast_adapted/whitespace_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\C;
-use namespace HTL\Pha;
-
-// This linter implements no_white_space_at_end_of_line_linter.
-//
-// It also doubles as consistent_line_endings_linter.
-// In a Unix line ending world, `\r\n` is whitespace at EOL, since `\r` is whitespace.
-//
-// It also triples as must_have_newline_at_end_of_file_linter.
-//
-// It also quadruples as dont_have_two_empty_lines_in_a_row_linter.
-// We are already looking at all the trivia, let's just cram this in here too.
-function whitespace_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $trivia = Pha\script_get_trivia($script);
-  $errors = vec[];
-
-  $line_counter = 0;
-  $prev_whitespace = false;
-
-  foreach ($trivia as $trivium) {
-    $kind = Pha\node_get_kind($script, $trivium);
-    $text = Pha\node_get_code($script, $trivium);
-    $is_eol = $kind === Pha\KIND_END_OF_LINE;
-
-    // #region dont_have_two_empty_lines_in_a_row_linter
-    $is_eof_trivium = $text === '';
-
-    $is_line = (int)$is_eol | (int)$is_eof_trivium;
-    $line_counter = $line_counter * $is_line + $is_line;
-
-    if ($line_counter > 2 && !$is_eof_trivium) {
-      $errors[] = LintError::create(
-        $script,
-        $pragma_map,
-        $trivium,
-        $linter,
-        'Too many newlines in a row.',
-      );
-    }
-    // #endregion
-
-    // #region no_whitespace_at_end_of_line_linter | consistent_line_endings_linter
-    if ($is_eol && ($prev_whitespace || $text !== "\n")) {
-      $errors[] = LintError::create(
-        $script,
-        $pragma_map,
-        $trivium,
-        $linter,
-        'There is whitespace before the end of this line.',
-      );
-    }
-
-    $prev_whitespace = $kind === Pha\KIND_WHITESPACE;
-    // #endregion
-  }
-
-  // #region must_have_newline_at_end_of_file_linter
-  if ($line_counter === 1) {
-    $errors[] = LintError::create(
-      $script,
-      $pragma_map,
-      C\lastx($trivia),
-      $linter,
-      'Files must end with one or more newlines.',
-    );
-  }
-  // #endregion
-
-  return $errors;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/assignment_to_empty_list_tuple_or_shape_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function assignment_to_empty_list_tuple_or_shape_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_assignment_operator = Pha\create_token_matcher($script, Pha\KIND_EQUAL);
-  $get_operator =
-    Pha\create_member_accessor($script, Pha\MEMBER_BINARY_OPERATOR);
-  $get_lhs =
-    Pha\create_member_accessor($script, Pha\MEMBER_BINARY_LEFT_OPERAND);
-  $is_parenthesized =
-    Pha\create_syntax_matcher($script, Pha\KIND_PARENTHESIZED_EXPRESSION);
-  $get_inner = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_PARENTHESIZED_EXPRESSION_EXPRESSION,
-  );
-
-  $is_destructuring = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_LIST_EXPRESSION,
-    Pha\KIND_TUPLE_EXPRESSION,
-    Pha\KIND_SHAPE_EXPRESSION,
-  );
-  $get_members = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_LIST_MEMBERS,
-    Pha\MEMBER_TUPLE_EXPRESSION_ITEMS,
-    Pha\MEMBER_SHAPE_EXPRESSION_FIELDS,
-  );
-
-  return Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_BINARY_EXPRESSION)
-    |> Vec\filter($$, $expr ==> $is_assignment_operator($get_operator($expr)))
-    |> Vec\filter($$, $expr ==> {
-      $lhs = $get_lhs($expr);
-      while ($is_parenthesized($lhs)) {
-        $lhs = $get_inner(Pha\as_syntax($lhs));
-      }
-      return $is_destructuring($lhs) &&
-        Pha\is_missing($get_members(Pha\as_syntax($lhs)));
-    })
-    |> Vec\map($$, $expr ==> {
-      $lhs = $get_lhs($expr);
-      return LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $lhs,
-        $linter,
-        'Assigning to an empty list(), tuple(), or shape() is a noop. '.
-        'Discard the value using `$_ = ...` instead.',
-        Pha\patches(
-          $script,
-          Pha\patch_node($lhs, '$_', shape('trivia' => Pha\RetainTrivia::BOTH)),
-        ),
-      );
-    });
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/autoload_your_code_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-/**
- * Manual inclusion directives are going to be removed from hhvm.
- * This linter allows preadoption of the no-inclusion-directives language change.
- */
-function autoload_your_code_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  return
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_INCLUSION_EXPRESSION)
-    |> Vec\map(
-      $$,
-      $n ==> LintError::create(
-        $script,
-        $pragma_map,
-        $n,
-        $linter,
-        'Autoload your code instead of using inclusion directives.',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/concat_merge_or_union_expression_can_be_simplified_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-function concat_merge_or_union_expression_can_be_simplified_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $resolver,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $get_argument_list =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CALL_ARGUMENT_LIST)
-    |> Pha\returns_syntax($$);
-  $get_call_receiver =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CALL_RECEIVER);
-
-  $resolve_function_name = $call ==> $get_call_receiver($call)
-    |> Pha\resolve_name($resolver, $script, $$);
-
-  $is_decorated_expression =
-    Pha\create_syntax_matcher($script, Pha\KIND_DECORATED_EXPRESSION);
-
-  $is_concat_merge_or_union = $call ==> $resolve_function_name($call)
-    |> $$ === 'HH\Lib\Dict\merge' ||
-      $$ === 'HH\Lib\Keyset\union' ||
-      $$ === 'HH\Lib\Vec\concat';
-
-  $simplified_call = dict[
-    'HH\Lib\Dict\merge' => 'dict',
-    'HH\Lib\Keyset\union' => 'keyset',
-    'HH\Lib\Vec\concat' => 'vec',
-  ];
-
-  return Pha\index_get_nodes_by_kind(
-    $syntax_index,
-    Pha\KIND_FUNCTION_CALL_EXPRESSION,
-  )
-    |> Vec\filter($$, $call ==> {
-      if (!$is_concat_merge_or_union($call)) {
-        return false;
-      }
-
-      return $get_argument_list($call)
-        |> Pha\list_get_items_of_children($script, $$)
-        |> C\count($$) === 1 && !$is_decorated_expression($$[0]);
-    })
-    |> Vec\map(
-      $$,
-      $call ==> $resolve_function_name($call)
-        |> LintError::createWithPatches(
-          $script,
-          $pragma_map,
-          $call,
-          $linter,
-          Str\format(
-            'This call to %s(...) can be simplified to %s(...). '.
-            'If the type of the first argument is already %s, '.
-            'you do not need to call any function.',
-            $$,
-            $simplified_call[$$],
-            $simplified_call[$$],
-          ),
-          Pha\patches(
-            $script,
-            Pha\patch_node(
-              $get_call_receiver($call),
-              $simplified_call[$$],
-              shape('trivia' => Pha\RetainTrivia::BOTH),
-            ),
-          ),
-        ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/context_list_must_be_explicit_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function context_list_must_be_explicit_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $get_contexts = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_FUNCTION_CONTEXTS,
-    Pha\MEMBER_CLOSURE_CONTEXTS,
-  );
-
-  return Vec\concat(
-    Pha\index_get_nodes_by_kind(
-      $syntax_index,
-      Pha\KIND_FUNCTION_DECLARATION_HEADER,
-    ),
-    Pha\index_get_nodes_by_kind(
-      $syntax_index,
-      Pha\KIND_CLOSURE_TYPE_SPECIFIER, //
-    ),
-  )
-    |> Vec\filter($$, $func ==> Pha\is_missing($get_contexts($func)))
-    |> Vec\map(
-      $$,
-      $func ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $func,
-        $linter,
-        'This function implicitly uses `[defaults]`. '.
-        'If this is intentional, please specify as such. '.
-        'If not, please provide a more restrictive context list.',
-        Pha\patches(
-          $script,
-          Pha\patch_node(
-            $get_contexts($func),
-            '[defaults]',
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          ),
-        ),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/context_list_must_be_explicit_on_io_functions_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-function context_list_must_be_explicit_on_io_functions_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_async = Pha\create_token_matcher($script, Pha\KIND_ASYNC);
-  $is_await = Pha\create_token_matcher($script, Pha\KIND_AWAIT);
-
-  $get_contexts =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CONTEXTS);
-  $get_function_modifiers =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_MODIFIERS);
-
-  return Pha\index_get_nodes_by_kind(
-    $syntax_index,
-    Pha\KIND_FUNCTION_DECLARATION_HEADER,
-  )
-    |> Vec\filter($$, $func ==> {
-      if (!Pha\is_missing($get_contexts($func))) {
-        return false;
-      }
-
-      $modifiers =
-        $get_function_modifiers($func) |> Pha\node_get_children($script, $$);
-
-      if (!C\any($modifiers, $is_async)) {
-        return false;
-      }
-
-      return Pha\node_get_parent($script, $func)
-        |> Pha\node_get_descendants($script, $$)
-        |> C\any($$, $is_await);
-    })
-    |> Vec\map(
-      $$,
-      $func ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $func,
-        $linter,
-        'This function performs I/O (it contains await), '.
-        'so this is likely a good candidate for `[defaults]`.'.
-        ' If this lint is wrong, add the proper context list.',
-        Pha\patches(
-          $script,
-          Pha\patch_node(
-            $get_contexts($func),
-            '[defaults]',
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          ),
-        ),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/count_expression_can_be_simplified_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-function count_expression_can_be_simplified_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $resolver,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_binop = Pha\create_syntax_matcher($script, Pha\KIND_BINARY_EXPRESSION);
-  $is_equality = Pha\create_token_matcher(
-    $script,
-    Pha\KIND_EQUAL_EQUAL,
-    Pha\KIND_EQUAL_EQUAL_EQUAL,
-  );
-  $is_exclamation = Pha\create_token_matcher($script, Pha\KIND_EXCLAMATION);
-  $is_greater_than = Pha\create_token_matcher($script, Pha\KIND_GREATER_THAN);
-  $is_greater_than_or_equal =
-    Pha\create_token_matcher($script, Pha\KIND_GREATER_THAN_EQUAL);
-  $is_inequality = Pha\create_token_matcher(
-    $script,
-    Pha\KIND_EXCLAMATION_EQUAL,
-    Pha\KIND_EXCLAMATION_EQUAL_EQUAL,
-  );
-  $is_less_than = Pha\create_token_matcher($script, Pha\KIND_LESS_THAN);
-  $is_less_than_or_equal =
-    Pha\create_token_matcher($script, Pha\KIND_LESS_THAN_EQUAL);
-  $is_prefix_unary_expression =
-    Pha\create_syntax_matcher($script, Pha\KIND_PREFIX_UNARY_EXPRESSION);
-
-  $get_argument_list =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CALL_ARGUMENT_LIST);
-  $get_binop_lhs =
-    Pha\create_member_accessor($script, Pha\MEMBER_BINARY_LEFT_OPERAND);
-  $get_binop_operator =
-    Pha\create_member_accessor($script, Pha\MEMBER_BINARY_OPERATOR);
-  $get_binop_rhs =
-    Pha\create_member_accessor($script, Pha\MEMBER_BINARY_RIGHT_OPERAND);
-  $get_call_receiver =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CALL_RECEIVER);
-  $get_prefix_operator =
-    Pha\create_member_accessor($script, Pha\MEMBER_PREFIX_UNARY_OPERATOR);
-
-  $is_c_count = $call ==> $get_call_receiver($call)
-    |> Pha\resolve_name($resolver, $script, $$) === 'HH\Lib\C\count';
-
-  $can_use_c = C\count(Pha\index_get_nodes_by_kind(
-    $syntax_index,
-    Pha\KIND_NAMESPACE_DECLARATION,
-  )) <= 1 && C\any(
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_QUALIFIED_NAME),
-    $name ==> {
-      $code = Pha\node_get_code_compressed($script, $name);
-      return Str\starts_with($code, 'C\\') &&
-        Pha\resolve_name($resolver, $script, $name) === 'HH\\Lib\\'.$code;
-    },
-  );
-
-  $is_logical_not = $n ==> $is_prefix_unary_expression($n) &&
-    $is_exclamation($get_prefix_operator($n));
-
-  $classify_cmp_kind = $n ==> {
-    if ($is_equality($n)) {
-      return Support\ComparisonKind::EQUALS;
-    }
-    if ($is_inequality($n)) {
-      return Support\ComparisonKind::NOT_EQUALS;
-    }
-    if ($is_less_than($n)) {
-      return Support\ComparisonKind::LESS_THAN;
-    }
-    if ($is_less_than_or_equal($n)) {
-      return Support\ComparisonKind::LESS_THAN_OR_EQUAL;
-    }
-    if ($is_greater_than($n)) {
-      return Support\ComparisonKind::GREATER_THAN;
-    }
-    if ($is_greater_than_or_equal($n)) {
-      return Support\ComparisonKind::GREATER_THAN_OR_EQUAL;
-    }
-    return null;
-  };
-
-  $get_error = ($parent, $call) ==> {
-    $replace_with = $function_name ==> $can_use_c
-      ? Pha\patches($script, Pha\patch_node(
-        $parent,
-        Str\format(
-          '%s(%s)',
-          $function_name,
-          Pha\node_get_code($script, $get_argument_list($call)),
-        ),
-        shape('trivia' => Pha\RetainTrivia::BOTH),
-      ))
-      : null;
-
-    if ($is_logical_not($parent)) {
-      return tuple(
-        '!C\count(...) is equivalent to C\is_empty(...)',
-        $replace_with('C\\is_empty'),
-      );
-    }
-
-    if (!$is_binop($parent)) {
-      return tuple('', null);
-    }
-
-    $cmp_kind = $classify_cmp_kind($get_binop_operator($parent));
-
-    if ($cmp_kind is null) {
-      return tuple('', null);
-    }
-
-    // Need this because of Yoda conditions `0 === C\count(...)`.
-    // In Hack, `C\count(...) === 0` is canonical.
-    $is_canonical = $get_binop_lhs($parent) === $call;
-    $cmp = $is_canonical ? $get_binop_rhs($parent) : $get_binop_lhs($parent)
-      |> Pha\node_get_code_compressed($script, $$);
-
-    if (!$is_canonical) {
-      switch ($cmp_kind) {
-        case Support\ComparisonKind::EQUALS:
-        case Support\ComparisonKind::NOT_EQUALS:
-          break;
-        case Support\ComparisonKind::LESS_THAN:
-          $cmp_kind = Support\ComparisonKind::GREATER_THAN;
-          break;
-        case Support\ComparisonKind::LESS_THAN_OR_EQUAL:
-          $cmp_kind = Support\ComparisonKind::GREATER_THAN_OR_EQUAL;
-          break;
-        case Support\ComparisonKind::GREATER_THAN:
-          $cmp_kind = Support\ComparisonKind::LESS_THAN;
-          break;
-        case Support\ComparisonKind::GREATER_THAN_OR_EQUAL:
-          $cmp_kind = Support\ComparisonKind::LESS_THAN_OR_EQUAL;
-      }
-    }
-
-    if ($cmp === '0') {
-      switch ($cmp_kind) {
-        case Support\ComparisonKind::EQUALS:
-          return tuple(
-            'C\count(...) === 0 is equivalent to C\is_empty(...)',
-            $replace_with('C\\is_empty'),
-          );
-
-        case Support\ComparisonKind::NOT_EQUALS:
-          return tuple(
-            'C\count(...) !== 0 is equivalent to !C\is_empty(...)',
-            $replace_with('!C\\is_empty'),
-          );
-        case Support\ComparisonKind::LESS_THAN:
-          return tuple(
-            'C\count(...) < 0 is always false, counts are never negative',
-            null,
-          );
-        case Support\ComparisonKind::LESS_THAN_OR_EQUAL:
-          return tuple(
-            'C\count(...) <= 0 is equivalent to C\is_empty(...)',
-            $replace_with('C\\is_empty'),
-          );
-        case Support\ComparisonKind::GREATER_THAN:
-          return tuple(
-            'C\count(...) > 0 is equivalent to !C\is_empty(...)',
-            $replace_with('!C\\is_empty'),
-          );
-        case Support\ComparisonKind::GREATER_THAN_OR_EQUAL:
-          return tuple(
-            'C\count(...) >= 0 is always true, counts are never negative',
-            null,
-          );
-      }
-    }
-
-    if ($cmp !== '1') {
-      return tuple('', null);
-    }
-
-    switch ($cmp_kind) {
-      case Support\ComparisonKind::EQUALS:
-      case Support\ComparisonKind::NOT_EQUALS:
-        return tuple('', null);
-      case Support\ComparisonKind::LESS_THAN:
-        return tuple(
-          'C\count(...) < 1 is equivalent to C\is_empty(...)',
-          $replace_with('C\\is_empty'),
-        );
-      case Support\ComparisonKind::LESS_THAN_OR_EQUAL:
-      case Support\ComparisonKind::GREATER_THAN:
-        return tuple('', null);
-      case Support\ComparisonKind::GREATER_THAN_OR_EQUAL:
-        return tuple(
-          'C\count(...) >= 1 is equivalent to !C\is_empty(...)',
-          $replace_with('!C\\is_empty'),
-        );
-    }
-  };
-
-  return Pha\index_get_nodes_by_kind(
-    $syntax_index,
-    Pha\KIND_FUNCTION_CALL_EXPRESSION,
-  )
-    |> Vec\filter($$, $is_c_count)
-    |> Vec\map(
-      $$,
-      $c ==> Pha\syntax_get_parent($script, $c)
-        |> shape('node' => $$, 'error' => $get_error($$, $c)),
-    )
-    |> Vec\filter($$, $e ==> $e['error'][0] !== '')
-    |> Vec\map(
-      $$,
-      $e ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $e['node'],
-        $linter,
-        Str\format('This expression can be simplified, %s.', $e['error'][0]),
-        $e['error'][1],
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/dict_literal_keys_must_be_unique_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{Dict, Str, Vec};
-use namespace HTL\Pha;
-
-function dict_literal_keys_must_be_unique_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $get_dict_key = Pha\create_member_accessor($script, Pha\MEMBER_ELEMENT_KEY);
-  $get_dict_members =
-    Pha\create_member_accessor($script, Pha\MEMBER_DICTIONARY_INTRINSIC_MEMBERS)
-    |> Pha\returns_syntax($$);
-  $is_element_initializer =
-    Pha\create_syntax_matcher($script, Pha\KIND_ELEMENT_INITIALIZER);
-
-  return Pha\index_get_nodes_by_kind(
-    $syntax_index,
-    Pha\KIND_DICTIONARY_INTRINSIC_EXPRESSION,
-  )
-    |> Vec\map(
-      $$,
-      $dict ==>
-        Pha\list_get_items_of_children($script, $get_dict_members($dict))
-        |> Vec\filter($$, $is_element_initializer)
-        |> Vec\map(
-          $$,
-          $member ==> Pha\as_syntax($member)
-            |> $get_dict_key($$)
-            |> tuple(Pha\node_get_code_compressed($script, $$), $$),
-        )
-        |> Dict\group_by($$, $key ==> $key[0])
-        |> Vec\map($$, $keys ==> Vec\drop($keys, 1)),
-    )
-    |> Vec\flatten($$)
-    |> Vec\flatten($$)
-    |> Vec\map(
-      $$,
-      $key ==> LintError::create(
-        $script,
-        $pragma_map,
-        $key[1],
-        $linter,
-        Str\format(
-          'This key is already part of this dict and will therefore overwrite '.
-          'the previous one.  `%s`',
-          $key[0],
-        ),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/dont_use_hack_collections_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-function dont_use_hack_collections_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $resolver,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  // hackfmt-ignore
-  $collection_types = keyset[
-    'Vector', 'ImmVector', 'HH\\Vector', 'HH\\ImmVector',
-    'ConstVector', 'MutableVector', 'VectorIterator',
-    'ConstIndexAccess', 'IndexAccess',
-
-    'Map', 'ImmMap', 'HH\\Map', 'HH\\ImmMap',
-    'ConstMap', 'MutableMap', 'MapIterator',
-    'ConstMapAccess', 'MapAccess',
-
-    'Set', 'ImmSet', 'HH\\Set', 'HH\\ImmSet',
-    'ConstSet', 'MutableSet', 'SetIterator',
-    'ConstSetAccess', 'SetAccess',
-
-    'Pair', 'HH\\Pair', 'PairIterator',
-    'Collection', 'HH\\Collection',
-    'ConstCollection', 'OutputCollection',
-  ];
-
-  $get_reference = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_SIMPLE_TYPE_SPECIFIER,
-    Pha\MEMBER_GENERIC_CLASS_TYPE,
-    Pha\MEMBER_CONSTRUCTOR_CALL_TYPE,
-    Pha\MEMBER_SCOPE_RESOLUTION_QUALIFIER,
-    Pha\MEMBER_COLLECTION_LITERAL_NAME,
-  );
-  $is_name = Pha\create_matcher(
-    $script,
-    vec[Pha\KIND_QUALIFIED_NAME],
-    vec[Pha\KIND_NAME],
-    vec[],
-  );
-
-  $references = vec[
-    Pha\KIND_SIMPLE_TYPE_SPECIFIER,
-    Pha\KIND_GENERIC_TYPE_SPECIFIER,
-    Pha\KIND_CONSTRUCTOR_CALL,
-    Pha\KIND_SCOPE_RESOLUTION_EXPRESSION,
-    Pha\KIND_COLLECTION_LITERAL_EXPRESSION,
-  ]
-    |> Vec\map($$, $k ==> Pha\index_get_nodes_by_kind($syntax_index, $k))
-    |> Vec\flatten($$)
-    |> Vec\sort_by($$, Pha\node_get_source_order<>);
-
-  $errors = vec[];
-  foreach ($references as $reference) {
-    $name = $get_reference($reference);
-    if (!$is_name($name)) {
-      continue;
-    }
-
-    $resolved = Pha\resolve_name($resolver, $script, $name);
-
-    if (!C\contains($collection_types, $resolved)) {
-      continue;
-    }
-
-    $errors[] = LintError::createWithoutPatches(
-      $script,
-      $pragma_map,
-      $name,
-      $linter,
-      Str\format(
-        "Don't use the Hack collection %s. Use Hack arrays instead.",
-        $resolved,
-      ),
-    );
-  }
-
-  return $errors;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/generated_file_may_not_be_modified_manually_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-
-function generated_file_may_not_be_modified_manually_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $digest = Support\extract_digest($script, $pragma_map);
-
-  return $digest is null || $digest['embedded'] === $digest['hashed']
-    ? vec[]
-    : vec[LintError::createWithoutPatches(
-      $script,
-      $pragma_map,
-      Pha\SCRIPT_NODE,
-      $linter,
-      'This file was generated with a code generator and should not be edited by hand.',
-    )];
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/getter_method_could_have_a_context_list_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{Regex, Vec};
-use namespace HTL\Pha;
-
-function getter_method_could_have_a_context_list_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $get_compound_statement_statements =
-    Pha\create_member_accessor($script, Pha\MEMBER_COMPOUND_STATEMENTS);
-  $get_function_contexts =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CONTEXTS);
-  $get_function_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_NAME);
-  $get_method_decl_header = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_METHODISH_FUNCTION_DECL_HEADER,
-  )
-    |> Pha\returns_syntax($$);
-  $get_method_body =
-    Pha\create_member_accessor($script, Pha\MEMBER_METHODISH_FUNCTION_BODY);
-  $get_return_expression =
-    Pha\create_member_accessor($script, Pha\MEMBER_RETURN_EXPRESSION);
-
-  $is_compound_statement =
-    Pha\create_syntax_matcher($script, Pha\KIND_COMPOUND_STATEMENT);
-  $is_return_statement =
-    Pha\create_syntax_matcher($script, Pha\KIND_RETURN_STATEMENT);
-
-  return
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_METHODISH_DECLARATION)
-    |> Vec\filter($$, $m ==> {
-      $header = $get_method_decl_header($m);
-
-      if (!Pha\is_missing($get_function_contexts($header))) {
-        return false;
-      }
-
-      $function_name = $get_function_name($header)
-        |> Pha\node_get_code_compressed($script, $$);
-
-      if (!Regex\matches($function_name, re'/^(get|has|is)[A-Z]/')) {
-        return false;
-      }
-
-      $method_body = $get_method_body($m);
-
-      if (!$is_compound_statement($method_body)) {
-        return false;
-      }
-
-      $first_statement = $method_body
-        |> Pha\as_syntax($$)
-        |> $get_compound_statement_statements($$)
-        |> Pha\node_get_first_child($script, $$);
-
-      if (!$is_return_statement($first_statement)) {
-        return false;
-      }
-
-      return $first_statement
-        |> Pha\as_syntax($$)
-        |> $get_return_expression($$)
-        |> Pha\node_get_code_compressed($script, $$)
-        // This is a rather crude heuristic.
-        // It matches `$this->it`, `$this->it as Type`, and `$this->it is Type`.
-        // The idea is to have few false positives.
-        // A false negative, such as `$this->it < 6` is fine.
-        // This could be a getter, but maybe this is simply
-        // an implementation detail, who knows?
-        |> Regex\matches($$, re'/^\$this->(\w)+$/');
-    })
-    |> Vec\map(
-      $$,
-      $method_decl_header ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $method_decl_header,
-        $linter,
-        'This method is heuristically a simple getter. '.
-        'Simple getters can be marked pure using the `[]` syntax. '.
-        "The current heuristic is rather crude:\n".
-        " - method name looks like getIt, hasIt, or isIt\n".
-        " - method body is a single return statement accessing a property on \$this\n".
-        'If you have a common false positive, please improve this heuristic.',
-        Pha\patches(
-          $script,
-          Pha\patch_node(
-            $method_decl_header
-              |> $get_method_decl_header($$)
-              |> $get_function_contexts($$),
-            '[]',
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          ),
-        ),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/group_use_statement_could_be_removed_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function group_use_statement_could_be_removed_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $get_clauses =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_GROUP_USE_CLAUSES);
-
-  return Pha\index_get_nodes_by_kind(
-    $syntax_index,
-    Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
-  )
-    |> Vec\filter($$, $use ==> Pha\is_missing($get_clauses($use)))
-    |> Vec\map(
-      $$,
-      $use ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $use,
-        $linter,
-        'This group use statement has no clauses and is a noop. Remove it.',
-        Pha\patches(
-          $script,
-          Pha\patch_node($use, '', shape('trivia' => Pha\RetainTrivia::BOTH)),
-        ),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/group_use_statement_could_be_simplified_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-function group_use_statement_could_be_simplified_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $get_clauses =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_GROUP_USE_CLAUSES)
-    |> Pha\returns_syntax($$);
-  $get_left_brace = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_NAMESPACE_GROUP_USE_LEFT_BRACE,
-  );
-  $get_right_brace = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_NAMESPACE_GROUP_USE_RIGHT_BRACE,
-  );
-  $get_separator =
-    Pha\create_member_accessor($script, Pha\MEMBER_LIST_SEPARATOR);
-
-  return Pha\index_get_nodes_by_kind(
-    $syntax_index,
-    Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
-  )
-    |> Vec\filter($$, $use ==> {
-      $clauses = Pha\list_get_items_of_children($script, $get_clauses($use));
-      return C\count($clauses) === 1;
-    })
-    |> Vec\map($$, $use ==> {
-      $clauses = $get_clauses($use);
-      $separator = Pha\node_get_children($script, $clauses)
-        |> C\onlyx($$)
-        |> Pha\as_syntax($$)
-        |> $get_separator($$);
-
-      $patches = vec[
-        Pha\patch_node(
-          $get_left_brace($use),
-          '',
-          shape('trivia' => Pha\RetainTrivia::BOTH),
-        ),
-        Pha\patch_node(
-          $get_right_brace($use),
-          '',
-          shape('trivia' => Pha\RetainTrivia::BOTH),
-        ),
-      ];
-      if (!Pha\is_missing($separator)) {
-        $patches[] = Pha\patch_node(
-          $separator,
-          '',
-          shape('trivia' => Pha\RetainTrivia::BOTH),
-        );
-      }
-
-      return LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $use,
-        $linter,
-        'This group use statement does not need to be a group use statement.',
-        Pha\patches($script, ...$patches),
-      );
-    });
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/keywords_should_be_lowercase_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{Str, Vec};
-use namespace HTL\Pha;
-
-function keywords_should_be_lowercase_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $token_index,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  return Vec\concat(
-    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_BOOLEAN_LITERAL),
-    Pha\index_get_nodes_by_kind($token_index, Pha\KIND_NULL_LITERAL),
-  )
-    |> Vec\filter($$, $token ==> {
-      $text = Pha\token_get_text($script, $token);
-      return $text !== Str\lowercase($text);
-    })
-    |> Vec\map($$, $token ==> {
-      $lowercase = Pha\token_get_text($script, $token) |> Str\lowercase($$);
-      return LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $token,
-        $linter,
-        'Use the canonical lowercase spelling `'.$lowercase.'`.',
-        Pha\patches(
-          $script,
-          Pha\patch_node(
-            $token,
-            $lowercase,
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          ),
-        ),
-      );
-    });
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/lambda_parameter_list_parentheses_can_be_removed_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-function lambda_parameter_list_parentheses_can_be_removed_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_decorated_expression =
-    Pha\create_syntax_matcher($script, Pha\KIND_DECORATED_EXPRESSION);
-  $is_dot_dot_dot = Pha\create_token_matcher($script, Pha\KIND_DOT_DOT_DOT);
-
-  $get_colon = Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_COLON);
-  $get_contexts =
-    Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_CONTEXTS);
-  $get_parameters =
-    Pha\create_member_accessor($script, Pha\MEMBER_LAMBDA_PARAMETERS)
-    |> Pha\returns_syntax($$);
-
-  $get_parameter_attribute =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_ATTRIBUTE);
-  $get_parameter_call_conv =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_CALL_CONVENTION);
-  $get_parameter_default_value =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_DEFAULT_VALUE);
-  $get_parameter_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_NAME);
-  $get_parameter_readonly =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_READONLY);
-  $get_parameter_type =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_TYPE);
-
-  return Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_LAMBDA_SIGNATURE)
-    |> Vec\filter($$, $sig ==> {
-      $params = $get_parameters($sig)
-        |> Pha\list_get_items_of_children($script, $$);
-
-      if (C\count($params) !== 1) {
-        return false;
-      }
-
-      $param = Pha\as_syntax($params[0]);
-
-      if (
-        C\any(
-          vec[
-            $get_parameter_attribute,
-            $get_parameter_call_conv,
-            $get_parameter_default_value,
-            $get_parameter_readonly,
-            $get_parameter_type,
-          ],
-          $getter ==> !Pha\is_missing($getter($param)),
-        )
-      ) {
-        return false;
-      }
-
-      if ($get_parameter_name($param) |> $is_decorated_expression($$)) {
-        return false;
-      }
-
-      if (
-        $get_parameter_name($param)
-        |> Support\get_last_token($script, $$)
-        |> Support\get_previous_token($script, $$)
-        |> $is_dot_dot_dot($$)
-      ) {
-        return false;
-      }
-
-      return
-        Pha\is_missing($get_colon($sig)) && Pha\is_missing($get_contexts($sig));
-    })
-    |> Vec\map(
-      $$,
-      $sig ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $sig,
-        $linter,
-        'The parentheses around this lambda parameter are redundant and can be removed.',
-        Pha\patches($script, Pha\patch_node(
-          $sig,
-          $get_parameters($sig)
-            |> Pha\list_get_items_of_children($script, $$)[0]
-            |> Pha\node_get_code($script, $$),
-          shape('trivia' => Pha\RetainTrivia::BOTH),
-        )),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/method_constant_resolves_to_enclosing_lambda_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-function method_constant_resolves_to_enclosing_lambda_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $token_index,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $consts = keyset[
-    '__FUNCTION__',
-    '__METHOD__',
-    '__FUNCTION_CREDENTIAL__',
-  ];
-  $is_lambda = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_LAMBDA_EXPRESSION,
-    Pha\KIND_ANONYMOUS_FUNCTION,
-    Pha\KIND_AWAITABLE_CREATION_EXPRESSION,
-  );
-  $is_member_selection = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_SCOPE_RESOLUTION_EXPRESSION,
-    Pha\KIND_MEMBER_SELECTION_EXPRESSION,
-    Pha\KIND_SAFE_MEMBER_SELECTION_EXPRESSION,
-  );
-
-  $is_qualified_name =
-    Pha\create_syntax_matcher($script, Pha\KIND_QUALIFIED_NAME);
-  $get_member_name = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_SCOPE_RESOLUTION_NAME,
-    Pha\MEMBER_MEMBER_NAME,
-    Pha\MEMBER_SAFE_MEMBER_NAME,
-  );
-
-  return Pha\index_get_nodes_by_kind($token_index, Pha\KIND_NAME)
-    |> Vec\filter(
-      $$,
-      $token ==> C\contains_key($consts, Pha\token_get_text($script, $token)),
-    )
-    |> Vec\filter($$, $token ==> {
-      $ancestors = Pha\node_get_syntax_ancestors($script, $token);
-      $parent = C\firstx($ancestors);
-      if (
-        C\any($ancestors, $is_qualified_name) ||
-        ($is_member_selection($parent) && $get_member_name($parent) === $token)
-      ) {
-        return false;
-      }
-
-      return C\any($ancestors, $is_lambda);
-    })
-    |> Vec\map(
-      $$,
-      $token ==> LintError::createWithoutPatches(
-        $script,
-        $pragma_map,
-        $token,
-        $linter,
-        Str\format(
-          '%s refers to the operator() of the lambda, not to your function. '.
-          'Hoist the constant and capture it by value.',
-          Pha\token_get_text($script, $token),
-        ),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/negated_is_expression_does_not_need_parens_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-use namespace HTL\Pha;
-
-function negated_is_expression_does_not_need_parens_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_not = Pha\create_token_matcher($script, Pha\KIND_EXCLAMATION);
-  $is_logical = Pha\create_token_matcher(
-    $script,
-    Pha\KIND_AMPERSAND_AMPERSAND,
-    Pha\KIND_BAR_BAR,
-  );
-  $is_equal = Pha\create_token_matcher($script, Pha\KIND_EQUAL);
-  $is_parenthesized =
-    Pha\create_syntax_matcher($script, Pha\KIND_PARENTHESIZED_EXPRESSION);
-  $is_is = Pha\create_syntax_matcher($script, Pha\KIND_IS_EXPRESSION);
-  $is_binary = Pha\create_syntax_matcher($script, Pha\KIND_BINARY_EXPRESSION);
-  $is_list = Pha\create_syntax_matcher($script, Pha\KIND_NODE_LIST);
-  $is_list_item = Pha\create_syntax_matcher($script, Pha\KIND_LIST_ITEM);
-  $get_operator =
-    Pha\create_member_accessor($script, Pha\MEMBER_PREFIX_UNARY_OPERATOR);
-  $get_operand =
-    Pha\create_member_accessor($script, Pha\MEMBER_PREFIX_UNARY_OPERAND);
-  $get_inner = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_PARENTHESIZED_EXPRESSION_EXPRESSION,
-  );
-  $get_binary_operator =
-    Pha\create_member_accessor($script, Pha\MEMBER_BINARY_OPERATOR);
-  $get_left_paren = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_PARENTHESIZED_EXPRESSION_LEFT_PAREN,
-  );
-  $get_right_paren = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_PARENTHESIZED_EXPRESSION_RIGHT_PAREN,
-  );
-
-  $is_standalone_parent = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_EXPRESSION_STATEMENT,
-    Pha\KIND_RETURN_STATEMENT,
-    Pha\KIND_IF_STATEMENT,
-    Pha\KIND_ELSEIF_CLAUSE,
-    Pha\KIND_WHILE_STATEMENT,
-    Pha\KIND_DO_STATEMENT,
-    Pha\KIND_FOR_STATEMENT,
-    Pha\KIND_LAMBDA_EXPRESSION,
-    Pha\KIND_SIMPLE_INITIALIZER,
-  );
-  $get_standalone_expression = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_EXPRESSION_STATEMENT_EXPRESSION,
-    Pha\MEMBER_RETURN_EXPRESSION,
-    Pha\MEMBER_IF_CONDITION,
-    Pha\MEMBER_ELSEIF_CONDITION,
-    Pha\MEMBER_WHILE_CONDITION,
-    Pha\MEMBER_DO_CONDITION,
-    Pha\MEMBER_FOR_CONTROL,
-    Pha\MEMBER_LAMBDA_BODY,
-    Pha\MEMBER_SIMPLE_INITIALIZER_VALUE,
-  );
-
-  return
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_PREFIX_UNARY_EXPRESSION)
-    |> Vec\filter(
-      $$,
-      $expr ==> $get_operand($expr)
-        |> $is_not($get_operator($expr)) &&
-          $is_parenthesized($$) &&
-          $is_is($get_inner(Pha\as_syntax($$))),
-    )
-    |> Vec\filter($$, $expr ==> {
-      $parent = Pha\syntax_get_parent($script, $expr);
-      if ($is_binary($parent)) {
-        $operator = $get_binary_operator($parent);
-        return $is_logical($operator) || $is_equal($operator);
-      }
-
-      if ($is_list_item($parent)) {
-        $parent = Pha\syntax_get_parent($script, $parent);
-      }
-      if ($is_list($parent)) {
-        return true;
-      }
-      return $is_standalone_parent($parent) &&
-        $get_standalone_expression($parent) === $expr;
-    })
-    |> Vec\map($$, $expr ==> {
-      $operand = Pha\as_syntax($get_operand($expr));
-      return LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $operand,
-        $linter,
-        'The parentheses around this negated `is` expression are unnecessary.',
-        Pha\patches(
-          $script,
-          Pha\patch_node(
-            $get_left_paren($operand),
-            '',
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          ),
-          Pha\patch_node(
-            $get_right_paren($operand),
-            '',
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          ),
-        ),
-      );
-    });
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/pragma_could_not_be_parsed_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-function pragma_could_not_be_parsed_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_attribute_specification = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_FILE_ATTRIBUTE_SPECIFICATION,
-    Pha\KIND_OLD_ATTRIBUTE_SPECIFICATION,
-  );
-  $is_call_expression =
-    Pha\create_syntax_matcher($script, Pha\KIND_FUNCTION_CALL_EXPRESSION);
-
-  $get_attributes = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_FILE_ATTRIBUTE_SPECIFICATION_ATTRIBUTES,
-    Pha\MEMBER_OLD_ATTRIBUTE_SPECIFICATION_ATTRIBUTES,
-  )
-    |> Pha\returns_syntax($$);
-  $get_constructor_call_argument_list = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_CONSTRUCTOR_CALL_ARGUMENT_LIST,
-  )
-    |> Pha\returns_syntax($$);
-
-  $create_autofix = $pragma ==> {
-    if ($is_call_expression($pragma)) {
-      $parent = Pha\node_get_parent($script, $pragma);
-      return Pha\patch_node(
-        $parent,
-        '',
-        shape('trivia' => Pha\RetainTrivia::NEITHER),
-      );
-    }
-
-    $noop_patch = Pha\patch_node($pragma, Pha\node_get_code($script, $pragma));
-
-    $has_exactly_one_argument = $get_constructor_call_argument_list($pragma)
-      |> Pha\list_get_items_of_children($script, $$)
-      |> C\count($$) === 1;
-
-    if (!$has_exactly_one_argument) {
-      return $noop_patch;
-    }
-
-    $specification = Pha\node_get_syntax_ancestors($script, $pragma)
-      |> C\findx($$, $is_attribute_specification);
-
-    $is_exclusively_a_pragma = $get_attributes($specification)
-      |> Pha\list_get_items_of_children($script, $$)
-      |> C\count($$) === 1;
-
-    return $is_exclusively_a_pragma
-      ? Pha\patch_node(
-          $specification,
-          '',
-          shape('trivia' => Pha\RetainTrivia::LEADING),
-        )
-      : Pha\patch_node(Pha\node_get_parent($script, $pragma), '');
-  };
-
-  return $pragma_map->getAllPragmas()
-    |> Vec\filter(
-      $$,
-      $p ==> idx($p[2], 0, '')
-        |> Str\trim($$, '"\'')
-        |> $$ === 'PhaLinters' || $$ === 'HTL\PhaLinters',
-    )
-    |> Vec\filter(
-      $$,
-      $t ==> Vec\drop($t[2], 1)
-        |> Vec\map($$, $str ==> Str\trim($str, '"\''))
-        |> C\find(
-          $$,
-          $str ==> !(
-            Str\starts_with($str, 'digest:') || Str\starts_with($str, 'fixme:')
-          ),
-        ) is nonnull,
-    )
-    |> Vec\map(
-      $$,
-      $p ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $p[0],
-        $linter,
-        'Your version of PhaLinters only supports digest:hash and fixme:linter_name',
-        Pha\patches($script, $create_autofix($p[0])),
-      ),
-    );
-
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/pragma_prefix_unknown_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-function pragma_prefix_unknown_linter(
-  Pha\Script $script,
-  Pha\PragmaMap $pragma_map,
-  keyset<string> $known_pragma_prefixes,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  return $pragma_map->getAllPragmas()
-    |> Vec\filter(
-      $$,
-      $p ==> $p[2][0]
-        |> Str\trim($$, '"\'')
-        |> !C\contains_key($known_pragma_prefixes, $$),
-    )
-    |> Vec\map(
-      $$,
-      $p ==> LintError::create(
-        $script,
-        $pragma_map,
-        $p[0],
-        $linter,
-        'This pragma prefix is not known. '.
-        'Known prefixes: '.
-        Str\join($known_pragma_prefixes, ', '),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/prefer_semicolon_bodied_namespace_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-function prefer_semicolon_bodied_namespace_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_eof = Pha\create_token_matcher($script, Pha\KIND_END_OF_FILE_TOKEN);
-  $tokens = Pha\script_get_tokens($script);
-  $first_token = C\first($tokens);
-  $last_token = Support\c_find_last($tokens, $token ==> !$is_eof($token));
-
-  $get_header = Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_HEADER)
-    |> Pha\returns_syntax($$);
-  $get_keyword =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_KEYWORD);
-  $get_name = Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_NAME);
-  $get_left_brace =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_LEFT_BRACE);
-  $get_right_brace =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_RIGHT_BRACE);
-
-  return Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_BODY)
-    |> Vec\map($$, $body ==> {
-      $namespace = Pha\syntax_get_parent($script, $body);
-      $header = $get_header($namespace);
-      $keyword = $get_keyword($header);
-      $right_brace = $get_right_brace($body);
-      $is_global = Pha\is_missing($get_name($header));
-      $patches = null;
-
-      if ($first_token === $keyword && $last_token === $right_brace) {
-        $edits = vec[
-          Pha\patch_node(
-            $get_left_brace($body),
-            $is_global ? '' : ';',
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          ),
-          Pha\patch_node(
-            $right_brace,
-            '',
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          ),
-        ];
-        if ($is_global) {
-          $edits[] = Pha\patch_node(
-            $keyword,
-            '',
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          );
-        }
-        $patches = Pha\patches($script, ...$edits);
-      }
-
-      return LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $namespace,
-        $linter,
-        $is_global
-          ? 'namespace {} does not create an anonymous namespace, it is a noop.'
-          : 'Prefer `namespace Foo;` over `namespace Foo {}`.',
-        $patches,
-      );
-    });
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/prefer_use_clause_over_fully_qualified_names_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str};
-use namespace HTL\Pha;
-
-function prefer_use_clause_over_fully_qualified_names_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $is_declaration = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_NAMESPACE_DECLARATION_HEADER,
-    Pha\KIND_NAMESPACE_USE_DECLARATION,
-    Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
-  );
-  $is_function = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_FUNCTION_CALL_EXPRESSION,
-    Pha\KIND_FUNCTION_POINTER_EXPRESSION,
-  );
-  $is_type = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_CONSTRUCTOR_CALL,
-    Pha\KIND_GENERIC_TYPE_SPECIFIER,
-    Pha\KIND_SCOPE_RESOLUTION_EXPRESSION,
-    Pha\KIND_SIMPLE_TYPE_SPECIFIER,
-    Pha\KIND_TYPE_PARAMETER,
-  );
-
-  $errors = vec[];
-  foreach (
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_QUALIFIED_NAME) as
-      $node
-  ) {
-    $name = Pha\node_get_code_compressed($script, $node);
-    if (!Str\starts_with($name, '\\')) {
-      continue;
-    }
-
-    $ancestors = Pha\node_get_syntax_ancestors($script, $node);
-    if (C\any($ancestors, $is_declaration)) {
-      continue;
-    }
-
-    $name = Str\strip_prefix($name, '\\');
-    $separator = Str\search_last($name, '\\');
-    if ($separator is nonnull) {
-      $kind = 'namespace';
-      $import = Str\slice($name, 0, $separator);
-    } else {
-      $parent = C\firstx($ancestors);
-      $kind = $is_function($parent)
-        ? 'function'
-        : ($is_type($parent) ? 'type' : 'const');
-      $import = $name;
-    }
-
-    $errors[] = LintError::createWithoutPatches(
-      $script,
-      $pragma_map,
-      $node,
-      __FUNCTION__,
-      Str\format(
-        'Add a use clause for this; Consider `use %s %s;`.',
-        $kind,
-        $import,
-      ),
-    );
-  }
-
-  return $errors;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/region_comments_must_be_balanced_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Regex;
-use namespace HTL\Pha;
-
-function region_comments_must_be_balanced_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_single_line_comment =
-    Pha\create_trivium_matcher($script, Pha\KIND_SINGLE_LINE_COMMENT);
-  $regions = dict[];
-  $depth = 0;
-
-  foreach (Pha\script_get_trivia($script) as $comment) {
-    if (!$is_single_line_comment($comment)) {
-      continue;
-    }
-
-    $marker = Regex\first_match(
-      Pha\node_get_code($script, $comment),
-      re'@^//\s*\#(?<marker>region|endregion)(?:\s|$)@',
-    );
-    if ($marker is null) {
-      continue;
-    }
-
-    if ($marker['marker'] === 'region') {
-      $regions[$depth] = $comment;
-      ++$depth;
-    } else if ($depth !== 0) {
-      --$depth;
-    } else {
-      return vec[
-        LintError::createWithoutPatches(
-          $script,
-          $pragma_map,
-          $comment,
-          $linter,
-          'This `#endregion` comment has no matching `#region`.',
-        ),
-      ];
-    }
-  }
-
-  return $depth === 0
-    ? vec[]
-    : vec[
-        LintError::createWithoutPatches(
-          $script,
-          $pragma_map,
-          $regions[0],
-          $linter,
-          'This `#region` comment has no matching `#endregion`.',
-        ),
-      ];
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/shape_type_additional_field_intent_should_be_explicit_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-function shape_type_additional_field_intent_should_be_explicit_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\PragmaMap $pragma_map,
-  string $closed_shape_marker,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $get_shape_fields =
-    Pha\create_member_accessor($script, Pha\MEMBER_SHAPE_TYPE_FIELDS)
-    |> Pha\returns_syntax($$);
-  $get_shape_left_paren =
-    Pha\create_member_accessor($script, Pha\MEMBER_SHAPE_TYPE_LEFT_PAREN);
-  $get_shape_right_paren =
-    Pha\create_member_accessor($script, Pha\MEMBER_SHAPE_TYPE_RIGHT_PAREN);
-  $get_shape_ellipsis =
-    Pha\create_member_accessor($script, Pha\MEMBER_SHAPE_TYPE_ELLIPSIS);
-
-  return
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_SHAPE_TYPE_SPECIFIER)
-    |> Vec\filter($$, $shape ==> {
-      if (!Pha\is_missing($get_shape_ellipsis($shape))) {
-        return false;
-      }
-
-      $right_paren = $get_shape_right_paren($shape);
-
-      $token_before_right_paren = $get_shape_fields($shape)
-        |> Pha\node_get_children($script, $$)
-        |> C\last($$)
-        |> $$ is nonnull
-          ? Support\get_last_token($script, $$)
-          : $get_shape_left_paren($shape);
-
-      return !C\any(
-        vec[$token_before_right_paren, $right_paren],
-        $x ==> Pha\node_get_code($script, $x)
-          |> Str\contains($$, $closed_shape_marker),
-      );
-    })
-    |> Vec\map(
-      $$,
-      $shape ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $shape,
-        $linter,
-        'The intent of whether this shape accepts additional fields is not explicitly expressed. '.
-        'If you intended to accept these fields, and any number of unspecified fields, '.
-        'add `, ...` after the last field. If you do not want to accept additional fields, add '.
-        $closed_shape_marker.
-        ' before the closing parenthesis.',
-        Pha\patches(
-          $script,
-          Pha\patch_node(
-            $get_shape_right_paren($shape),
-            $closed_shape_marker.
-            "\n".
-            Pha\node_get_code($script, $get_shape_right_paren($shape)),
-            shape('trivia' => Pha\RetainTrivia::NEITHER),
-          ),
-        ),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/solitary_escape_sequences_should_be_disambiguated_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-use function ctype_digit;
-
-function solitary_escape_sequences_should_be_disambiguated_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $token_index,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $escape_chars = keyset['e', 'f', 't', 'r', 'n', 'u', 'v', 'x'];
-
-  return Pha\index_get_nodes_by_kind(
-    $token_index,
-    Pha\KIND_SINGLE_QUOTED_STRING_LITERAL,
-  )
-    |> Vec\map(
-      $$,
-      $str ==> shape(
-        'node' => $str,
-        'contents' => Pha\token_get_text($script, $str)
-          |> Str\strip_prefix($$, "'")
-          |> Str\strip_suffix($$, "'"),
-      ),
-    )
-    |> Vec\filter($$, $shape ==> {
-      $contents = $shape['contents'];
-      return Str\length($contents) === 2 &&
-        $contents[0] === '\\' &&
-        (
-          C\contains_key($escape_chars, $contents[1]) ||
-          ctype_digit($contents[1])
-        );
-    })
-    |> Vec\map(
-      $$,
-      $shape ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $shape['node'],
-        $linter,
-        'This string literal represents the literal text '.
-        $shape['contents'].
-        '. The escape sequence is not evaluated. This string could be confused '.
-        'for a character literal (which evaluates the escape sequence) by '.
-        'developers with experience in another language with C heritage. To '.
-        'avoid this confusion, please add a leading backslash to make this '.
-        'string visually distinct from character literals from other languages.',
-        Pha\patches(
-          $script,
-          Pha\patch_node(
-            $shape['node'],
-            "'".Str\replace($shape['contents'], '\\', '\\\\')."'",
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          ),
-        ),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/use_statement_alphabetization_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-function use_statement_alphabetization_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $get_clauses =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_CLAUSES)
-    |> Pha\returns_syntax($$);
-
-  $get_use_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_NAME);
-
-  $get_uses_to_be_sorted = $use ==> $get_clauses($use)
-    |> Pha\list_get_items_of_children($script, $$);
-
-  $autofix = $use ==> {
-    $old_order = $get_uses_to_be_sorted($use);
-    $new_order = Vec\sort_by(
-      $old_order,
-      $c ==> Pha\as_syntax($c)
-        |> $get_use_name($$)
-        |> Pha\node_get_code_compressed($script, $$),
-    );
-    return Vec\zip($old_order, $new_order)
-      |> Vec\map(
-        $$,
-        $tuple ==> vec[
-          Pha\patch_node(
-            $tuple[0],
-            Pha\node_get_code_without_leading_or_trailing_trivia(
-              $script,
-              $tuple[1],
-            ),
-            shape('trivia' => Pha\RetainTrivia::BOTH),
-          ),
-        ],
-      )
-      |> Vec\flatten($$)
-      |> Pha\patches($script, ...$$);
-  };
-
-  return Pha\index_get_nodes_by_kind(
-    $syntax_index,
-    Pha\KIND_NAMESPACE_USE_DECLARATION,
-  )
-    |> Vec\filter(
-      $$,
-      $use ==> $get_uses_to_be_sorted($use)
-        |> Vec\map(
-          $$,
-          $clause ==> Pha\as_syntax($clause)
-            |> $get_use_name($$)
-            |> Pha\node_get_code_compressed($script, $$),
-        )
-        |> !C\is_sorted($$),
-    )
-    |> Vec\map(
-      $$,
-      $use ==> LintError::createWithPatches(
-        $script,
-        $pragma_map,
-        $use,
-        $linter,
-        'Use clauses should be sorted alphabetically.',
-        $autofix($use),
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/use_statement_could_be_removed_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-function use_statement_could_be_removed_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_namespace_declaration =
-    Pha\create_syntax_matcher($script, Pha\KIND_NAMESPACE_DECLARATION);
-  $is_empty_body =
-    Pha\create_syntax_matcher($script, Pha\KIND_NAMESPACE_EMPTY_BODY);
-  $is_group = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
-  );
-  $is_namespace = Pha\create_token_matcher($script, Pha\KIND_NAMESPACE);
-  $is_function = Pha\create_token_matcher($script, Pha\KIND_FUNCTION);
-  $is_type = Pha\create_token_matcher($script, Pha\KIND_TYPE);
-  $get_header = Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_HEADER)
-    |> Pha\returns_syntax($$);
-  $get_namespace_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_NAME);
-  $get_body = Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_BODY);
-  $get_clauses = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_NAMESPACE_USE_CLAUSES,
-    Pha\MEMBER_NAMESPACE_GROUP_USE_CLAUSES,
-  )
-    |> Pha\returns_syntax($$);
-  $get_kind = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_NAMESPACE_USE_KIND,
-    Pha\MEMBER_NAMESPACE_GROUP_USE_KIND,
-  );
-  $get_prefix =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_GROUP_USE_PREFIX);
-  $get_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_NAME);
-
-  $semicolon_namespaces =
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_DECLARATION)
-    |> Vec\filter($$, $n ==> $is_empty_body($get_body($n)))
-    |> Vec\reverse($$);
-
-  $errors = vec[];
-  foreach (
-    Vec\concat(
-      Pha\index_get_nodes_by_kind(
-        $syntax_index,
-        Pha\KIND_NAMESPACE_USE_DECLARATION,
-      ),
-      Pha\index_get_nodes_by_kind(
-        $syntax_index,
-        Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
-      ),
-    ) as $use
-  ) {
-    $namespace = Pha\node_get_syntax_ancestors($script, $use)
-      |> C\find($$, $is_namespace_declaration);
-    $namespace ??= C\find(
-      $semicolon_namespaces,
-      $n ==> Pha\node_get_source_order($n) < Pha\node_get_source_order($use),
-    );
-    if ($namespace is null) {
-      continue;
-    }
-
-    $current_namespace = $get_namespace_name($get_header($namespace))
-      |> Pha\node_get_code_compressed($script, $$)
-      |> Str\trim($$, '\\');
-    if ($current_namespace === '') {
-      continue;
-    }
-
-    $kind = $get_kind($use);
-    if (Pha\is_missing($kind)) {
-      continue;
-    }
-
-    $prefix = $is_group($use)
-      ? Pha\node_get_code_compressed($script, $get_prefix($use))
-      : '';
-    foreach (
-      Pha\list_get_items_of_children($script, $get_clauses($use)) as $node
-    ) {
-      $clause = Pha\as_syntax($node);
-      $name = $prefix.Pha\node_get_code_compressed($script, $get_name($clause))
-        |> Str\strip_prefix($$, '\\');
-      $is_current_namespace =
-        $is_namespace($kind) && $name === $current_namespace;
-      $short_name = Str\split($name, '\\') |> C\lastx($$);
-      $is_direct_member = $name === $current_namespace.'\\'.$short_name;
-      if (!$is_current_namespace && !$is_direct_member) {
-        continue;
-      }
-
-      // `use type X\Vector` is useful in namespace `X` because of the auto import.
-      if (
-        (
-          $is_function($kind) &&
-          C\contains(Pha\_Private\AUTO_IMPORTED_FUNCTIONS, $short_name)
-        ) ||
-        (
-          $is_type($kind) &&
-          C\contains(Pha\_Private\AUTO_IMPORTED_TYPES, $short_name)
-        )
-      ) {
-        continue;
-      }
-
-      $errors[] = LintError::createWithoutPatches(
-        $script,
-        $pragma_map,
-        $clause,
-        $linter,
-        $is_current_namespace
-          ? 'This imports the current namespace. This is redundant. If you must '.
-            'disambiguate an ambiguous symbol, use `namespace\Symbol` there.'
-          : Str\format(
-              'This use clause creates a name you already had. '.
-              'You can refer to it as `%s` without this use clause.',
-              $short_name,
-            ),
-      );
-    }
-  }
-
-  return $errors;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/use_statement_order_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\{HH4Shim, Pha};
-
-function use_statement_order_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  Pha\TokenIndex $_,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-  $is_use = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_NAMESPACE_USE_DECLARATION,
-    Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
-  );
-  $is_group_use = Pha\create_syntax_matcher(
-    $script,
-    Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION,
-  );
-  $get_declarations = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_SCRIPT_DECLARATIONS,
-    Pha\MEMBER_NAMESPACE_DECLARATIONS,
-  );
-  $get_kind = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_NAMESPACE_USE_KIND,
-    Pha\MEMBER_NAMESPACE_GROUP_USE_KIND,
-  );
-  $get_prefix =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_GROUP_USE_PREFIX);
-  $get_clauses =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_CLAUSES)
-    |> Pha\returns_syntax($$);
-  $get_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_NAME);
-  $kind_order =
-    dict['namespace' => 0, 'type' => 1, 'function' => 2, 'const' => 3];
-
-  $bodies = Vec\concat(
-    vec[Pha\SCRIPT_NODE],
-    Pha\index_get_nodes_by_kind($syntax_index, Pha\KIND_NAMESPACE_BODY),
-  );
-
-  $errors = vec[];
-  foreach ($bodies as $body) {
-    $previous = null;
-    $reported = false;
-    foreach (
-      Pha\node_get_children($script, $get_declarations($body)) as $node
-    ) {
-      if (!$is_use($node)) {
-        $previous = null;
-        $reported = false;
-        continue;
-      }
-
-      $use = Pha\as_syntax($node);
-      $kind = $get_kind($use)
-        |> Pha\node_get_code_compressed($script, $$)
-        |> Str\lowercase($$)
-        |> idx($kind_order, $$);
-      // PHP-ish `use Foo` without a kind do not have a specified order.
-      if ($kind is null) {
-        $previous = null;
-        $reported = false;
-        continue;
-      }
-
-      if ($is_group_use($use)) {
-        $prefix_node = $get_prefix($use);
-      } else {
-        // For cases like `use const X, Y, Z`, we treat this as `use const X;`
-        $clause = Pha\list_get_items_of_children($script, $get_clauses($use))
-          |> C\first($$);
-        if ($clause is null) {
-          $previous = null;
-          $reported = false;
-          continue;
-        }
-        $prefix_node = $get_name(Pha\as_syntax($clause));
-      }
-      $prefix = Pha\node_get_code_compressed($script, $prefix_node)
-        |> Str\strip_prefix($$, '\\');
-      $key = (string)$kind.';'.$prefix;
-      // Hack ignores assignments from earlier inner-loop iterations.
-      // https://github.com/facebook/hhvm/issues/9852
-      $previous = HH4Shim\to_mixed($previous) as ?string;
-      if (
-        $previous is nonnull && !$reported && Str\compare($previous, $key) > 0
-      ) {
-        $errors[] = LintError::createWithoutPatches(
-          $script,
-          $pragma_map,
-          $use,
-          $linter,
-          'Consecutive use statements should be ordered by kind '.
-          '(namespace, type, function, const), then alphabetically.',
-        );
-        $reported = true;
-      }
-      $previous = $key;
-    }
-  }
-  return $errors;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/linters/pha_native/variable_name_must_be_lowercase_linter.hack /////
-namespace HTL\PhaLinters;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-function variable_name_must_be_lowercase_linter(
-  Pha\Script $script,
-  Pha\SyntaxIndex $_,
-  Pha\TokenIndex $token_index,
-  Pha\Resolver $_,
-  Pha\PragmaMap $pragma_map,
-)[]: vec<LintError> {
-  $linter = __FUNCTION__;
-
-  $is_methodish_declaration =
-    Pha\create_syntax_matcher($script, Pha\KIND_METHODISH_DECLARATION);
-  $is_property_declarator =
-    Pha\create_syntax_matcher($script, Pha\KIND_PROPERTY_DECLARATOR);
-  $is_scope_resolution_expression =
-    Pha\create_syntax_matcher($script, Pha\KIND_SCOPE_RESOLUTION_EXPRESSION);
-
-  $get_methodish_declaration_header = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_METHODISH_FUNCTION_DECL_HEADER,
-  )
-    |> Pha\returns_syntax($$);
-  $get_parameter_list =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_PARAMETER_LIST)
-    |> Pha\returns_syntax($$);
-  $get_parameter_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_NAME)
-    |> Pha\returns_token($$);
-  $get_parameter_visibility =
-    Pha\create_member_accessor($script, Pha\MEMBER_PARAMETER_VISIBILITY);
-
-  return Pha\index_get_nodes_by_kind($token_index, Pha\KIND_VARIABLE_TOKEN)
-    |> Vec\filter($$, $var ==> {
-      $var_name = Pha\token_get_text($script, $var);
-      if ($var_name === Str\lowercase($var_name)) {
-        return false;
-      }
-
-      $parent = Pha\token_get_parent($script, $var);
-
-      if (
-        $is_property_declarator($parent) ||
-        $is_scope_resolution_expression($parent) &&
-          Pha\node_get_last_childx($script, $parent) === $var
-      ) {
-        return false;
-      }
-
-      $method_decl = Pha\node_get_syntax_ancestors($script, $var)
-        |> C\find($$, $is_methodish_declaration);
-
-      if ($method_decl is null) {
-        return true;
-      }
-
-      // __construct(private typename $camelCase) { validate($camelCase); }
-      return $get_methodish_declaration_header($method_decl)
-        |> $get_parameter_list($$)
-        |> Pha\list_get_items_of_children($script, $$)
-        |> !C\any($$, $param ==> {
-          $param = Pha\as_syntax($param);
-          $param_name =
-            $get_parameter_name($param) |> Pha\token_get_text($script, $$);
-          return $param_name === $var_name &&
-            !Pha\is_missing($get_parameter_visibility($param));
-        });
-    })
-    |> Vec\map(
-      $$,
-      $var ==> LintError::create(
-        $script,
-        $pragma_map,
-        $var,
-        $linter,
-        'Local variables should be $snake_case and may therefore not contain uppercase letters.',
-      ),
-    );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/CallingConvention.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-enum CallingCovention: int {
-  PLAIN = 0;
-  INOUT = 1;
-  VARIADIC = 2;
-  OTHER = 3;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/ComparisonKind.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-enum ComparisonKind: int {
-  EQUALS = 0;
-  NOT_EQUALS = 1;
-  LESS_THAN = 2;
-  LESS_THAN_OR_EQUAL = 3;
-  GREATER_THAN = 4;
-  GREATER_THAN_OR_EQUAL = 5;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/TUnusedVariableLinterUsage.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-
-type TUnusedVariableLinterUsage = shape(
-  'is_assignment' => bool,
-  'disposable_assignment' => ?Pha\Syntax,
-  'param_of_func' => Pha\NillableSyntax,
-  'param_of_lambda' => Pha\NillableSyntax,
-  'scopes' => vec<Pha\Syntax>,
-  'var' => Pha\Token,
-  'var_name' => string,
-  /*_*/
-);
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/TUnusedVariableLinterUsageAfterShadowing.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-
-type TUnusedVariableLinterAfterShadowing = shape(
-  'is_assignment' => bool,
-  'disposable_assignment' => ?Pha\Syntax,
-  'owners' => vec<Pha\Syntax>,
-  'var' => Pha\Token,
-  'var_name' => string,
-  /*_*/
-);
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/UseKind.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-enum UseKind: int {
-  CONST = 0;
-  FUNCTION = 1;
-  NAMESPACE = 2;
-  TYPE = 3;
-  NONE = 4;
-}
-
-const vec<UseKind> REAL_USE_KINDS =
-  vec[UseKind::CONST, UseKind::FUNCTION, UseKind::NAMESPACE, UseKind::TYPE];
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/c_find_last.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\C;
-
-function c_find_last<T>(
-  vec<T> $values,
-  (function(T)[_]: bool) $predicate,
-)[ctx $predicate]: ?T {
-  for ($i = C\count($values) - 1; $i >= 0; --$i) {
-    $value = $values[$i];
-    if ($predicate($value)) {
-      return $value;
-    }
-  }
-
-  return null;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/dict_merge_by_concatting_values.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-
-function dict_merge_by_concatting_values<Tk as arraykey, Tv>(
-  KeyedTraversable<Tk, vec<Tv>> $first,
-  KeyedTraversable<Tk, Container<Tv>> ...$rest
-)[]: dict<Tk, vec<Tv>> {
-  $out = dict($first);
-
-  foreach ($rest as $r) {
-    foreach ($r as $k => $vs) {
-      if (C\contains_key($out, $k)) {
-        $out[$k] = Vec\concat($out[$k], $vs);
-      } else {
-        $out[$k] = vec($vs);
-      }
-    }
-  }
-
-  return $out;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/disable_in_generated_source.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-use type HTL\PhaLinters\LintError;
-
-function disable_in_generated_source(
-  (function(
-    Pha\Script,
-    Pha\SyntaxIndex,
-    Pha\TokenIndex,
-    Pha\Resolver,
-    Pha\PragmaMap,
-  )[]: vec<LintError>) $linter,
-)[]: (function(
-  Pha\Script,
-  Pha\SyntaxIndex,
-  Pha\TokenIndex,
-  Pha\Resolver,
-  Pha\PragmaMap,
-)[]: vec<LintError>) {
-  return ($script, $syntax_index, $token_index, $resolver, $pragma_map)[] ==>
-    extract_digest($script, $pragma_map) is nonnull
-      ? vec[]
-      : $linter($script, $syntax_index, $token_index, $resolver, $pragma_map);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/enforce_naming.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-function enforce_naming(
-  Pha\Script $script,
-  Pha\SyntaxIndex $syntax_index,
-  (function(string, Pha\Syntax)[_]: bool) $function_name_func,
-  (function(string, Pha\Syntax)[_]: bool) $method_name_func,
-  ?vec<string> $allowed_suffixes = null,
-)[ctx $function_name_func, ctx $method_name_func]: vec<Pha\Syntax> {
-  $allowed_suffixes ??= vec[
-    '__DEPRECATED',
-    '__DO_NOT_USE',
-    '__UNTYPED',
-    '__UNSAFE',
-    '_DEPRECATED',
-    '_DO_NOT_USE',
-    '_UNTYPED',
-    '_UNSAFE',
-  ];
-
-  $is_function_declaration =
-    Pha\create_syntax_matcher($script, Pha\KIND_FUNCTION_DECLARATION);
-
-  $get_function_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_NAME)
-    |> Pha\returns_token($$);
-
-  $get_function_name_as_text = $decl ==> $get_function_name($decl)
-    |> Pha\token_get_text($script, $$)
-    |> C\reduce($allowed_suffixes, Str\strip_suffix<>, $$);
-
-  list($function_decls, $method_decls) = Pha\index_get_nodes_by_kind(
-    $syntax_index,
-    Pha\KIND_FUNCTION_DECLARATION_HEADER,
-  )
-    |> Vec\partition(
-      $$,
-      $h ==> $is_function_declaration(Pha\node_get_parent($script, $h)),
-    );
-
-  return Vec\concat(
-    Vec\filter(
-      $function_decls,
-      $d ==> $function_name_func($get_function_name_as_text($d), $d),
-    ),
-    Vec\filter(
-      $method_decls,
-      $d ==> $method_name_func($get_function_name_as_text($d), $d),
-    ),
-  );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/extract_digest.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str};
-use namespace HTL\Pha;
-use function sha1;
-
-function extract_digest(
-  Pha\Script $script,
-  Pha\PragmaMap $pragma_map,
-)[]: ?shape(
-  'pragma' => Pha\Syntax,
-  'embedded' => string,
-  'hashed' => string,
-  /*_*/
-) {
-  list($pragma, $digest) = $pragma_map->getAllPragmas()
-    |> C\find(
-      $$,
-      $p ==> C\count($p[2]) === 2 &&
-        (
-          Str\trim($p[2][0], '"\'')
-          |> $$ === 'PhaLinters' || $$ === 'HTL\\PhaLinters'
-        ) &&
-        (Str\trim($p[2][1], '"\'') |> Str\starts_with($$, 'digest:')),
-    )
-    |> $$ is nonnull
-      ? tuple(
-          $$[0],
-          Str\trim($$[2][1], '"\'') |> Str\strip_prefix($$, 'digest:'),
-        )
-      : tuple(null, '');
-
-  if ($pragma is null) {
-    return null;
-  }
-
-  return Pha\node_get_code($script, Pha\SCRIPT_NODE)
-    |> Str\replace($$, $digest, '')
-    |> sha1($$) as string
-    |> Str\slice($$, 0, 20)
-    |> shape('pragma' => $pragma, 'embedded' => $digest, 'hashed' => $$);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/get_first_token.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\C;
-use namespace HTL\Pha;
-
-function get_first_token(
-  Pha\Script $script,
-  Pha\NillableNode $node,
-)[]: Pha\NillableToken {
-  return Pha\as_token_or_nil(
-    !Pha\is_token($node)
-      ? Pha\node_get_descendants($script, $node)
-        |> C\find($$, Pha\is_token<>) ?? Pha\NIL
-      : $node,
-  );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/get_flattened_namespace_uses.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{Dict, Vec};
-use namespace HTL\Pha;
-
-function get_flattened_namespace_uses(
-  Pha\Script $script,
-  vec<Pha\Syntax> $use_declarations,
-  vec<Pha\Syntax> $group_use_declarations,
-)[]: dict<UseKind, vec<(Pha\Syntax, string)>> {
-  $is_const = Pha\create_token_matcher($script, Pha\KIND_CONST);
-  $is_function = Pha\create_token_matcher($script, Pha\KIND_FUNCTION);
-  $is_namespace = Pha\create_token_matcher($script, Pha\KIND_NAMESPACE);
-  $is_type = Pha\create_token_matcher($script, Pha\KIND_TYPE);
-
-  $get_kind = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_NAMESPACE_USE_KIND,
-    Pha\MEMBER_NAMESPACE_GROUP_USE_KIND,
-  );
-
-  $get_grouped_prefix =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_GROUP_USE_PREFIX);
-  $get_clauses = Pha\create_member_accessor(
-    $script,
-    Pha\MEMBER_NAMESPACE_USE_CLAUSES,
-    Pha\MEMBER_NAMESPACE_GROUP_USE_CLAUSES,
-  )
-    |> Pha\returns_syntax($$);
-  $get_clause_name =
-    Pha\create_member_accessor($script, Pha\MEMBER_NAMESPACE_USE_NAME);
-
-  $parse_clause = $clause ==>
-    $get_clause_name($clause) |> Pha\node_get_code_compressed($script, $$);
-
-  $parse_group_prefix = $use ==> $get_grouped_prefix($use)
-    |> Pha\node_get_code_compressed($script, $$);
-
-  $get_kind_as_enum = $use ==> $get_kind($use)
-    |> $is_const($$)
-      ? UseKind::CONST
-      : (
-          $is_function($$)
-            ? UseKind::FUNCTION
-            : (
-                $is_namespace($$)
-                  ? UseKind::NAMESPACE
-                  : ($is_type($$) ? UseKind::TYPE : UseKind::NONE)
-              )
-        );
-
-  $use_clauses = Dict\group_by($use_declarations, $get_kind_as_enum)
-    |> Dict\map(
-      $$,
-      $uses ==> Vec\map(
-        $uses,
-        $u ==> Pha\as_syntax($u)
-          |> $get_clauses($$)
-          |> Pha\list_get_items_of_children($script, $$),
-      )
-        |> Vec\flatten($$)
-        |> Vec\map(
-          $$,
-          $c ==> Pha\as_syntax($c) |> tuple($$, $parse_clause($$)),
-        ),
-    );
-
-  $grouped_uses = Dict\group_by($group_use_declarations, $get_kind_as_enum)
-    |> Dict\map(
-      $$,
-      $v ==> Vec\map($v, $u ==> {
-        $prefix = $parse_group_prefix($u);
-        return $get_clauses($u)
-          |> Pha\list_get_items_of_children($script, $$)
-          |> Vec\map(
-            $$,
-            $c ==>
-              Pha\as_syntax($c) |> tuple($$, $prefix.'\\'.$parse_clause($$)),
-          );
-      })
-        |> Vec\flatten($$),
-    );
-
-  return dict_merge_by_concatting_values($use_clauses, $grouped_uses);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/get_last_token.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-function get_last_token(
-  Pha\Script $script,
-  Pha\NillableNode $node,
-)[]: Pha\NillableToken {
-  return Pha\as_token_or_nil(
-    !Pha\is_token($node)
-      ? Pha\node_get_descendants($script, $node)
-        |> Vec\reverse($$)
-        |> C\find($$, Pha\is_token<>) ?? Pha\NIL
-      : $node,
-  );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/get_previous_token.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-
-function get_previous_token(
-  Pha\Script $script,
-  Pha\NillableNode $node,
-)[]: Pha\NillableToken {
-  if ($node === Pha\NIL) {
-    return Pha\NIL_TOKEN;
-  }
-
-  $family = Pha\as_nonnil($node)
-    |> Pha\node_get_parent($script, $$)
-    |> Pha\node_get_descendants($script, $$);
-
-  $previous_token = Pha\NIL_TOKEN;
-  foreach ($family as $f) {
-    if ($f === $node) {
-      break;
-    }
-
-    if (Pha\is_token($f)) {
-      $previous_token = Pha\as_token($f);
-    }
-  }
-
-  return $previous_token;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/insert_digest.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Str;
-use namespace HTL\Pha;
-
-function insert_digest(
-  Pha\Script $script,
-  Pha\PragmaMap $pragma_map,
-)[]: string {
-  $example = "<<file: Pragmas(vec['PhaLinters', 'digest:'])>>";
-  $digest = extract_digest($script, $pragma_map);
-
-  invariant(
-    $digest is nonnull,
-    'The source should contain a pragma attribute with an empty digest, got none. Example: %s',
-    $example,
-  );
-  invariant(
-    $digest['embedded'] === '',
-    'The embedded pragma directive should not specify a digest, got %s. Example: %s',
-    $digest['embedded'],
-    $example,
-  );
-
-  return Pha\node_get_code($script, $digest['pragma'])
-    |> Str\replace($$, 'digest:', 'digest:'.$digest['hashed'])
-    |> Pha\patches($script, Pha\patch_node($digest['pragma'], $$))
-    |> Pha\patches_apply($$);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/is_assignment_operator.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-
-function assignment_operator_matcher(Pha\Script $script)[]: (function(
-  Pha\NillableNode,
-)[]: bool) {
-  return Pha\create_token_matcher(
-    $script,
-    Pha\KIND_AMPERSAND_EQUAL,
-    Pha\KIND_BAR_EQUAL,
-    Pha\KIND_CARAT_EQUAL,
-    Pha\KIND_DOT_EQUAL,
-    Pha\KIND_EQUAL,
-    Pha\KIND_GREATER_THAN_GREATER_THAN_EQUAL,
-    Pha\KIND_LESS_THAN_LESS_THAN_EQUAL,
-    Pha\KIND_MINUS_EQUAL,
-    Pha\KIND_PERCENT_EQUAL,
-    Pha\KIND_PLUS_EQUAL,
-    Pha\KIND_QUESTION_QUESTION_EQUAL,
-    Pha\KIND_SLASH_EQUAL,
-    Pha\KIND_STAR_EQUAL,
-    Pha\KIND_STAR_STAR_EQUAL,
-  );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast-linters/src/support/vec_take_while_inclusive.hack /////
-namespace HTL\PhaLinters\Support;
-/** portable-hack-ast-linters is MIT licensed, see /LICENSE. */
-
-/**
- * Returns a new vec with all elements up until and including the first element
- * for which the predicate does not hold.
- * If the predicate holds for all elements, all elements are returned.
- *
- * ```
- * $nums = vec[1, 2, 3, 4, 5, 6, 7];
- * vec_take_while_inclusive($nums, $n ==> $n !== 4); // vec[1, 2, 3, 4]
- * ```
- */
-function vec_take_while_inclusive<T>(
-  Traversable<T> $traversable,
-  (function(T)[_]: bool) $predicate,
-)[ctx $predicate]: vec<T> {
-  $out = vec[];
-
-  foreach ($traversable as $el) {
-    $out[] = $el;
-    if (!$predicate($el)) {
-      return $out;
-    }
-  }
-
-  return $out;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/Kind.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-newtype Kind as string = string;
-newtype SyntaxKind as Kind = Kind;
-newtype TokenKind as Kind = Kind;
-newtype TriviumKind as Kind = Kind;
-
-function syntax_kind_from_kind(Kind $kind)[]: SyntaxKind {
-  return $kind;
-}
-
-function syntax_kind_from_string(string $str)[]: SyntaxKind {
-  return $str;
-}
-
-function token_kind_from_kind(Kind $kind)[]: TokenKind {
-  return $kind;
-}
-
-function token_kind_from_string(string $str)[]: TokenKind {
-  return $str;
-}
-
-function trivium_kind_from_kind(Kind $kind)[]: TriviumKind {
-  return $kind;
-}
-
-function trivium_kind_from_string(string $str)[]: TriviumKind {
-  return $str;
-}
-
-// Missing the codegen...
-const SyntaxKind KIND_NAME_EXPRESSION = 'name_expression';
-const SyntaxKind KIND_NODE_LIST = 'node_list';
-const SyntaxKind KIND_MISSING = 'missing';
-
-const TriviumKind KIND_DELIMITED_COMMENT = 'delimited_comment';
-const TriviumKind KIND_END_OF_LINE = 'end_of_line';
-const TriviumKind KIND_FALL_THROUGH_COMMENT = 'fall_through';
-const TriviumKind KIND_FIX_ME = 'fix_me';
-const TriviumKind KIND_IGNORE_ERROR = 'ignore_error';
-const TriviumKind KIND_SINGLE_LINE_COMMENT = 'single_line_comment';
-const TriviumKind KIND_TOKEN_TEXT = 'token_text';
-const TriviumKind KIND_WHITESPACE = 'whitespace';
-
-// #region GENERATED CODE DO NOT EDIT BY HAND!
-// This code was generated by bin/codegen_kind_constants.hack 817ea043fead078084eeca0cd0ab151c69a1006b
-
-const SyntaxKind KIND_ALIAS_DECLARATION = 'alias_declaration';
-const SyntaxKind KIND_ANONYMOUS_CLASS = 'anonymous_class';
-const SyntaxKind KIND_ANONYMOUS_FUNCTION = 'anonymous_function';
-const SyntaxKind KIND_ANONYMOUS_FUNCTION_USE_CLAUSE = 'anonymous_function_use_clause';
-const SyntaxKind KIND_AS_EXPRESSION = 'as_expression';
-const SyntaxKind KIND_ATTRIBUTE_SYNTAX = 'attribute';
-const SyntaxKind KIND_ATTRIBUTE_SPECIFICATION = 'attribute_specification';
-const SyntaxKind KIND_ATTRIBUTIZED_SPECIFIER = 'attributized_specifier';
-const SyntaxKind KIND_AWAITABLE_CREATION_EXPRESSION = 'awaitable_creation_expression';
-const SyntaxKind KIND_BINARY_EXPRESSION = 'binary_expression';
-const SyntaxKind KIND_BRACED_EXPRESSION = 'braced_expression';
-const SyntaxKind KIND_BREAK_STATEMENT = 'break_statement';
-const SyntaxKind KIND_CASE_LABEL = 'case_label';
-const SyntaxKind KIND_CASE_TYPE_DECLARATION = 'case_type_declaration';
-const SyntaxKind KIND_CASE_TYPE_VARIANT = 'case_type_variant';
-const SyntaxKind KIND_CAST_EXPRESSION = 'cast_expression';
-const SyntaxKind KIND_CATCH_CLAUSE = 'catch_clause';
-const SyntaxKind KIND_CLASSISH_BODY = 'classish_body';
-const SyntaxKind KIND_CLASSISH_DECLARATION = 'classish_declaration';
-const SyntaxKind KIND_CLASSNAME_TYPE_SPECIFIER = 'classname_type_specifier';
-const SyntaxKind KIND_CLASS_PTR_TYPE_SPECIFIER = 'class_ptr_type_specifier';
-const SyntaxKind KIND_CLOSURE_PARAMETER_TYPE_SPECIFIER = 'closure_parameter_type_specifier';
-const SyntaxKind KIND_CLOSURE_TYPE_SPECIFIER = 'closure_type_specifier';
-const SyntaxKind KIND_COLLECTION_LITERAL_EXPRESSION = 'collection_literal_expression';
-const SyntaxKind KIND_COMPOUND_STATEMENT = 'compound_statement';
-const SyntaxKind KIND_CONCURRENT_STATEMENT = 'concurrent_statement';
-const SyntaxKind KIND_CONDITIONAL_EXPRESSION = 'conditional_expression';
-const SyntaxKind KIND_CONSTANT_DECLARATOR = 'constant_declarator';
-const SyntaxKind KIND_CONSTRUCTOR_CALL = 'constructor_call';
-const SyntaxKind KIND_CONSTRUCTOR_PATTERN = 'constructor_pattern';
-const SyntaxKind KIND_CONST_DECLARATION = 'const_declaration';
-const SyntaxKind KIND_CONTEXTS = 'contexts';
-const SyntaxKind KIND_CONTEXT_ALIAS_DECLARATION = 'context_alias_declaration';
-const SyntaxKind KIND_CONTEXT_CONSTRAINT = 'context_constraint';
-const SyntaxKind KIND_CONTEXT_CONST_DECLARATION = 'context_const_declaration';
-const SyntaxKind KIND_CONTINUE_STATEMENT = 'continue_statement';
-const SyntaxKind KIND_CTX_IN_REFINEMENT = 'ctx_in_refinement';
-const SyntaxKind KIND_DARRAY_INTRINSIC_EXPRESSION = 'darray_intrinsic_expression';
-const SyntaxKind KIND_DARRAY_TYPE_SPECIFIER = 'darray_type_specifier';
-const SyntaxKind KIND_DECLARE_LOCAL_STATEMENT = 'declare_local_statement';
-const SyntaxKind KIND_DECORATED_EXPRESSION = 'decorated_expression';
-const SyntaxKind KIND_DEFAULT_LABEL = 'default_label';
-const SyntaxKind KIND_DEFINE_EXPRESSION = 'define_expression';
-const SyntaxKind KIND_DICTIONARY_INTRINSIC_EXPRESSION = 'dictionary_intrinsic_expression';
-const SyntaxKind KIND_DICTIONARY_TYPE_SPECIFIER = 'dictionary_type_specifier';
-const SyntaxKind KIND_DO_STATEMENT = 'do_statement';
-const SyntaxKind KIND_ECHO_STATEMENT = 'echo_statement';
-const SyntaxKind KIND_ELEMENT_INITIALIZER = 'element_initializer';
-const SyntaxKind KIND_ELSEIF_CLAUSE = 'elseif_clause';
-const SyntaxKind KIND_ELSE_CLAUSE = 'else_clause';
-const SyntaxKind KIND_EMBEDDED_BRACED_EXPRESSION = 'embedded_braced_expression';
-const SyntaxKind KIND_EMBEDDED_MEMBER_SELECTION_EXPRESSION = 'embedded_member_selection_expression';
-const SyntaxKind KIND_EMBEDDED_SUBSCRIPT_EXPRESSION = 'embedded_subscript_expression';
-const SyntaxKind KIND_END_OF_FILE = 'end_of_file';
-const SyntaxKind KIND_ENUMERATOR = 'enumerator';
-const SyntaxKind KIND_ENUM_ATOM_EXPRESSION = 'enum_atom_expression';
-const SyntaxKind KIND_ENUM_CLASS_DECLARATION = 'enum_class_declaration';
-const SyntaxKind KIND_ENUM_CLASS_ENUMERATOR = 'enum_class_enumerator';
-const SyntaxKind KIND_ENUM_CLASS_LABEL_EXPRESSION = 'enum_class_label_expression';
-const SyntaxKind KIND_ENUM_DECLARATION = 'enum_declaration';
-const SyntaxKind KIND_ENUM_USE = 'enum_use';
-const SyntaxKind KIND_ERROR_SYNTAX = 'error_syntax';
-const SyntaxKind KIND_ETSPLICE_EXPRESSION = 'eTSplice_expression';
-const SyntaxKind KIND_EVAL_EXPRESSION = 'eval_expression';
-const SyntaxKind KIND_EXPRESSION_STATEMENT = 'expression_statement';
-const SyntaxKind KIND_FIELD_INITIALIZER = 'field_initializer';
-const SyntaxKind KIND_FIELD_SPECIFIER = 'field_specifier';
-const SyntaxKind KIND_FILE_ATTRIBUTE_SPECIFICATION = 'file_attribute_specification';
-const SyntaxKind KIND_FINALLY_CLAUSE = 'finally_clause';
-const SyntaxKind KIND_FOREACH_STATEMENT = 'foreach_statement';
-const SyntaxKind KIND_FOR_STATEMENT = 'for_statement';
-const SyntaxKind KIND_FUNCTION_CALL_EXPRESSION = 'function_call_expression';
-const SyntaxKind KIND_FUNCTION_CTX_TYPE_SPECIFIER = 'function_ctx_type_specifier';
-const SyntaxKind KIND_FUNCTION_DECLARATION = 'function_declaration';
-const SyntaxKind KIND_FUNCTION_DECLARATION_HEADER = 'function_declaration_header';
-const SyntaxKind KIND_FUNCTION_POINTER_EXPRESSION = 'function_pointer_expression';
-const SyntaxKind KIND_GENERIC_TYPE_SPECIFIER = 'generic_type_specifier';
-const SyntaxKind KIND_IF_STATEMENT = 'if_statement';
-const SyntaxKind KIND_INCLUSION_DIRECTIVE = 'inclusion_directive';
-const SyntaxKind KIND_INCLUSION_EXPRESSION = 'inclusion_expression';
-const SyntaxKind KIND_INTERSECTION_TYPE_SPECIFIER = 'intersection_type_specifier';
-const SyntaxKind KIND_ISSET_EXPRESSION = 'isset_expression';
-const SyntaxKind KIND_IS_EXPRESSION = 'is_expression';
-const SyntaxKind KIND_KEYSET_INTRINSIC_EXPRESSION = 'keyset_intrinsic_expression';
-const SyntaxKind KIND_KEYSET_TYPE_SPECIFIER = 'keyset_type_specifier';
-const SyntaxKind KIND_LAMBDA_EXPRESSION = 'lambda_expression';
-const SyntaxKind KIND_LAMBDA_SIGNATURE = 'lambda_signature';
-const SyntaxKind KIND_LIKE_TYPE_SPECIFIER = 'like_type_specifier';
-const SyntaxKind KIND_LIST_EXPRESSION = 'list_expression';
-const SyntaxKind KIND_LIST_ITEM = 'list_item';
-const SyntaxKind KIND_LITERAL = 'literal';
-const SyntaxKind KIND_MARKUP_SECTION = 'markup_section';
-const SyntaxKind KIND_MARKUP_SUFFIX = 'markup_suffix';
-const SyntaxKind KIND_MATCH_STATEMENT = 'match_statement';
-const SyntaxKind KIND_MATCH_STATEMENT_ARM = 'match_statement_arm';
-const SyntaxKind KIND_MEMBER_SELECTION_EXPRESSION = 'member_selection_expression';
-const SyntaxKind KIND_METHODISH_DECLARATION = 'methodish_declaration';
-const SyntaxKind KIND_METHODISH_TRAIT_RESOLUTION = 'methodish_trait_resolution';
-const SyntaxKind KIND_MODULE_DECLARATION = 'module_declaration';
-const SyntaxKind KIND_MODULE_EXPORTS = 'module_exports';
-const SyntaxKind KIND_MODULE_IMPORTS = 'module_imports';
-const SyntaxKind KIND_MODULE_MEMBERSHIP_DECLARATION = 'module_membership_declaration';
-const SyntaxKind KIND_MODULE_NAME = 'module_name';
-const SyntaxKind KIND_NAMEOF_EXPRESSION = 'nameof_expression';
-const SyntaxKind KIND_NAMESPACE_BODY = 'namespace_body';
-const SyntaxKind KIND_NAMESPACE_DECLARATION = 'namespace_declaration';
-const SyntaxKind KIND_NAMESPACE_DECLARATION_HEADER = 'namespace_declaration_header';
-const SyntaxKind KIND_NAMESPACE_EMPTY_BODY = 'namespace_empty_body';
-const SyntaxKind KIND_NAMESPACE_GROUP_USE_DECLARATION = 'namespace_group_use_declaration';
-const SyntaxKind KIND_NAMESPACE_USE_CLAUSE = 'namespace_use_clause';
-const SyntaxKind KIND_NAMESPACE_USE_DECLARATION = 'namespace_use_declaration';
-const SyntaxKind KIND_NULLABLE_AS_EXPRESSION = 'nullable_as_expression';
-const SyntaxKind KIND_NULLABLE_TYPE_SPECIFIER = 'nullable_type_specifier';
-const SyntaxKind KIND_OBJECT_CREATION_EXPRESSION = 'object_creation_expression';
-const SyntaxKind KIND_OLD_ATTRIBUTE_SPECIFICATION = 'old_attribute_specification';
-const SyntaxKind KIND_PACKAGE_DECLARATION = 'package_declaration';
-const SyntaxKind KIND_PACKAGE_EXPRESSION = 'package_expression';
-const SyntaxKind KIND_PACKAGE_INCLUDES = 'package_includes';
-const SyntaxKind KIND_PACKAGE_USES = 'package_uses';
-const SyntaxKind KIND_PARAMETER_DECLARATION = 'parameter_declaration';
-const SyntaxKind KIND_PARENTHESIZED_EXPRESSION = 'parenthesized_expression';
-const SyntaxKind KIND_PIPE_VARIABLE = 'pipe_variable';
-const SyntaxKind KIND_POSTFIX_UNARY_EXPRESSION = 'postfix_unary_expression';
-const SyntaxKind KIND_PREFIXED_CODE_EXPRESSION = 'prefixed_code_expression';
-const SyntaxKind KIND_PREFIXED_STRING = 'prefixed_string';
-const SyntaxKind KIND_PREFIX_UNARY_EXPRESSION = 'prefix_unary_expression';
-const SyntaxKind KIND_PROPERTY_DECLARATION = 'property_declaration';
-const SyntaxKind KIND_PROPERTY_DECLARATOR = 'property_declarator';
-const SyntaxKind KIND_QUALIFIED_NAME = 'qualified_name';
-const SyntaxKind KIND_RECORD_CREATION_EXPRESSION = 'record_creation_expression';
-const SyntaxKind KIND_RECORD_DECLARATION = 'record_declaration';
-const SyntaxKind KIND_RECORD_FIELD = 'record_field';
-const SyntaxKind KIND_REFINEMENT_PATTERN = 'refinement_pattern';
-const SyntaxKind KIND_REIFIED_TYPE_ARGUMENT = 'reified_type_argument';
-const SyntaxKind KIND_REQUIRE_CLAUSE = 'require_clause';
-const SyntaxKind KIND_REQUIRE_CLAUSE_CONSTRAINT = 'require_clause_constraint';
-const SyntaxKind KIND_RETURN_STATEMENT = 'return_statement';
-const SyntaxKind KIND_SAFE_MEMBER_SELECTION_EXPRESSION = 'safe_member_selection_expression';
-const SyntaxKind KIND_SCOPE_RESOLUTION_EXPRESSION = 'scope_resolution_expression';
-const SyntaxKind KIND_SCRIPT = 'script';
-const SyntaxKind KIND_SHAPE_EXPRESSION = 'shape_expression';
-const SyntaxKind KIND_SHAPE_TYPE_SPECIFIER = 'shape_type_specifier';
-const SyntaxKind KIND_SIMPLE_INITIALIZER = 'simple_initializer';
-const SyntaxKind KIND_SIMPLE_TYPE_SPECIFIER = 'simple_type_specifier';
-const SyntaxKind KIND_SOFT_TYPE_SPECIFIER = 'soft_type_specifier';
-const SyntaxKind KIND_SUBSCRIPT_EXPRESSION = 'subscript_expression';
-const SyntaxKind KIND_SWITCH_FALLTHROUGH = 'switch_fallthrough';
-const SyntaxKind KIND_SWITCH_SECTION = 'switch_section';
-const SyntaxKind KIND_SWITCH_STATEMENT = 'switch_statement';
-const SyntaxKind KIND_THROW_STATEMENT = 'throw_statement';
-const SyntaxKind KIND_TRAIT_USE = 'trait_use';
-const SyntaxKind KIND_TRAIT_USE_ALIAS_ITEM = 'trait_use_alias_item';
-const SyntaxKind KIND_TRAIT_USE_CONFLICT_RESOLUTION = 'trait_use_conflict_resolution';
-const SyntaxKind KIND_TRAIT_USE_PRECEDENCE_ITEM = 'trait_use_precedence_item';
-const SyntaxKind KIND_TRY_STATEMENT = 'try_statement';
-const SyntaxKind KIND_TUPLE_EXPRESSION = 'tuple_expression';
-const SyntaxKind KIND_TUPLE_OR_UNION_OR_INTERSECTION_ELEMENT_TYPE_SPECIFIER = 'tuple_or_union_or_intersection_element_type_specifier';
-const SyntaxKind KIND_TUPLE_TYPE_EXPLICIT_SPECIFIER = 'tuple_type_explicit_specifier';
-const SyntaxKind KIND_TUPLE_TYPE_SPECIFIER = 'tuple_type_specifier';
-const SyntaxKind KIND_TYPE_ARGUMENTS = 'type_arguments';
-const SyntaxKind KIND_TYPE_CONSTANT = 'type_constant';
-const SyntaxKind KIND_TYPE_CONSTRAINT = 'type_constraint';
-const SyntaxKind KIND_TYPE_CONST_DECLARATION = 'type_const_declaration';
-const SyntaxKind KIND_TYPE_IN_REFINEMENT = 'type_in_refinement';
-const SyntaxKind KIND_TYPE_PARAMETER = 'type_parameter';
-const SyntaxKind KIND_TYPE_PARAMETERS = 'type_parameters';
-const SyntaxKind KIND_TYPE_REFINEMENT = 'type_refinement';
-const SyntaxKind KIND_UNION_TYPE_SPECIFIER = 'union_type_specifier';
-const SyntaxKind KIND_UNSET_STATEMENT = 'unset_statement';
-const SyntaxKind KIND_UPCAST_EXPRESSION = 'upcast_expression';
-const SyntaxKind KIND_USING_STATEMENT_BLOCK_SCOPED = 'using_statement_block_scoped';
-const SyntaxKind KIND_USING_STATEMENT_FUNCTION_SCOPED = 'using_statement_function_scoped';
-const SyntaxKind KIND_VARIABLE_SYNTAX = 'variable';
-const SyntaxKind KIND_VARIABLE_PATTERN = 'variable_pattern';
-const SyntaxKind KIND_VARIADIC_PARAMETER = 'variadic_parameter';
-const SyntaxKind KIND_VARRAY_INTRINSIC_EXPRESSION = 'varray_intrinsic_expression';
-const SyntaxKind KIND_VARRAY_TYPE_SPECIFIER = 'varray_type_specifier';
-const SyntaxKind KIND_VECTOR_INTRINSIC_EXPRESSION = 'vector_intrinsic_expression';
-const SyntaxKind KIND_VECTOR_TYPE_SPECIFIER = 'vector_type_specifier';
-const SyntaxKind KIND_WHERE_CLAUSE = 'where_clause';
-const SyntaxKind KIND_WHERE_CONSTRAINT = 'where_constraint';
-const SyntaxKind KIND_WHILE_STATEMENT = 'while_statement';
-const SyntaxKind KIND_XHP_CATEGORY_DECLARATION = 'xhp_category_declaration';
-const SyntaxKind KIND_XHP_CHILDREN_DECLARATION = 'xhp_children_declaration';
-const SyntaxKind KIND_XHP_CHILDREN_PARENTHESIZED_LIST = 'xhp_children_parenthesized_list';
-const SyntaxKind KIND_XHP_CLASS_ATTRIBUTE = 'xhp_class_attribute';
-const SyntaxKind KIND_XHP_CLASS_ATTRIBUTE_DECLARATION = 'xhp_class_attribute_declaration';
-const SyntaxKind KIND_XHP_CLOSE = 'xhp_close';
-const SyntaxKind KIND_XHP_ENUM_TYPE = 'xhp_enum_type';
-const SyntaxKind KIND_XHP_EXPRESSION = 'xhp_expression';
-const SyntaxKind KIND_XHP_LATEINIT = 'XHP_lateinit';
-const SyntaxKind KIND_XHP_OPEN = 'xhp_open';
-const SyntaxKind KIND_XHP_REQUIRED = 'xhp_required';
-const SyntaxKind KIND_XHP_SIMPLE_ATTRIBUTE = 'xhp_simple_attribute';
-const SyntaxKind KIND_XHP_SIMPLE_CLASS_ATTRIBUTE = 'XHP_simple_class_attribute';
-const SyntaxKind KIND_XHP_SPREAD_ATTRIBUTE = 'xhp_spread_attribute';
-const SyntaxKind KIND_YIELD_BREAK_STATEMENT = 'yield_break_statement';
-const SyntaxKind KIND_YIELD_EXPRESSION = 'yield_expression';
-
-const TokenKind KIND_ABSTRACT = 'abstract';
-const TokenKind KIND_AMPERSAND = '&';
-const TokenKind KIND_AMPERSAND_AMPERSAND = '&&';
-const TokenKind KIND_AMPERSAND_EQUAL = '&=';
-const TokenKind KIND_ARRAYKEY = 'arraykey';
-const TokenKind KIND_AS = 'as';
-const TokenKind KIND_ASYNC = 'async';
-const TokenKind KIND_AT = '@';
-const TokenKind KIND_ATTRIBUTE_TOKEN = 'attribute';
-const TokenKind KIND_AWAIT = 'await';
-const TokenKind KIND_BACKSLASH = '\\';
-const TokenKind KIND_BACKTICK = '`';
-const TokenKind KIND_BAR = '|';
-const TokenKind KIND_BAR_BAR = '||';
-const TokenKind KIND_BAR_EQUAL = '|=';
-const TokenKind KIND_BAR_GREATER_THAN = '|>';
-const TokenKind KIND_BINARY = 'binary';
-const TokenKind KIND_BINARY_LITERAL = 'binary_literal';
-const TokenKind KIND_BOOL = 'bool';
-const TokenKind KIND_BOOLEAN = 'boolean';
-const TokenKind KIND_BOOLEAN_LITERAL = 'boolean_literal';
-const TokenKind KIND_BREAK = 'break';
-const TokenKind KIND_CARAT = '^';
-const TokenKind KIND_CARAT_EQUAL = '^=';
-const TokenKind KIND_CASE = 'case';
-const TokenKind KIND_CATCH = 'catch';
-const TokenKind KIND_CATEGORY = 'category';
-const TokenKind KIND_CHILDREN = 'children';
-const TokenKind KIND_CLASS = 'class';
-const TokenKind KIND_CLASSNAME = 'classname';
-const TokenKind KIND_CLONE = 'clone';
-const TokenKind KIND_COLON = ':';
-const TokenKind KIND_COLON_COLON = '::';
-const TokenKind KIND_COMMA = ',';
-const TokenKind KIND_CONCURRENT = 'concurrent';
-const TokenKind KIND_CONST = 'const';
-const TokenKind KIND_CONSTRUCT = '__construct';
-const TokenKind KIND_CONTINUE = 'continue';
-const TokenKind KIND_CTX = 'ctx';
-const TokenKind KIND_DARRAY = 'darray';
-const TokenKind KIND_DECIMAL_LITERAL = 'decimal_literal';
-const TokenKind KIND_DEFAULT = 'default';
-const TokenKind KIND_DEFINE = 'define';
-const TokenKind KIND_DICT = 'dict';
-const TokenKind KIND_DO = 'do';
-const TokenKind KIND_DOLLAR = '$';
-const TokenKind KIND_DOLLAR_DOLLAR = '$$';
-const TokenKind KIND_DOT = '.';
-const TokenKind KIND_DOT_DOT_DOT = '...';
-const TokenKind KIND_DOT_EQUAL = '.=';
-const TokenKind KIND_DOUBLE = 'double';
-const TokenKind KIND_DOUBLE_QUOTED_STRING_LITERAL = 'double_quoted_string_literal';
-const TokenKind KIND_DOUBLE_QUOTED_STRING_LITERAL_HEAD = 'double_quoted_string_literal_head';
-const TokenKind KIND_DOUBLE_QUOTED_STRING_LITERAL_TAIL = 'double_quoted_string_literal_tail';
-const TokenKind KIND_ECHO = 'echo';
-const TokenKind KIND_ELSE = 'else';
-const TokenKind KIND_ELSEIF = 'elseif';
-const TokenKind KIND_EMPTY = 'empty';
-const TokenKind KIND_ENDFOR = 'endfor';
-const TokenKind KIND_ENDFOREACH = 'endforeach';
-const TokenKind KIND_ENDIF = 'endif';
-const TokenKind KIND_ENDSWITCH = 'endswitch';
-const TokenKind KIND_ENDWHILE = 'endwhile';
-const TokenKind KIND_END_OF_FILE_TOKEN = 'end_of_file';
-const TokenKind KIND_ENUM = 'enum';
-const TokenKind KIND_EQUAL = '=';
-const TokenKind KIND_EQUAL_EQUAL = '==';
-const TokenKind KIND_EQUAL_EQUAL_EQUAL = '===';
-const TokenKind KIND_EQUAL_EQUAL_GREATER_THAN = '==>';
-const TokenKind KIND_EQUAL_GREATER_THAN = '=>';
-const TokenKind KIND_ERROR_TOKEN = 'error_token';
-const TokenKind KIND_EVAL = 'eval';
-const TokenKind KIND_EXCLAMATION = '!';
-const TokenKind KIND_EXCLAMATION_EQUAL = '!=';
-const TokenKind KIND_EXCLAMATION_EQUAL_EQUAL = '!==';
-const TokenKind KIND_EXPORTS = 'exports';
-const TokenKind KIND_EXTENDS = 'extends';
-const TokenKind KIND_FALLTHROUGH = 'fallthrough';
-const TokenKind KIND_FILE = 'file';
-const TokenKind KIND_FINAL = 'final';
-const TokenKind KIND_FINALLY = 'finally';
-const TokenKind KIND_FLOAT = 'float';
-const TokenKind KIND_FLOATING_LITERAL = 'floating_literal';
-const TokenKind KIND_FOR = 'for';
-const TokenKind KIND_FOREACH = 'foreach';
-const TokenKind KIND_FROM = 'from';
-const TokenKind KIND_FUNCTION = 'function';
-const TokenKind KIND_GLOBAL = 'global';
-const TokenKind KIND_GREATER_THAN = '>';
-const TokenKind KIND_GREATER_THAN_EQUAL = '>=';
-const TokenKind KIND_GREATER_THAN_GREATER_THAN = '>>';
-const TokenKind KIND_GREATER_THAN_GREATER_THAN_EQUAL = '>>=';
-const TokenKind KIND_HASH = '#';
-const TokenKind KIND_HASHBANG = 'hashbang';
-const TokenKind KIND_HEREDOC_STRING_LITERAL = 'heredoc_string_literal';
-const TokenKind KIND_HEREDOC_STRING_LITERAL_HEAD = 'heredoc_string_literal_head';
-const TokenKind KIND_HEREDOC_STRING_LITERAL_TAIL = 'heredoc_string_literal_tail';
-const TokenKind KIND_HEXADECIMAL_LITERAL = 'hexadecimal_literal';
-const TokenKind KIND_IF = 'if';
-const TokenKind KIND_IMPLEMENTS = 'implements';
-const TokenKind KIND_IMPORTS = 'imports';
-const TokenKind KIND_INCLUDE = 'include';
-const TokenKind KIND_INCLUDE_ONCE = 'include_once';
-const TokenKind KIND_INOUT = 'inout';
-const TokenKind KIND_INSTANCEOF = 'instanceof';
-const TokenKind KIND_INSTEADOF = 'insteadof';
-const TokenKind KIND_INT = 'int';
-const TokenKind KIND_INTEGER = 'integer';
-const TokenKind KIND_INTERFACE = 'interface';
-const TokenKind KIND_INTERNAL = 'internal';
-const TokenKind KIND_IS = 'is';
-const TokenKind KIND_ISSET = 'isset';
-const TokenKind KIND_KEYSET = 'keyset';
-const TokenKind KIND_LATEINIT = 'lateinit';
-const TokenKind KIND_LEFT_BRACE = '{';
-const TokenKind KIND_LEFT_BRACKET = '[';
-const TokenKind KIND_LEFT_PAREN = '(';
-const TokenKind KIND_LESS_THAN = '<';
-const TokenKind KIND_LESS_THAN_EQUAL = '<=';
-const TokenKind KIND_LESS_THAN_EQUAL_GREATER_THAN = '<=>';
-const TokenKind KIND_LESS_THAN_LESS_THAN = '<<';
-const TokenKind KIND_LESS_THAN_LESS_THAN_EQUAL = '<<=';
-const TokenKind KIND_LESS_THAN_QUESTION = '<?';
-const TokenKind KIND_LESS_THAN_SLASH = '</';
-const TokenKind KIND_LET = 'let';
-const TokenKind KIND_LIST = 'list';
-const TokenKind KIND_MATCH = 'match';
-const TokenKind KIND_MINUS = '-';
-const TokenKind KIND_MINUS_EQUAL = '-=';
-const TokenKind KIND_MINUS_GREATER_THAN = '->';
-const TokenKind KIND_MINUS_MINUS = '--';
-const TokenKind KIND_MIXED = 'mixed';
-const TokenKind KIND_MODULE = 'module';
-const TokenKind KIND_NAME = 'name';
-const TokenKind KIND_NAMEOF = 'nameof';
-const TokenKind KIND_NAMESPACE = 'namespace';
-const TokenKind KIND_NEW = 'new';
-const TokenKind KIND_NEWCTX = 'newctx';
-const TokenKind KIND_NEWTYPE = 'newtype';
-const TokenKind KIND_NORETURN = 'noreturn';
-const TokenKind KIND_NOWDOC_STRING_LITERAL = 'nowdoc_string_literal';
-const TokenKind KIND_NULL_LITERAL = 'null';
-const TokenKind KIND_NUM = 'num';
-const TokenKind KIND_OBJECT = 'object';
-const TokenKind KIND_OCTAL_LITERAL = 'octal_literal';
-const TokenKind KIND_OPTIONAL = 'optional';
-const TokenKind KIND_PACKAGE = 'package';
-const TokenKind KIND_PARENT = 'parent';
-const TokenKind KIND_PERCENT = '%';
-const TokenKind KIND_PERCENT_EQUAL = '%=';
-const TokenKind KIND_PLUS = '+';
-const TokenKind KIND_PLUS_EQUAL = '+=';
-const TokenKind KIND_PLUS_PLUS = '++';
-const TokenKind KIND_PRINT = 'print';
-const TokenKind KIND_PRIVATE = 'private';
-const TokenKind KIND_PROTECTED = 'protected';
-const TokenKind KIND_PUBLIC = 'public';
-const TokenKind KIND_QUESTION = '?';
-const TokenKind KIND_QUESTION_AS = '?as';
-const TokenKind KIND_QUESTION_COLON = '?:';
-const TokenKind KIND_QUESTION_MINUS_GREATER_THAN = '?->';
-const TokenKind KIND_QUESTION_QUESTION = '??';
-const TokenKind KIND_QUESTION_QUESTION_EQUAL = '??=';
-const TokenKind KIND_READONLY = 'readonly';
-const TokenKind KIND_REAL = 'real';
-const TokenKind KIND_RECORD = 'recordname';
-const TokenKind KIND_RECORD_DEC = 'record';
-const TokenKind KIND_REIFY = 'reify';
-const TokenKind KIND_REQUIRE = 'require';
-const TokenKind KIND_REQUIRED = 'required';
-const TokenKind KIND_REQUIRE_ONCE = 'require_once';
-const TokenKind KIND_RESOURCE = 'resource';
-const TokenKind KIND_RETURN = 'return';
-const TokenKind KIND_RIGHT_BRACE = '}';
-const TokenKind KIND_RIGHT_BRACKET = ']';
-const TokenKind KIND_RIGHT_PAREN = ')';
-const TokenKind KIND_SELF = 'self';
-const TokenKind KIND_SEMICOLON = ';';
-const TokenKind KIND_SHAPE = 'shape';
-const TokenKind KIND_SINGLE_QUOTED_STRING_LITERAL = 'single_quoted_string_literal';
-const TokenKind KIND_SLASH = '/';
-const TokenKind KIND_SLASH_EQUAL = '/=';
-const TokenKind KIND_SLASH_GREATER_THAN = '/>';
-const TokenKind KIND_STAR = '*';
-const TokenKind KIND_STAR_EQUAL = '*=';
-const TokenKind KIND_STAR_STAR = '**';
-const TokenKind KIND_STAR_STAR_EQUAL = '**=';
-const TokenKind KIND_STATIC = 'static';
-const TokenKind KIND_STRING = 'string';
-const TokenKind KIND_STRING_LITERAL_BODY = 'string_literal_body';
-const TokenKind KIND_SUPER = 'super';
-const TokenKind KIND_SWITCH = 'switch';
-const TokenKind KIND_THIS = 'this';
-const TokenKind KIND_THROW = 'throw';
-const TokenKind KIND_TILDE = '~';
-const TokenKind KIND_TRAIT = 'trait';
-const TokenKind KIND_TRY = 'try';
-const TokenKind KIND_TUPLE = 'tuple';
-const TokenKind KIND_TYPE = 'type';
-const TokenKind KIND_UNSET = 'unset';
-const TokenKind KIND_UPCAST = 'upcast';
-const TokenKind KIND_USE = 'use';
-const TokenKind KIND_USING = 'using';
-const TokenKind KIND_VAR = 'var';
-const TokenKind KIND_VARIABLE_TOKEN = 'variable';
-const TokenKind KIND_VARRAY = 'varray';
-const TokenKind KIND_VEC = 'vec';
-const TokenKind KIND_VOID = 'void';
-const TokenKind KIND_WHERE = 'where';
-const TokenKind KIND_WHILE = 'while';
-const TokenKind KIND_WITH = 'with';
-const TokenKind KIND_XHP = 'xhp';
-const TokenKind KIND_XHP_BODY = 'XHP_body';
-const TokenKind KIND_XHP_CATEGORY_NAME = 'XHP_category_name';
-const TokenKind KIND_XHP_CLASS_NAME = 'XHP_class_name';
-const TokenKind KIND_XHP_COMMENT = 'XHP_comment';
-const TokenKind KIND_XHP_ELEMENT_NAME = 'XHP_element_name';
-const TokenKind KIND_XHP_STRING_LITERAL = 'XHP_string_literal';
-const TokenKind KIND_YIELD = 'yield';
-// #endregion
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/LineAndColumnNumbers.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-/**
- * The start of the first trivium of a file is at line(0), col(0).
- * A column is determined by the place of the cursor, not the start of the byte.
- * A node consisting of a single byte is one column large.
- * The end column of a node with no text is the same as its start column.
- * Newlines are considered to be the last column of a line.
- */
-final class LineAndColumnNumbers {
-  public function __construct(
-    private int $startLine,
-    private int $startColumn,
-    private int $endLine,
-    private int $endColumn,
-  )[] {}
-
-  public function getStartLine()[]: int {
-    return $this->startLine;
-  }
-
-  public function getStartLineOneBased()[]: int {
-    return $this->startLine + 1;
-  }
-
-  public function getStartColumn()[]: int {
-    return $this->startColumn;
-  }
-
-  public function getStartColumnOneBased()[]: int {
-    return $this->startColumn + 1;
-  }
-
-  public function getEndLine()[]: int {
-    return $this->endLine;
-  }
-
-  public function getEndLineOneBased()[]: int {
-    return $this->endLine + 1;
-  }
-
-  public function getEndColumn()[]: int {
-    return $this->endColumn;
-  }
-
-  public function getEndColumnOneBased()[]: int {
-    return $this->endColumn + 1;
-  }
-
-  public function getStart()[]: (int, int) {
-    return tuple($this->startLine, $this->startColumn);
-  }
-
-  public function getStartOneBased()[]: (int, int) {
-    return
-      tuple($this->getStartLineOneBased(), $this->getStartColumnOneBased());
-  }
-
-  public function getEnd()[]: (int, int) {
-    return tuple($this->endLine, $this->endColumn);
-  }
-
-  public function getEndOneBased()[]: (int, int) {
-    return tuple($this->getEndLineOneBased(), $this->getEndColumnOneBased());
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/Member.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-newtype Member = (SyntaxKind, string);
-
-function member_from_tuple((SyntaxKind, string) $tuple)[]: Member {
-  return $tuple;
-}
-
-function member_to_tuple(Member $member)[]: (SyntaxKind, string) {
-  return $member;
-}
-
-function member_get_name(Member $member)[]: string {
-  return $member[1];
-}
-
-function member_get_syntax_kind(Member $member)[]: SyntaxKind {
-  return $member[0];
-}
-
-// #region GENERATED CODE DO NOT EDIT BY HAND!
-// This code was generated by bin/codegen_kind_constants.hack 817ea043fead078084eeca0cd0ab151c69a1006b
-
-const Member MEMBER_ALIAS_ATTRIBUTE_SPEC = tuple(KIND_ALIAS_DECLARATION, 'alias_attribute_spec');
-const Member MEMBER_ALIAS_CONSTRAINT = tuple(KIND_ALIAS_DECLARATION, 'alias_constraint');
-const Member MEMBER_ALIAS_EQUAL = tuple(KIND_ALIAS_DECLARATION, 'alias_equal');
-const Member MEMBER_ALIAS_GENERIC_PARAMETER = tuple(KIND_ALIAS_DECLARATION, 'alias_generic_parameter');
-const Member MEMBER_ALIAS_KEYWORD = tuple(KIND_ALIAS_DECLARATION, 'alias_keyword');
-const Member MEMBER_ALIAS_MODIFIERS = tuple(KIND_ALIAS_DECLARATION, 'alias_modifiers');
-const Member MEMBER_ALIAS_MODULE_KW_OPT = tuple(KIND_ALIAS_DECLARATION, 'alias_module_kw_opt');
-const Member MEMBER_ALIAS_NAME = tuple(KIND_ALIAS_DECLARATION, 'alias_name');
-const Member MEMBER_ALIAS_SEMICOLON = tuple(KIND_ALIAS_DECLARATION, 'alias_semicolon');
-const Member MEMBER_ALIAS_TYPE = tuple(KIND_ALIAS_DECLARATION, 'alias_type');
-const Member MEMBER_ANONYMOUS_ASYNC_KEYWORD = tuple(KIND_ANONYMOUS_FUNCTION, 'anonymous_async_keyword');
-const Member MEMBER_ANONYMOUS_ATTRIBUTE_SPEC = tuple(KIND_ANONYMOUS_FUNCTION, 'anonymous_attribute_spec');
-const Member MEMBER_ANONYMOUS_BODY = tuple(KIND_ANONYMOUS_FUNCTION, 'anonymous_body');
-const Member MEMBER_ANONYMOUS_CLASS_ARGUMENT_LIST = tuple(KIND_ANONYMOUS_CLASS, 'anonymous_class_argument_list');
-const Member MEMBER_ANONYMOUS_CLASS_BODY = tuple(KIND_ANONYMOUS_CLASS, 'anonymous_class_body');
-const Member MEMBER_ANONYMOUS_CLASS_CLASS_KEYWORD = tuple(KIND_ANONYMOUS_CLASS, 'anonymous_class_class_keyword');
-const Member MEMBER_ANONYMOUS_CLASS_EXTENDS_KEYWORD = tuple(KIND_ANONYMOUS_CLASS, 'anonymous_class_extends_keyword');
-const Member MEMBER_ANONYMOUS_CLASS_EXTENDS_LIST = tuple(KIND_ANONYMOUS_CLASS, 'anonymous_class_extends_list');
-const Member MEMBER_ANONYMOUS_CLASS_IMPLEMENTS_KEYWORD = tuple(KIND_ANONYMOUS_CLASS, 'anonymous_class_implements_keyword');
-const Member MEMBER_ANONYMOUS_CLASS_IMPLEMENTS_LIST = tuple(KIND_ANONYMOUS_CLASS, 'anonymous_class_implements_list');
-const Member MEMBER_ANONYMOUS_CLASS_LEFT_PAREN = tuple(KIND_ANONYMOUS_CLASS, 'anonymous_class_left_paren');
-const Member MEMBER_ANONYMOUS_CLASS_RIGHT_PAREN = tuple(KIND_ANONYMOUS_CLASS, 'anonymous_class_right_paren');
-const Member MEMBER_ANONYMOUS_COLON = tuple(KIND_ANONYMOUS_FUNCTION, 'anonymous_colon');
-const Member MEMBER_ANONYMOUS_CTX_LIST = tuple(KIND_ANONYMOUS_FUNCTION, 'anonymous_ctx_list');
-const Member MEMBER_ANONYMOUS_FUNCTION_KEYWORD = tuple(KIND_ANONYMOUS_FUNCTION, 'anonymous_function_keyword');
-const Member MEMBER_ANONYMOUS_LEFT_PAREN = tuple(KIND_ANONYMOUS_FUNCTION, 'anonymous_left_paren');
-const Member MEMBER_ANONYMOUS_PARAMETERS = tuple(KIND_ANONYMOUS_FUNCTION, 'anonymous_parameters');
-const Member MEMBER_ANONYMOUS_READONLY_RETURN = tuple(KIND_ANONYMOUS_FUNCTION, 'anonymous_readonly_return');
-const Member MEMBER_ANONYMOUS_RIGHT_PAREN = tuple(KIND_ANONYMOUS_FUNCTION, 'anonymous_right_paren');
-const Member MEMBER_ANONYMOUS_STATIC_KEYWORD = tuple(KIND_ANONYMOUS_FUNCTION, 'anonymous_static_keyword');
-const Member MEMBER_ANONYMOUS_TYPE = tuple(KIND_ANONYMOUS_FUNCTION, 'anonymous_type');
-const Member MEMBER_ANONYMOUS_TYPE_PARAMETERS = tuple(KIND_ANONYMOUS_FUNCTION, 'anonymous_type_parameters');
-const Member MEMBER_ANONYMOUS_USE = tuple(KIND_ANONYMOUS_FUNCTION, 'anonymous_use');
-const Member MEMBER_ANONYMOUS_USE_KEYWORD = tuple(KIND_ANONYMOUS_FUNCTION_USE_CLAUSE, 'anonymous_use_keyword');
-const Member MEMBER_ANONYMOUS_USE_LEFT_PAREN = tuple(KIND_ANONYMOUS_FUNCTION_USE_CLAUSE, 'anonymous_use_left_paren');
-const Member MEMBER_ANONYMOUS_USE_RIGHT_PAREN = tuple(KIND_ANONYMOUS_FUNCTION_USE_CLAUSE, 'anonymous_use_right_paren');
-const Member MEMBER_ANONYMOUS_USE_VARIABLES = tuple(KIND_ANONYMOUS_FUNCTION_USE_CLAUSE, 'anonymous_use_variables');
-const Member MEMBER_AS_LEFT_OPERAND = tuple(KIND_AS_EXPRESSION, 'as_left_operand');
-const Member MEMBER_AS_OPERATOR = tuple(KIND_AS_EXPRESSION, 'as_operator');
-const Member MEMBER_AS_RIGHT_OPERAND = tuple(KIND_AS_EXPRESSION, 'as_right_operand');
-const Member MEMBER_ATTRIBUTE_AT = tuple(KIND_ATTRIBUTE_SYNTAX, 'attribute_at');
-const Member MEMBER_ATTRIBUTE_ATTRIBUTE_NAME = tuple(KIND_ATTRIBUTE_SYNTAX, 'attribute_attribute_name');
-const Member MEMBER_ATTRIBUTE_SPECIFICATION_ATTRIBUTES = tuple(KIND_ATTRIBUTE_SPECIFICATION, 'attribute_specification_attributes');
-const Member MEMBER_ATTRIBUTIZED_SPECIFIER_ATTRIBUTE_SPEC = tuple(KIND_ATTRIBUTIZED_SPECIFIER, 'attributized_specifier_attribute_spec');
-const Member MEMBER_ATTRIBUTIZED_SPECIFIER_TYPE = tuple(KIND_ATTRIBUTIZED_SPECIFIER, 'attributized_specifier_type');
-const Member MEMBER_AWAITABLE_ASYNC = tuple(KIND_AWAITABLE_CREATION_EXPRESSION, 'awaitable_async');
-const Member MEMBER_AWAITABLE_ATTRIBUTE_SPEC = tuple(KIND_AWAITABLE_CREATION_EXPRESSION, 'awaitable_attribute_spec');
-const Member MEMBER_AWAITABLE_COMPOUND_STATEMENT = tuple(KIND_AWAITABLE_CREATION_EXPRESSION, 'awaitable_compound_statement');
-const Member MEMBER_BINARY_LEFT_OPERAND = tuple(KIND_BINARY_EXPRESSION, 'binary_left_operand');
-const Member MEMBER_BINARY_OPERATOR = tuple(KIND_BINARY_EXPRESSION, 'binary_operator');
-const Member MEMBER_BINARY_RIGHT_OPERAND = tuple(KIND_BINARY_EXPRESSION, 'binary_right_operand');
-const Member MEMBER_BRACED_EXPRESSION_EXPRESSION = tuple(KIND_BRACED_EXPRESSION, 'braced_expression_expression');
-const Member MEMBER_BRACED_EXPRESSION_LEFT_BRACE = tuple(KIND_BRACED_EXPRESSION, 'braced_expression_left_brace');
-const Member MEMBER_BRACED_EXPRESSION_RIGHT_BRACE = tuple(KIND_BRACED_EXPRESSION, 'braced_expression_right_brace');
-const Member MEMBER_BREAK_KEYWORD = tuple(KIND_BREAK_STATEMENT, 'break_keyword');
-const Member MEMBER_BREAK_SEMICOLON = tuple(KIND_BREAK_STATEMENT, 'break_semicolon');
-const Member MEMBER_CASE_COLON = tuple(KIND_CASE_LABEL, 'case_colon');
-const Member MEMBER_CASE_EXPRESSION = tuple(KIND_CASE_LABEL, 'case_expression');
-const Member MEMBER_CASE_KEYWORD = tuple(KIND_CASE_LABEL, 'case_keyword');
-const Member MEMBER_CASE_TYPE_AS = tuple(KIND_CASE_TYPE_DECLARATION, 'case_type_as');
-const Member MEMBER_CASE_TYPE_ATTRIBUTE_SPEC = tuple(KIND_CASE_TYPE_DECLARATION, 'case_type_attribute_spec');
-const Member MEMBER_CASE_TYPE_BOUNDS = tuple(KIND_CASE_TYPE_DECLARATION, 'case_type_bounds');
-const Member MEMBER_CASE_TYPE_CASE_KEYWORD = tuple(KIND_CASE_TYPE_DECLARATION, 'case_type_case_keyword');
-const Member MEMBER_CASE_TYPE_EQUAL = tuple(KIND_CASE_TYPE_DECLARATION, 'case_type_equal');
-const Member MEMBER_CASE_TYPE_GENERIC_PARAMETER = tuple(KIND_CASE_TYPE_DECLARATION, 'case_type_generic_parameter');
-const Member MEMBER_CASE_TYPE_MODIFIERS = tuple(KIND_CASE_TYPE_DECLARATION, 'case_type_modifiers');
-const Member MEMBER_CASE_TYPE_NAME = tuple(KIND_CASE_TYPE_DECLARATION, 'case_type_name');
-const Member MEMBER_CASE_TYPE_SEMICOLON = tuple(KIND_CASE_TYPE_DECLARATION, 'case_type_semicolon');
-const Member MEMBER_CASE_TYPE_TYPE_KEYWORD = tuple(KIND_CASE_TYPE_DECLARATION, 'case_type_type_keyword');
-const Member MEMBER_CASE_TYPE_VARIANT_BAR = tuple(KIND_CASE_TYPE_VARIANT, 'case_type_variant_bar');
-const Member MEMBER_CASE_TYPE_VARIANT_TYPE = tuple(KIND_CASE_TYPE_VARIANT, 'case_type_variant_type');
-const Member MEMBER_CASE_TYPE_VARIANT_WHERE_CLAUSE = tuple(KIND_CASE_TYPE_VARIANT, 'case_type_variant_where_clause');
-const Member MEMBER_CASE_TYPE_VARIANTS = tuple(KIND_CASE_TYPE_DECLARATION, 'case_type_variants');
-const Member MEMBER_CAST_LEFT_PAREN = tuple(KIND_CAST_EXPRESSION, 'cast_left_paren');
-const Member MEMBER_CAST_OPERAND = tuple(KIND_CAST_EXPRESSION, 'cast_operand');
-const Member MEMBER_CAST_RIGHT_PAREN = tuple(KIND_CAST_EXPRESSION, 'cast_right_paren');
-const Member MEMBER_CAST_TYPE = tuple(KIND_CAST_EXPRESSION, 'cast_type');
-const Member MEMBER_CATCH_BODY = tuple(KIND_CATCH_CLAUSE, 'catch_body');
-const Member MEMBER_CATCH_KEYWORD = tuple(KIND_CATCH_CLAUSE, 'catch_keyword');
-const Member MEMBER_CATCH_LEFT_PAREN = tuple(KIND_CATCH_CLAUSE, 'catch_left_paren');
-const Member MEMBER_CATCH_RIGHT_PAREN = tuple(KIND_CATCH_CLAUSE, 'catch_right_paren');
-const Member MEMBER_CATCH_TYPE = tuple(KIND_CATCH_CLAUSE, 'catch_type');
-const Member MEMBER_CATCH_VARIABLE = tuple(KIND_CATCH_CLAUSE, 'catch_variable');
-const Member MEMBER_CLASS_PTR_KEYWORD = tuple(KIND_CLASS_PTR_TYPE_SPECIFIER, 'class_ptr_keyword');
-const Member MEMBER_CLASS_PTR_LEFT_ANGLE = tuple(KIND_CLASS_PTR_TYPE_SPECIFIER, 'class_ptr_left_angle');
-const Member MEMBER_CLASS_PTR_RIGHT_ANGLE = tuple(KIND_CLASS_PTR_TYPE_SPECIFIER, 'class_ptr_right_angle');
-const Member MEMBER_CLASS_PTR_TRAILING_COMMA = tuple(KIND_CLASS_PTR_TYPE_SPECIFIER, 'class_ptr_trailing_comma');
-const Member MEMBER_CLASS_PTR_TYPE = tuple(KIND_CLASS_PTR_TYPE_SPECIFIER, 'class_ptr_type');
-const Member MEMBER_CLASSISH_ATTRIBUTE = tuple(KIND_CLASSISH_DECLARATION, 'classish_attribute');
-const Member MEMBER_CLASSISH_BODY = tuple(KIND_CLASSISH_DECLARATION, 'classish_body');
-const Member MEMBER_CLASSISH_BODY_ELEMENTS = tuple(KIND_CLASSISH_BODY, 'classish_body_elements');
-const Member MEMBER_CLASSISH_BODY_LEFT_BRACE = tuple(KIND_CLASSISH_BODY, 'classish_body_left_brace');
-const Member MEMBER_CLASSISH_BODY_RIGHT_BRACE = tuple(KIND_CLASSISH_BODY, 'classish_body_right_brace');
-const Member MEMBER_CLASSISH_EXTENDS_KEYWORD = tuple(KIND_CLASSISH_DECLARATION, 'classish_extends_keyword');
-const Member MEMBER_CLASSISH_EXTENDS_LIST = tuple(KIND_CLASSISH_DECLARATION, 'classish_extends_list');
-const Member MEMBER_CLASSISH_IMPLEMENTS_KEYWORD = tuple(KIND_CLASSISH_DECLARATION, 'classish_implements_keyword');
-const Member MEMBER_CLASSISH_IMPLEMENTS_LIST = tuple(KIND_CLASSISH_DECLARATION, 'classish_implements_list');
-const Member MEMBER_CLASSISH_KEYWORD = tuple(KIND_CLASSISH_DECLARATION, 'classish_keyword');
-const Member MEMBER_CLASSISH_MODIFIERS = tuple(KIND_CLASSISH_DECLARATION, 'classish_modifiers');
-const Member MEMBER_CLASSISH_NAME = tuple(KIND_CLASSISH_DECLARATION, 'classish_name');
-const Member MEMBER_CLASSISH_TYPE_PARAMETERS = tuple(KIND_CLASSISH_DECLARATION, 'classish_type_parameters');
-const Member MEMBER_CLASSISH_WHERE_CLAUSE = tuple(KIND_CLASSISH_DECLARATION, 'classish_where_clause');
-const Member MEMBER_CLASSISH_XHP = tuple(KIND_CLASSISH_DECLARATION, 'classish_xhp');
-const Member MEMBER_CLASSNAME_KEYWORD = tuple(KIND_CLASSNAME_TYPE_SPECIFIER, 'classname_keyword');
-const Member MEMBER_CLASSNAME_LEFT_ANGLE = tuple(KIND_CLASSNAME_TYPE_SPECIFIER, 'classname_left_angle');
-const Member MEMBER_CLASSNAME_RIGHT_ANGLE = tuple(KIND_CLASSNAME_TYPE_SPECIFIER, 'classname_right_angle');
-const Member MEMBER_CLASSNAME_TRAILING_COMMA = tuple(KIND_CLASSNAME_TYPE_SPECIFIER, 'classname_trailing_comma');
-const Member MEMBER_CLASSNAME_TYPE = tuple(KIND_CLASSNAME_TYPE_SPECIFIER, 'classname_type');
-const Member MEMBER_CLOSURE_COLON = tuple(KIND_CLOSURE_TYPE_SPECIFIER, 'closure_colon');
-const Member MEMBER_CLOSURE_CONTEXTS = tuple(KIND_CLOSURE_TYPE_SPECIFIER, 'closure_contexts');
-const Member MEMBER_CLOSURE_FUNCTION_KEYWORD = tuple(KIND_CLOSURE_TYPE_SPECIFIER, 'closure_function_keyword');
-const Member MEMBER_CLOSURE_INNER_LEFT_PAREN = tuple(KIND_CLOSURE_TYPE_SPECIFIER, 'closure_inner_left_paren');
-const Member MEMBER_CLOSURE_INNER_RIGHT_PAREN = tuple(KIND_CLOSURE_TYPE_SPECIFIER, 'closure_inner_right_paren');
-const Member MEMBER_CLOSURE_OUTER_LEFT_PAREN = tuple(KIND_CLOSURE_TYPE_SPECIFIER, 'closure_outer_left_paren');
-const Member MEMBER_CLOSURE_OUTER_RIGHT_PAREN = tuple(KIND_CLOSURE_TYPE_SPECIFIER, 'closure_outer_right_paren');
-const Member MEMBER_CLOSURE_PARAMETER_CALL_CONVENTION = tuple(KIND_CLOSURE_PARAMETER_TYPE_SPECIFIER, 'closure_parameter_call_convention');
-const Member MEMBER_CLOSURE_PARAMETER_ELLIPSIS = tuple(KIND_CLOSURE_PARAMETER_TYPE_SPECIFIER, 'closure_parameter_ellipsis');
-const Member MEMBER_CLOSURE_PARAMETER_LIST = tuple(KIND_CLOSURE_TYPE_SPECIFIER, 'closure_parameter_list');
-const Member MEMBER_CLOSURE_PARAMETER_OPTIONAL = tuple(KIND_CLOSURE_PARAMETER_TYPE_SPECIFIER, 'closure_parameter_optional');
-const Member MEMBER_CLOSURE_PARAMETER_PRE_ELLIPSIS = tuple(KIND_CLOSURE_PARAMETER_TYPE_SPECIFIER, 'closure_parameter_pre_ellipsis');
-const Member MEMBER_CLOSURE_PARAMETER_READONLY = tuple(KIND_CLOSURE_PARAMETER_TYPE_SPECIFIER, 'closure_parameter_readonly');
-const Member MEMBER_CLOSURE_PARAMETER_TYPE = tuple(KIND_CLOSURE_PARAMETER_TYPE_SPECIFIER, 'closure_parameter_type');
-const Member MEMBER_CLOSURE_READONLY_KEYWORD = tuple(KIND_CLOSURE_TYPE_SPECIFIER, 'closure_readonly_keyword');
-const Member MEMBER_CLOSURE_READONLY_RETURN = tuple(KIND_CLOSURE_TYPE_SPECIFIER, 'closure_readonly_return');
-const Member MEMBER_CLOSURE_RETURN_TYPE = tuple(KIND_CLOSURE_TYPE_SPECIFIER, 'closure_return_type');
-const Member MEMBER_CLOSURE_TYPE_PARAMETERS = tuple(KIND_CLOSURE_TYPE_SPECIFIER, 'closure_type_parameters');
-const Member MEMBER_COLLECTION_LITERAL_INITIALIZERS = tuple(KIND_COLLECTION_LITERAL_EXPRESSION, 'collection_literal_initializers');
-const Member MEMBER_COLLECTION_LITERAL_LEFT_BRACE = tuple(KIND_COLLECTION_LITERAL_EXPRESSION, 'collection_literal_left_brace');
-const Member MEMBER_COLLECTION_LITERAL_NAME = tuple(KIND_COLLECTION_LITERAL_EXPRESSION, 'collection_literal_name');
-const Member MEMBER_COLLECTION_LITERAL_RIGHT_BRACE = tuple(KIND_COLLECTION_LITERAL_EXPRESSION, 'collection_literal_right_brace');
-const Member MEMBER_COMPOUND_LEFT_BRACE = tuple(KIND_COMPOUND_STATEMENT, 'compound_left_brace');
-const Member MEMBER_COMPOUND_RIGHT_BRACE = tuple(KIND_COMPOUND_STATEMENT, 'compound_right_brace');
-const Member MEMBER_COMPOUND_STATEMENTS = tuple(KIND_COMPOUND_STATEMENT, 'compound_statements');
-const Member MEMBER_CONCURRENT_KEYWORD = tuple(KIND_CONCURRENT_STATEMENT, 'concurrent_keyword');
-const Member MEMBER_CONCURRENT_STATEMENT = tuple(KIND_CONCURRENT_STATEMENT, 'concurrent_statement');
-const Member MEMBER_CONDITIONAL_ALTERNATIVE = tuple(KIND_CONDITIONAL_EXPRESSION, 'conditional_alternative');
-const Member MEMBER_CONDITIONAL_COLON = tuple(KIND_CONDITIONAL_EXPRESSION, 'conditional_colon');
-const Member MEMBER_CONDITIONAL_CONSEQUENCE = tuple(KIND_CONDITIONAL_EXPRESSION, 'conditional_consequence');
-const Member MEMBER_CONDITIONAL_QUESTION = tuple(KIND_CONDITIONAL_EXPRESSION, 'conditional_question');
-const Member MEMBER_CONDITIONAL_TEST = tuple(KIND_CONDITIONAL_EXPRESSION, 'conditional_test');
-const Member MEMBER_CONST_ATTRIBUTE_SPEC = tuple(KIND_CONST_DECLARATION, 'const_attribute_spec');
-const Member MEMBER_CONST_DECLARATORS = tuple(KIND_CONST_DECLARATION, 'const_declarators');
-const Member MEMBER_CONST_KEYWORD = tuple(KIND_CONST_DECLARATION, 'const_keyword');
-const Member MEMBER_CONST_MODIFIERS = tuple(KIND_CONST_DECLARATION, 'const_modifiers');
-const Member MEMBER_CONST_SEMICOLON = tuple(KIND_CONST_DECLARATION, 'const_semicolon');
-const Member MEMBER_CONST_TYPE_SPECIFIER = tuple(KIND_CONST_DECLARATION, 'const_type_specifier');
-const Member MEMBER_CONSTANT_DECLARATOR_INITIALIZER = tuple(KIND_CONSTANT_DECLARATOR, 'constant_declarator_initializer');
-const Member MEMBER_CONSTANT_DECLARATOR_NAME = tuple(KIND_CONSTANT_DECLARATOR, 'constant_declarator_name');
-const Member MEMBER_CONSTRAINT_KEYWORD = tuple(KIND_TYPE_CONSTRAINT, 'constraint_keyword');
-const Member MEMBER_CONSTRAINT_TYPE = tuple(KIND_TYPE_CONSTRAINT, 'constraint_type');
-const Member MEMBER_CONSTRUCTOR_CALL_ARGUMENT_LIST = tuple(KIND_CONSTRUCTOR_CALL, 'constructor_call_argument_list');
-const Member MEMBER_CONSTRUCTOR_CALL_LEFT_PAREN = tuple(KIND_CONSTRUCTOR_CALL, 'constructor_call_left_paren');
-const Member MEMBER_CONSTRUCTOR_CALL_RIGHT_PAREN = tuple(KIND_CONSTRUCTOR_CALL, 'constructor_call_right_paren');
-const Member MEMBER_CONSTRUCTOR_CALL_TYPE = tuple(KIND_CONSTRUCTOR_CALL, 'constructor_call_type');
-const Member MEMBER_CONSTRUCTOR_PATTERN_CONSTRUCTOR = tuple(KIND_CONSTRUCTOR_PATTERN, 'constructor_pattern_constructor');
-const Member MEMBER_CONSTRUCTOR_PATTERN_LEFT_PAREN = tuple(KIND_CONSTRUCTOR_PATTERN, 'constructor_pattern_left_paren');
-const Member MEMBER_CONSTRUCTOR_PATTERN_MEMBERS = tuple(KIND_CONSTRUCTOR_PATTERN, 'constructor_pattern_members');
-const Member MEMBER_CONSTRUCTOR_PATTERN_RIGHT_PAREN = tuple(KIND_CONSTRUCTOR_PATTERN, 'constructor_pattern_right_paren');
-const Member MEMBER_CONTEXT_CONST_CONST_KEYWORD = tuple(KIND_CONTEXT_CONST_DECLARATION, 'context_const_const_keyword');
-const Member MEMBER_CONTEXT_CONST_CONSTRAINT = tuple(KIND_CONTEXT_CONST_DECLARATION, 'context_const_constraint');
-const Member MEMBER_CONTEXT_CONST_CTX_KEYWORD = tuple(KIND_CONTEXT_CONST_DECLARATION, 'context_const_ctx_keyword');
-const Member MEMBER_CONTEXT_CONST_CTX_LIST = tuple(KIND_CONTEXT_CONST_DECLARATION, 'context_const_ctx_list');
-const Member MEMBER_CONTEXT_CONST_EQUAL = tuple(KIND_CONTEXT_CONST_DECLARATION, 'context_const_equal');
-const Member MEMBER_CONTEXT_CONST_MODIFIERS = tuple(KIND_CONTEXT_CONST_DECLARATION, 'context_const_modifiers');
-const Member MEMBER_CONTEXT_CONST_NAME = tuple(KIND_CONTEXT_CONST_DECLARATION, 'context_const_name');
-const Member MEMBER_CONTEXT_CONST_SEMICOLON = tuple(KIND_CONTEXT_CONST_DECLARATION, 'context_const_semicolon');
-const Member MEMBER_CONTEXT_CONST_TYPE_PARAMETERS = tuple(KIND_CONTEXT_CONST_DECLARATION, 'context_const_type_parameters');
-const Member MEMBER_CONTEXTS_LEFT_BRACKET = tuple(KIND_CONTEXTS, 'contexts_left_bracket');
-const Member MEMBER_CONTEXTS_RIGHT_BRACKET = tuple(KIND_CONTEXTS, 'contexts_right_bracket');
-const Member MEMBER_CONTEXTS_TYPES = tuple(KIND_CONTEXTS, 'contexts_types');
-const Member MEMBER_CONTINUE_KEYWORD = tuple(KIND_CONTINUE_STATEMENT, 'continue_keyword');
-const Member MEMBER_CONTINUE_SEMICOLON = tuple(KIND_CONTINUE_STATEMENT, 'continue_semicolon');
-const Member MEMBER_CTX_ALIAS_AS_CONSTRAINT = tuple(KIND_CONTEXT_ALIAS_DECLARATION, 'ctx_alias_as_constraint');
-const Member MEMBER_CTX_ALIAS_ATTRIBUTE_SPEC = tuple(KIND_CONTEXT_ALIAS_DECLARATION, 'ctx_alias_attribute_spec');
-const Member MEMBER_CTX_ALIAS_CONTEXT = tuple(KIND_CONTEXT_ALIAS_DECLARATION, 'ctx_alias_context');
-const Member MEMBER_CTX_ALIAS_EQUAL = tuple(KIND_CONTEXT_ALIAS_DECLARATION, 'ctx_alias_equal');
-const Member MEMBER_CTX_ALIAS_GENERIC_PARAMETER = tuple(KIND_CONTEXT_ALIAS_DECLARATION, 'ctx_alias_generic_parameter');
-const Member MEMBER_CTX_ALIAS_KEYWORD = tuple(KIND_CONTEXT_ALIAS_DECLARATION, 'ctx_alias_keyword');
-const Member MEMBER_CTX_ALIAS_NAME = tuple(KIND_CONTEXT_ALIAS_DECLARATION, 'ctx_alias_name');
-const Member MEMBER_CTX_ALIAS_SEMICOLON = tuple(KIND_CONTEXT_ALIAS_DECLARATION, 'ctx_alias_semicolon');
-const Member MEMBER_CTX_CONSTRAINT_CTX_LIST = tuple(KIND_CONTEXT_CONSTRAINT, 'ctx_constraint_ctx_list');
-const Member MEMBER_CTX_CONSTRAINT_KEYWORD = tuple(KIND_CONTEXT_CONSTRAINT, 'ctx_constraint_keyword');
-const Member MEMBER_CTX_IN_REFINEMENT_CONSTRAINTS = tuple(KIND_CTX_IN_REFINEMENT, 'ctx_in_refinement_constraints');
-const Member MEMBER_CTX_IN_REFINEMENT_CTX_LIST = tuple(KIND_CTX_IN_REFINEMENT, 'ctx_in_refinement_ctx_list');
-const Member MEMBER_CTX_IN_REFINEMENT_EQUAL = tuple(KIND_CTX_IN_REFINEMENT, 'ctx_in_refinement_equal');
-const Member MEMBER_CTX_IN_REFINEMENT_KEYWORD = tuple(KIND_CTX_IN_REFINEMENT, 'ctx_in_refinement_keyword');
-const Member MEMBER_CTX_IN_REFINEMENT_NAME = tuple(KIND_CTX_IN_REFINEMENT, 'ctx_in_refinement_name');
-const Member MEMBER_CTX_IN_REFINEMENT_TYPE_PARAMETERS = tuple(KIND_CTX_IN_REFINEMENT, 'ctx_in_refinement_type_parameters');
-const Member MEMBER_DARRAY_COMMA = tuple(KIND_DARRAY_TYPE_SPECIFIER, 'darray_comma');
-const Member MEMBER_DARRAY_INTRINSIC_EXPLICIT_TYPE = tuple(KIND_DARRAY_INTRINSIC_EXPRESSION, 'darray_intrinsic_explicit_type');
-const Member MEMBER_DARRAY_INTRINSIC_KEYWORD = tuple(KIND_DARRAY_INTRINSIC_EXPRESSION, 'darray_intrinsic_keyword');
-const Member MEMBER_DARRAY_INTRINSIC_LEFT_BRACKET = tuple(KIND_DARRAY_INTRINSIC_EXPRESSION, 'darray_intrinsic_left_bracket');
-const Member MEMBER_DARRAY_INTRINSIC_MEMBERS = tuple(KIND_DARRAY_INTRINSIC_EXPRESSION, 'darray_intrinsic_members');
-const Member MEMBER_DARRAY_INTRINSIC_RIGHT_BRACKET = tuple(KIND_DARRAY_INTRINSIC_EXPRESSION, 'darray_intrinsic_right_bracket');
-const Member MEMBER_DARRAY_KEY = tuple(KIND_DARRAY_TYPE_SPECIFIER, 'darray_key');
-const Member MEMBER_DARRAY_KEYWORD = tuple(KIND_DARRAY_TYPE_SPECIFIER, 'darray_keyword');
-const Member MEMBER_DARRAY_LEFT_ANGLE = tuple(KIND_DARRAY_TYPE_SPECIFIER, 'darray_left_angle');
-const Member MEMBER_DARRAY_RIGHT_ANGLE = tuple(KIND_DARRAY_TYPE_SPECIFIER, 'darray_right_angle');
-const Member MEMBER_DARRAY_TRAILING_COMMA = tuple(KIND_DARRAY_TYPE_SPECIFIER, 'darray_trailing_comma');
-const Member MEMBER_DARRAY_VALUE = tuple(KIND_DARRAY_TYPE_SPECIFIER, 'darray_value');
-const Member MEMBER_DECLARE_LOCAL_COLON = tuple(KIND_DECLARE_LOCAL_STATEMENT, 'declare_local_colon');
-const Member MEMBER_DECLARE_LOCAL_INITIALIZER = tuple(KIND_DECLARE_LOCAL_STATEMENT, 'declare_local_initializer');
-const Member MEMBER_DECLARE_LOCAL_KEYWORD = tuple(KIND_DECLARE_LOCAL_STATEMENT, 'declare_local_keyword');
-const Member MEMBER_DECLARE_LOCAL_SEMICOLON = tuple(KIND_DECLARE_LOCAL_STATEMENT, 'declare_local_semicolon');
-const Member MEMBER_DECLARE_LOCAL_TYPE = tuple(KIND_DECLARE_LOCAL_STATEMENT, 'declare_local_type');
-const Member MEMBER_DECLARE_LOCAL_VARIABLE = tuple(KIND_DECLARE_LOCAL_STATEMENT, 'declare_local_variable');
-const Member MEMBER_DECORATED_EXPRESSION_DECORATOR = tuple(KIND_DECORATED_EXPRESSION, 'decorated_expression_decorator');
-const Member MEMBER_DECORATED_EXPRESSION_EXPRESSION = tuple(KIND_DECORATED_EXPRESSION, 'decorated_expression_expression');
-const Member MEMBER_DEFAULT_COLON = tuple(KIND_DEFAULT_LABEL, 'default_colon');
-const Member MEMBER_DEFAULT_KEYWORD = tuple(KIND_DEFAULT_LABEL, 'default_keyword');
-const Member MEMBER_DEFINE_ARGUMENT_LIST = tuple(KIND_DEFINE_EXPRESSION, 'define_argument_list');
-const Member MEMBER_DEFINE_KEYWORD = tuple(KIND_DEFINE_EXPRESSION, 'define_keyword');
-const Member MEMBER_DEFINE_LEFT_PAREN = tuple(KIND_DEFINE_EXPRESSION, 'define_left_paren');
-const Member MEMBER_DEFINE_RIGHT_PAREN = tuple(KIND_DEFINE_EXPRESSION, 'define_right_paren');
-const Member MEMBER_DICTIONARY_INTRINSIC_EXPLICIT_TYPE = tuple(KIND_DICTIONARY_INTRINSIC_EXPRESSION, 'dictionary_intrinsic_explicit_type');
-const Member MEMBER_DICTIONARY_INTRINSIC_KEYWORD = tuple(KIND_DICTIONARY_INTRINSIC_EXPRESSION, 'dictionary_intrinsic_keyword');
-const Member MEMBER_DICTIONARY_INTRINSIC_LEFT_BRACKET = tuple(KIND_DICTIONARY_INTRINSIC_EXPRESSION, 'dictionary_intrinsic_left_bracket');
-const Member MEMBER_DICTIONARY_INTRINSIC_MEMBERS = tuple(KIND_DICTIONARY_INTRINSIC_EXPRESSION, 'dictionary_intrinsic_members');
-const Member MEMBER_DICTIONARY_INTRINSIC_RIGHT_BRACKET = tuple(KIND_DICTIONARY_INTRINSIC_EXPRESSION, 'dictionary_intrinsic_right_bracket');
-const Member MEMBER_DICTIONARY_TYPE_KEYWORD = tuple(KIND_DICTIONARY_TYPE_SPECIFIER, 'dictionary_type_keyword');
-const Member MEMBER_DICTIONARY_TYPE_LEFT_ANGLE = tuple(KIND_DICTIONARY_TYPE_SPECIFIER, 'dictionary_type_left_angle');
-const Member MEMBER_DICTIONARY_TYPE_MEMBERS = tuple(KIND_DICTIONARY_TYPE_SPECIFIER, 'dictionary_type_members');
-const Member MEMBER_DICTIONARY_TYPE_RIGHT_ANGLE = tuple(KIND_DICTIONARY_TYPE_SPECIFIER, 'dictionary_type_right_angle');
-const Member MEMBER_DO_BODY = tuple(KIND_DO_STATEMENT, 'do_body');
-const Member MEMBER_DO_CONDITION = tuple(KIND_DO_STATEMENT, 'do_condition');
-const Member MEMBER_DO_KEYWORD = tuple(KIND_DO_STATEMENT, 'do_keyword');
-const Member MEMBER_DO_LEFT_PAREN = tuple(KIND_DO_STATEMENT, 'do_left_paren');
-const Member MEMBER_DO_RIGHT_PAREN = tuple(KIND_DO_STATEMENT, 'do_right_paren');
-const Member MEMBER_DO_SEMICOLON = tuple(KIND_DO_STATEMENT, 'do_semicolon');
-const Member MEMBER_DO_WHILE_KEYWORD = tuple(KIND_DO_STATEMENT, 'do_while_keyword');
-const Member MEMBER_ECHO_EXPRESSIONS = tuple(KIND_ECHO_STATEMENT, 'echo_expressions');
-const Member MEMBER_ECHO_KEYWORD = tuple(KIND_ECHO_STATEMENT, 'echo_keyword');
-const Member MEMBER_ECHO_SEMICOLON = tuple(KIND_ECHO_STATEMENT, 'echo_semicolon');
-const Member MEMBER_ELEMENT_ARROW = tuple(KIND_ELEMENT_INITIALIZER, 'element_arrow');
-const Member MEMBER_ELEMENT_KEY = tuple(KIND_ELEMENT_INITIALIZER, 'element_key');
-const Member MEMBER_ELEMENT_VALUE = tuple(KIND_ELEMENT_INITIALIZER, 'element_value');
-const Member MEMBER_ELSE_KEYWORD = tuple(KIND_ELSE_CLAUSE, 'else_keyword');
-const Member MEMBER_ELSE_STATEMENT = tuple(KIND_ELSE_CLAUSE, 'else_statement');
-const Member MEMBER_ELSEIF_CONDITION = tuple(KIND_ELSEIF_CLAUSE, 'elseif_condition');
-const Member MEMBER_ELSEIF_KEYWORD = tuple(KIND_ELSEIF_CLAUSE, 'elseif_keyword');
-const Member MEMBER_ELSEIF_LEFT_PAREN = tuple(KIND_ELSEIF_CLAUSE, 'elseif_left_paren');
-const Member MEMBER_ELSEIF_RIGHT_PAREN = tuple(KIND_ELSEIF_CLAUSE, 'elseif_right_paren');
-const Member MEMBER_ELSEIF_STATEMENT = tuple(KIND_ELSEIF_CLAUSE, 'elseif_statement');
-const Member MEMBER_EMBEDDED_BRACED_EXPRESSION_EXPRESSION = tuple(KIND_EMBEDDED_BRACED_EXPRESSION, 'embedded_braced_expression_expression');
-const Member MEMBER_EMBEDDED_BRACED_EXPRESSION_LEFT_BRACE = tuple(KIND_EMBEDDED_BRACED_EXPRESSION, 'embedded_braced_expression_left_brace');
-const Member MEMBER_EMBEDDED_BRACED_EXPRESSION_RIGHT_BRACE = tuple(KIND_EMBEDDED_BRACED_EXPRESSION, 'embedded_braced_expression_right_brace');
-const Member MEMBER_EMBEDDED_MEMBER_NAME = tuple(KIND_EMBEDDED_MEMBER_SELECTION_EXPRESSION, 'embedded_member_name');
-const Member MEMBER_EMBEDDED_MEMBER_OBJECT = tuple(KIND_EMBEDDED_MEMBER_SELECTION_EXPRESSION, 'embedded_member_object');
-const Member MEMBER_EMBEDDED_MEMBER_OPERATOR = tuple(KIND_EMBEDDED_MEMBER_SELECTION_EXPRESSION, 'embedded_member_operator');
-const Member MEMBER_EMBEDDED_SUBSCRIPT_INDEX = tuple(KIND_EMBEDDED_SUBSCRIPT_EXPRESSION, 'embedded_subscript_index');
-const Member MEMBER_EMBEDDED_SUBSCRIPT_LEFT_BRACKET = tuple(KIND_EMBEDDED_SUBSCRIPT_EXPRESSION, 'embedded_subscript_left_bracket');
-const Member MEMBER_EMBEDDED_SUBSCRIPT_RECEIVER = tuple(KIND_EMBEDDED_SUBSCRIPT_EXPRESSION, 'embedded_subscript_receiver');
-const Member MEMBER_EMBEDDED_SUBSCRIPT_RIGHT_BRACKET = tuple(KIND_EMBEDDED_SUBSCRIPT_EXPRESSION, 'embedded_subscript_right_bracket');
-const Member MEMBER_END_OF_FILE_TOKEN = tuple(KIND_END_OF_FILE, 'end_of_file_token');
-const Member MEMBER_ENUM_ATOM_EXPRESSION = tuple(KIND_ENUM_ATOM_EXPRESSION, 'enum_atom_expression');
-const Member MEMBER_ENUM_ATOM_HASH = tuple(KIND_ENUM_ATOM_EXPRESSION, 'enum_atom_hash');
-const Member MEMBER_ENUM_ATTRIBUTE_SPEC = tuple(KIND_ENUM_DECLARATION, 'enum_attribute_spec');
-const Member MEMBER_ENUM_BASE = tuple(KIND_ENUM_DECLARATION, 'enum_base');
-const Member MEMBER_ENUM_CLASS_ATTRIBUTE_SPEC = tuple(KIND_ENUM_CLASS_DECLARATION, 'enum_class_attribute_spec');
-const Member MEMBER_ENUM_CLASS_BASE = tuple(KIND_ENUM_CLASS_DECLARATION, 'enum_class_base');
-const Member MEMBER_ENUM_CLASS_CLASS_KEYWORD = tuple(KIND_ENUM_CLASS_DECLARATION, 'enum_class_class_keyword');
-const Member MEMBER_ENUM_CLASS_COLON = tuple(KIND_ENUM_CLASS_DECLARATION, 'enum_class_colon');
-const Member MEMBER_ENUM_CLASS_ELEMENTS = tuple(KIND_ENUM_CLASS_DECLARATION, 'enum_class_elements');
-const Member MEMBER_ENUM_CLASS_ENUM_KEYWORD = tuple(KIND_ENUM_CLASS_DECLARATION, 'enum_class_enum_keyword');
-const Member MEMBER_ENUM_CLASS_ENUMERATOR_EQUAL = tuple(KIND_ENUM_CLASS_ENUMERATOR, 'enum_class_enumerator_equal');
-const Member MEMBER_ENUM_CLASS_ENUMERATOR_INITIAL_VALUE = tuple(KIND_ENUM_CLASS_ENUMERATOR, 'enum_class_enumerator_initial_value');
-const Member MEMBER_ENUM_CLASS_ENUMERATOR_INITIALIZER = tuple(KIND_ENUM_CLASS_ENUMERATOR, 'enum_class_enumerator_initializer');
-const Member MEMBER_ENUM_CLASS_ENUMERATOR_MODIFIERS = tuple(KIND_ENUM_CLASS_ENUMERATOR, 'enum_class_enumerator_modifiers');
-const Member MEMBER_ENUM_CLASS_ENUMERATOR_NAME = tuple(KIND_ENUM_CLASS_ENUMERATOR, 'enum_class_enumerator_name');
-const Member MEMBER_ENUM_CLASS_ENUMERATOR_SEMICOLON = tuple(KIND_ENUM_CLASS_ENUMERATOR, 'enum_class_enumerator_semicolon');
-const Member MEMBER_ENUM_CLASS_ENUMERATOR_TYPE = tuple(KIND_ENUM_CLASS_ENUMERATOR, 'enum_class_enumerator_type');
-const Member MEMBER_ENUM_CLASS_EXTENDS = tuple(KIND_ENUM_CLASS_DECLARATION, 'enum_class_extends');
-const Member MEMBER_ENUM_CLASS_EXTENDS_LIST = tuple(KIND_ENUM_CLASS_DECLARATION, 'enum_class_extends_list');
-const Member MEMBER_ENUM_CLASS_LABEL_EXPRESSION = tuple(KIND_ENUM_CLASS_LABEL_EXPRESSION, 'enum_class_label_expression');
-const Member MEMBER_ENUM_CLASS_LABEL_HASH = tuple(KIND_ENUM_CLASS_LABEL_EXPRESSION, 'enum_class_label_hash');
-const Member MEMBER_ENUM_CLASS_LABEL_QUALIFIER = tuple(KIND_ENUM_CLASS_LABEL_EXPRESSION, 'enum_class_label_qualifier');
-const Member MEMBER_ENUM_CLASS_LEFT_BRACE = tuple(KIND_ENUM_CLASS_DECLARATION, 'enum_class_left_brace');
-const Member MEMBER_ENUM_CLASS_MODIFIERS = tuple(KIND_ENUM_CLASS_DECLARATION, 'enum_class_modifiers');
-const Member MEMBER_ENUM_CLASS_NAME = tuple(KIND_ENUM_CLASS_DECLARATION, 'enum_class_name');
-const Member MEMBER_ENUM_CLASS_RIGHT_BRACE = tuple(KIND_ENUM_CLASS_DECLARATION, 'enum_class_right_brace');
-const Member MEMBER_ENUM_COLON = tuple(KIND_ENUM_DECLARATION, 'enum_colon');
-const Member MEMBER_ENUM_ENUMERATORS = tuple(KIND_ENUM_DECLARATION, 'enum_enumerators');
-const Member MEMBER_ENUM_KEYWORD = tuple(KIND_ENUM_DECLARATION, 'enum_keyword');
-const Member MEMBER_ENUM_LEFT_BRACE = tuple(KIND_ENUM_DECLARATION, 'enum_left_brace');
-const Member MEMBER_ENUM_MODIFIERS = tuple(KIND_ENUM_DECLARATION, 'enum_modifiers');
-const Member MEMBER_ENUM_NAME = tuple(KIND_ENUM_DECLARATION, 'enum_name');
-const Member MEMBER_ENUM_RIGHT_BRACE = tuple(KIND_ENUM_DECLARATION, 'enum_right_brace');
-const Member MEMBER_ENUM_TYPE = tuple(KIND_ENUM_DECLARATION, 'enum_type');
-const Member MEMBER_ENUM_USE_CLAUSES = tuple(KIND_ENUM_DECLARATION, 'enum_use_clauses');
-const Member MEMBER_ENUM_USE_KEYWORD = tuple(KIND_ENUM_USE, 'enum_use_keyword');
-const Member MEMBER_ENUM_USE_NAMES = tuple(KIND_ENUM_USE, 'enum_use_names');
-const Member MEMBER_ENUM_USE_SEMICOLON = tuple(KIND_ENUM_USE, 'enum_use_semicolon');
-const Member MEMBER_ENUMERATOR_EQUAL = tuple(KIND_ENUMERATOR, 'enumerator_equal');
-const Member MEMBER_ENUMERATOR_NAME = tuple(KIND_ENUMERATOR, 'enumerator_name');
-const Member MEMBER_ENUMERATOR_SEMICOLON = tuple(KIND_ENUMERATOR, 'enumerator_semicolon');
-const Member MEMBER_ENUMERATOR_VALUE = tuple(KIND_ENUMERATOR, 'enumerator_value');
-const Member MEMBER_ERROR_ERROR = tuple(KIND_ERROR_SYNTAX, 'error_error');
-const Member MEMBER_ET_SPLICE_EXPRESSION_DOLLAR = tuple(KIND_ETSPLICE_EXPRESSION, 'et_splice_expression_dollar');
-const Member MEMBER_ET_SPLICE_EXPRESSION_EXPRESSION = tuple(KIND_ETSPLICE_EXPRESSION, 'et_splice_expression_expression');
-const Member MEMBER_ET_SPLICE_EXPRESSION_LEFT_BRACE = tuple(KIND_ETSPLICE_EXPRESSION, 'et_splice_expression_left_brace');
-const Member MEMBER_ET_SPLICE_EXPRESSION_RIGHT_BRACE = tuple(KIND_ETSPLICE_EXPRESSION, 'et_splice_expression_right_brace');
-const Member MEMBER_EVAL_ARGUMENT = tuple(KIND_EVAL_EXPRESSION, 'eval_argument');
-const Member MEMBER_EVAL_KEYWORD = tuple(KIND_EVAL_EXPRESSION, 'eval_keyword');
-const Member MEMBER_EVAL_LEFT_PAREN = tuple(KIND_EVAL_EXPRESSION, 'eval_left_paren');
-const Member MEMBER_EVAL_RIGHT_PAREN = tuple(KIND_EVAL_EXPRESSION, 'eval_right_paren');
-const Member MEMBER_EXPRESSION_STATEMENT_EXPRESSION = tuple(KIND_EXPRESSION_STATEMENT, 'expression_statement_expression');
-const Member MEMBER_EXPRESSION_STATEMENT_SEMICOLON = tuple(KIND_EXPRESSION_STATEMENT, 'expression_statement_semicolon');
-const Member MEMBER_FALLTHROUGH_KEYWORD = tuple(KIND_SWITCH_FALLTHROUGH, 'fallthrough_keyword');
-const Member MEMBER_FALLTHROUGH_SEMICOLON = tuple(KIND_SWITCH_FALLTHROUGH, 'fallthrough_semicolon');
-const Member MEMBER_FIELD_ARROW = tuple(KIND_FIELD_SPECIFIER, 'field_arrow');
-const Member MEMBER_FIELD_INITIALIZER_ARROW = tuple(KIND_FIELD_INITIALIZER, 'field_initializer_arrow');
-const Member MEMBER_FIELD_INITIALIZER_NAME = tuple(KIND_FIELD_INITIALIZER, 'field_initializer_name');
-const Member MEMBER_FIELD_INITIALIZER_VALUE = tuple(KIND_FIELD_INITIALIZER, 'field_initializer_value');
-const Member MEMBER_FIELD_NAME = tuple(KIND_FIELD_SPECIFIER, 'field_name');
-const Member MEMBER_FIELD_QUESTION = tuple(KIND_FIELD_SPECIFIER, 'field_question');
-const Member MEMBER_FIELD_TYPE = tuple(KIND_FIELD_SPECIFIER, 'field_type');
-const Member MEMBER_FILE_ATTRIBUTE_SPECIFICATION_ATTRIBUTES = tuple(KIND_FILE_ATTRIBUTE_SPECIFICATION, 'file_attribute_specification_attributes');
-const Member MEMBER_FILE_ATTRIBUTE_SPECIFICATION_COLON = tuple(KIND_FILE_ATTRIBUTE_SPECIFICATION, 'file_attribute_specification_colon');
-const Member MEMBER_FILE_ATTRIBUTE_SPECIFICATION_KEYWORD = tuple(KIND_FILE_ATTRIBUTE_SPECIFICATION, 'file_attribute_specification_keyword');
-const Member MEMBER_FILE_ATTRIBUTE_SPECIFICATION_LEFT_DOUBLE_ANGLE = tuple(KIND_FILE_ATTRIBUTE_SPECIFICATION, 'file_attribute_specification_left_double_angle');
-const Member MEMBER_FILE_ATTRIBUTE_SPECIFICATION_RIGHT_DOUBLE_ANGLE = tuple(KIND_FILE_ATTRIBUTE_SPECIFICATION, 'file_attribute_specification_right_double_angle');
-const Member MEMBER_FINALLY_BODY = tuple(KIND_FINALLY_CLAUSE, 'finally_body');
-const Member MEMBER_FINALLY_KEYWORD = tuple(KIND_FINALLY_CLAUSE, 'finally_keyword');
-const Member MEMBER_FOR_BODY = tuple(KIND_FOR_STATEMENT, 'for_body');
-const Member MEMBER_FOR_CONTROL = tuple(KIND_FOR_STATEMENT, 'for_control');
-const Member MEMBER_FOR_END_OF_LOOP = tuple(KIND_FOR_STATEMENT, 'for_end_of_loop');
-const Member MEMBER_FOR_FIRST_SEMICOLON = tuple(KIND_FOR_STATEMENT, 'for_first_semicolon');
-const Member MEMBER_FOR_INITIALIZER = tuple(KIND_FOR_STATEMENT, 'for_initializer');
-const Member MEMBER_FOR_KEYWORD = tuple(KIND_FOR_STATEMENT, 'for_keyword');
-const Member MEMBER_FOR_LEFT_PAREN = tuple(KIND_FOR_STATEMENT, 'for_left_paren');
-const Member MEMBER_FOR_RIGHT_PAREN = tuple(KIND_FOR_STATEMENT, 'for_right_paren');
-const Member MEMBER_FOR_SECOND_SEMICOLON = tuple(KIND_FOR_STATEMENT, 'for_second_semicolon');
-const Member MEMBER_FOREACH_ARROW = tuple(KIND_FOREACH_STATEMENT, 'foreach_arrow');
-const Member MEMBER_FOREACH_AS = tuple(KIND_FOREACH_STATEMENT, 'foreach_as');
-const Member MEMBER_FOREACH_AWAIT_KEYWORD = tuple(KIND_FOREACH_STATEMENT, 'foreach_await_keyword');
-const Member MEMBER_FOREACH_BODY = tuple(KIND_FOREACH_STATEMENT, 'foreach_body');
-const Member MEMBER_FOREACH_COLLECTION = tuple(KIND_FOREACH_STATEMENT, 'foreach_collection');
-const Member MEMBER_FOREACH_KEY = tuple(KIND_FOREACH_STATEMENT, 'foreach_key');
-const Member MEMBER_FOREACH_KEYWORD = tuple(KIND_FOREACH_STATEMENT, 'foreach_keyword');
-const Member MEMBER_FOREACH_LEFT_PAREN = tuple(KIND_FOREACH_STATEMENT, 'foreach_left_paren');
-const Member MEMBER_FOREACH_RIGHT_PAREN = tuple(KIND_FOREACH_STATEMENT, 'foreach_right_paren');
-const Member MEMBER_FOREACH_VALUE = tuple(KIND_FOREACH_STATEMENT, 'foreach_value');
-const Member MEMBER_FUNCTION_ATTRIBUTE_SPEC = tuple(KIND_FUNCTION_DECLARATION, 'function_attribute_spec');
-const Member MEMBER_FUNCTION_BODY = tuple(KIND_FUNCTION_DECLARATION, 'function_body');
-const Member MEMBER_FUNCTION_CALL_ARGUMENT_LIST = tuple(KIND_FUNCTION_CALL_EXPRESSION, 'function_call_argument_list');
-const Member MEMBER_FUNCTION_CALL_ENUM_ATOM = tuple(KIND_FUNCTION_CALL_EXPRESSION, 'function_call_enum_atom');
-const Member MEMBER_FUNCTION_CALL_ENUM_CLASS_LABEL = tuple(KIND_FUNCTION_CALL_EXPRESSION, 'function_call_enum_class_label');
-const Member MEMBER_FUNCTION_CALL_LEFT_PAREN = tuple(KIND_FUNCTION_CALL_EXPRESSION, 'function_call_left_paren');
-const Member MEMBER_FUNCTION_CALL_RECEIVER = tuple(KIND_FUNCTION_CALL_EXPRESSION, 'function_call_receiver');
-const Member MEMBER_FUNCTION_CALL_RIGHT_PAREN = tuple(KIND_FUNCTION_CALL_EXPRESSION, 'function_call_right_paren');
-const Member MEMBER_FUNCTION_CALL_TYPE_ARGS = tuple(KIND_FUNCTION_CALL_EXPRESSION, 'function_call_type_args');
-const Member MEMBER_FUNCTION_COLON = tuple(KIND_FUNCTION_DECLARATION_HEADER, 'function_colon');
-const Member MEMBER_FUNCTION_CONTEXTS = tuple(KIND_FUNCTION_DECLARATION_HEADER, 'function_contexts');
-const Member MEMBER_FUNCTION_CTX_TYPE_KEYWORD = tuple(KIND_FUNCTION_CTX_TYPE_SPECIFIER, 'function_ctx_type_keyword');
-const Member MEMBER_FUNCTION_CTX_TYPE_VARIABLE = tuple(KIND_FUNCTION_CTX_TYPE_SPECIFIER, 'function_ctx_type_variable');
-const Member MEMBER_FUNCTION_DECLARATION_HEADER = tuple(KIND_FUNCTION_DECLARATION, 'function_declaration_header');
-const Member MEMBER_FUNCTION_KEYWORD = tuple(KIND_FUNCTION_DECLARATION_HEADER, 'function_keyword');
-const Member MEMBER_FUNCTION_LEFT_PAREN = tuple(KIND_FUNCTION_DECLARATION_HEADER, 'function_left_paren');
-const Member MEMBER_FUNCTION_MODIFIERS = tuple(KIND_FUNCTION_DECLARATION_HEADER, 'function_modifiers');
-const Member MEMBER_FUNCTION_NAME = tuple(KIND_FUNCTION_DECLARATION_HEADER, 'function_name');
-const Member MEMBER_FUNCTION_PARAMETER_LIST = tuple(KIND_FUNCTION_DECLARATION_HEADER, 'function_parameter_list');
-const Member MEMBER_FUNCTION_POINTER_RECEIVER = tuple(KIND_FUNCTION_POINTER_EXPRESSION, 'function_pointer_receiver');
-const Member MEMBER_FUNCTION_POINTER_TYPE_ARGS = tuple(KIND_FUNCTION_POINTER_EXPRESSION, 'function_pointer_type_args');
-const Member MEMBER_FUNCTION_READONLY_RETURN = tuple(KIND_FUNCTION_DECLARATION_HEADER, 'function_readonly_return');
-const Member MEMBER_FUNCTION_RIGHT_PAREN = tuple(KIND_FUNCTION_DECLARATION_HEADER, 'function_right_paren');
-const Member MEMBER_FUNCTION_TYPE = tuple(KIND_FUNCTION_DECLARATION_HEADER, 'function_type');
-const Member MEMBER_FUNCTION_TYPE_PARAMETER_LIST = tuple(KIND_FUNCTION_DECLARATION_HEADER, 'function_type_parameter_list');
-const Member MEMBER_FUNCTION_WHERE_CLAUSE = tuple(KIND_FUNCTION_DECLARATION_HEADER, 'function_where_clause');
-const Member MEMBER_GENERIC_ARGUMENT_LIST = tuple(KIND_GENERIC_TYPE_SPECIFIER, 'generic_argument_list');
-const Member MEMBER_GENERIC_CLASS_TYPE = tuple(KIND_GENERIC_TYPE_SPECIFIER, 'generic_class_type');
-const Member MEMBER_IF_CONDITION = tuple(KIND_IF_STATEMENT, 'if_condition');
-const Member MEMBER_IF_ELSE_CLAUSE = tuple(KIND_IF_STATEMENT, 'if_else_clause');
-const Member MEMBER_IF_ELSEIF_CLAUSES = tuple(KIND_IF_STATEMENT, 'if_elseif_clauses');
-const Member MEMBER_IF_KEYWORD = tuple(KIND_IF_STATEMENT, 'if_keyword');
-const Member MEMBER_IF_LEFT_PAREN = tuple(KIND_IF_STATEMENT, 'if_left_paren');
-const Member MEMBER_IF_RIGHT_PAREN = tuple(KIND_IF_STATEMENT, 'if_right_paren');
-const Member MEMBER_IF_STATEMENT = tuple(KIND_IF_STATEMENT, 'if_statement');
-const Member MEMBER_INCLUSION_EXPRESSION = tuple(KIND_INCLUSION_DIRECTIVE, 'inclusion_expression');
-const Member MEMBER_INCLUSION_FILENAME = tuple(KIND_INCLUSION_EXPRESSION, 'inclusion_filename');
-const Member MEMBER_INCLUSION_REQUIRE = tuple(KIND_INCLUSION_EXPRESSION, 'inclusion_require');
-const Member MEMBER_INCLUSION_SEMICOLON = tuple(KIND_INCLUSION_DIRECTIVE, 'inclusion_semicolon');
-const Member MEMBER_INTERSECTION_LEFT_PAREN = tuple(KIND_INTERSECTION_TYPE_SPECIFIER, 'intersection_left_paren');
-const Member MEMBER_INTERSECTION_RIGHT_PAREN = tuple(KIND_INTERSECTION_TYPE_SPECIFIER, 'intersection_right_paren');
-const Member MEMBER_INTERSECTION_TYPES = tuple(KIND_INTERSECTION_TYPE_SPECIFIER, 'intersection_types');
-const Member MEMBER_IS_LEFT_OPERAND = tuple(KIND_IS_EXPRESSION, 'is_left_operand');
-const Member MEMBER_IS_OPERATOR = tuple(KIND_IS_EXPRESSION, 'is_operator');
-const Member MEMBER_IS_RIGHT_OPERAND = tuple(KIND_IS_EXPRESSION, 'is_right_operand');
-const Member MEMBER_ISSET_ARGUMENT_LIST = tuple(KIND_ISSET_EXPRESSION, 'isset_argument_list');
-const Member MEMBER_ISSET_KEYWORD = tuple(KIND_ISSET_EXPRESSION, 'isset_keyword');
-const Member MEMBER_ISSET_LEFT_PAREN = tuple(KIND_ISSET_EXPRESSION, 'isset_left_paren');
-const Member MEMBER_ISSET_RIGHT_PAREN = tuple(KIND_ISSET_EXPRESSION, 'isset_right_paren');
-const Member MEMBER_KEYSET_INTRINSIC_EXPLICIT_TYPE = tuple(KIND_KEYSET_INTRINSIC_EXPRESSION, 'keyset_intrinsic_explicit_type');
-const Member MEMBER_KEYSET_INTRINSIC_KEYWORD = tuple(KIND_KEYSET_INTRINSIC_EXPRESSION, 'keyset_intrinsic_keyword');
-const Member MEMBER_KEYSET_INTRINSIC_LEFT_BRACKET = tuple(KIND_KEYSET_INTRINSIC_EXPRESSION, 'keyset_intrinsic_left_bracket');
-const Member MEMBER_KEYSET_INTRINSIC_MEMBERS = tuple(KIND_KEYSET_INTRINSIC_EXPRESSION, 'keyset_intrinsic_members');
-const Member MEMBER_KEYSET_INTRINSIC_RIGHT_BRACKET = tuple(KIND_KEYSET_INTRINSIC_EXPRESSION, 'keyset_intrinsic_right_bracket');
-const Member MEMBER_KEYSET_TYPE_KEYWORD = tuple(KIND_KEYSET_TYPE_SPECIFIER, 'keyset_type_keyword');
-const Member MEMBER_KEYSET_TYPE_LEFT_ANGLE = tuple(KIND_KEYSET_TYPE_SPECIFIER, 'keyset_type_left_angle');
-const Member MEMBER_KEYSET_TYPE_RIGHT_ANGLE = tuple(KIND_KEYSET_TYPE_SPECIFIER, 'keyset_type_right_angle');
-const Member MEMBER_KEYSET_TYPE_TRAILING_COMMA = tuple(KIND_KEYSET_TYPE_SPECIFIER, 'keyset_type_trailing_comma');
-const Member MEMBER_KEYSET_TYPE_TYPE = tuple(KIND_KEYSET_TYPE_SPECIFIER, 'keyset_type_type');
-const Member MEMBER_LAMBDA_ARROW = tuple(KIND_LAMBDA_EXPRESSION, 'lambda_arrow');
-const Member MEMBER_LAMBDA_ASYNC = tuple(KIND_LAMBDA_EXPRESSION, 'lambda_async');
-const Member MEMBER_LAMBDA_ATTRIBUTE_SPEC = tuple(KIND_LAMBDA_EXPRESSION, 'lambda_attribute_spec');
-const Member MEMBER_LAMBDA_BODY = tuple(KIND_LAMBDA_EXPRESSION, 'lambda_body');
-const Member MEMBER_LAMBDA_COLON = tuple(KIND_LAMBDA_SIGNATURE, 'lambda_colon');
-const Member MEMBER_LAMBDA_CONTEXTS = tuple(KIND_LAMBDA_SIGNATURE, 'lambda_contexts');
-const Member MEMBER_LAMBDA_FUNCTION_KEYWORD = tuple(KIND_LAMBDA_SIGNATURE, 'lambda_function_keyword');
-const Member MEMBER_LAMBDA_LEFT_PAREN = tuple(KIND_LAMBDA_SIGNATURE, 'lambda_left_paren');
-const Member MEMBER_LAMBDA_PARAMETERS = tuple(KIND_LAMBDA_SIGNATURE, 'lambda_parameters');
-const Member MEMBER_LAMBDA_READONLY_RETURN = tuple(KIND_LAMBDA_SIGNATURE, 'lambda_readonly_return');
-const Member MEMBER_LAMBDA_RIGHT_PAREN = tuple(KIND_LAMBDA_SIGNATURE, 'lambda_right_paren');
-const Member MEMBER_LAMBDA_SIGNATURE = tuple(KIND_LAMBDA_EXPRESSION, 'lambda_signature');
-const Member MEMBER_LAMBDA_TYPE = tuple(KIND_LAMBDA_SIGNATURE, 'lambda_type');
-const Member MEMBER_LAMBDA_TYPE_PARAMETERS = tuple(KIND_LAMBDA_SIGNATURE, 'lambda_type_parameters');
-const Member MEMBER_LIKE_TILDE = tuple(KIND_LIKE_TYPE_SPECIFIER, 'like_tilde');
-const Member MEMBER_LIKE_TYPE = tuple(KIND_LIKE_TYPE_SPECIFIER, 'like_type');
-const Member MEMBER_LIST_ITEM = tuple(KIND_LIST_ITEM, 'list_item');
-const Member MEMBER_LIST_KEYWORD = tuple(KIND_LIST_EXPRESSION, 'list_keyword');
-const Member MEMBER_LIST_LEFT_PAREN = tuple(KIND_LIST_EXPRESSION, 'list_left_paren');
-const Member MEMBER_LIST_MEMBERS = tuple(KIND_LIST_EXPRESSION, 'list_members');
-const Member MEMBER_LIST_RIGHT_PAREN = tuple(KIND_LIST_EXPRESSION, 'list_right_paren');
-const Member MEMBER_LIST_SEPARATOR = tuple(KIND_LIST_ITEM, 'list_separator');
-const Member MEMBER_LITERAL_EXPRESSION = tuple(KIND_LITERAL, 'literal_expression');
-const Member MEMBER_MARKUP_HASHBANG = tuple(KIND_MARKUP_SECTION, 'markup_hashbang');
-const Member MEMBER_MARKUP_SUFFIX = tuple(KIND_MARKUP_SECTION, 'markup_suffix');
-const Member MEMBER_MARKUP_SUFFIX_LESS_THAN_QUESTION = tuple(KIND_MARKUP_SUFFIX, 'markup_suffix_less_than_question');
-const Member MEMBER_MARKUP_SUFFIX_NAME = tuple(KIND_MARKUP_SUFFIX, 'markup_suffix_name');
-const Member MEMBER_MATCH_STATEMENT_ARM_ARROW = tuple(KIND_MATCH_STATEMENT_ARM, 'match_statement_arm_arrow');
-const Member MEMBER_MATCH_STATEMENT_ARM_BODY = tuple(KIND_MATCH_STATEMENT_ARM, 'match_statement_arm_body');
-const Member MEMBER_MATCH_STATEMENT_ARM_PATTERN = tuple(KIND_MATCH_STATEMENT_ARM, 'match_statement_arm_pattern');
-const Member MEMBER_MATCH_STATEMENT_ARMS = tuple(KIND_MATCH_STATEMENT, 'match_statement_arms');
-const Member MEMBER_MATCH_STATEMENT_EXPRESSION = tuple(KIND_MATCH_STATEMENT, 'match_statement_expression');
-const Member MEMBER_MATCH_STATEMENT_KEYWORD = tuple(KIND_MATCH_STATEMENT, 'match_statement_keyword');
-const Member MEMBER_MATCH_STATEMENT_LEFT_BRACE = tuple(KIND_MATCH_STATEMENT, 'match_statement_left_brace');
-const Member MEMBER_MATCH_STATEMENT_LEFT_PAREN = tuple(KIND_MATCH_STATEMENT, 'match_statement_left_paren');
-const Member MEMBER_MATCH_STATEMENT_RIGHT_BRACE = tuple(KIND_MATCH_STATEMENT, 'match_statement_right_brace');
-const Member MEMBER_MATCH_STATEMENT_RIGHT_PAREN = tuple(KIND_MATCH_STATEMENT, 'match_statement_right_paren');
-const Member MEMBER_MEMBER_NAME = tuple(KIND_MEMBER_SELECTION_EXPRESSION, 'member_name');
-const Member MEMBER_MEMBER_OBJECT = tuple(KIND_MEMBER_SELECTION_EXPRESSION, 'member_object');
-const Member MEMBER_MEMBER_OPERATOR = tuple(KIND_MEMBER_SELECTION_EXPRESSION, 'member_operator');
-const Member MEMBER_METHODISH_ATTRIBUTE = tuple(KIND_METHODISH_DECLARATION, 'methodish_attribute');
-const Member MEMBER_METHODISH_FUNCTION_BODY = tuple(KIND_METHODISH_DECLARATION, 'methodish_function_body');
-const Member MEMBER_METHODISH_FUNCTION_DECL_HEADER = tuple(KIND_METHODISH_DECLARATION, 'methodish_function_decl_header');
-const Member MEMBER_METHODISH_SEMICOLON = tuple(KIND_METHODISH_DECLARATION, 'methodish_semicolon');
-const Member MEMBER_METHODISH_TRAIT_ATTRIBUTE = tuple(KIND_METHODISH_TRAIT_RESOLUTION, 'methodish_trait_attribute');
-const Member MEMBER_METHODISH_TRAIT_EQUAL = tuple(KIND_METHODISH_TRAIT_RESOLUTION, 'methodish_trait_equal');
-const Member MEMBER_METHODISH_TRAIT_FUNCTION_DECL_HEADER = tuple(KIND_METHODISH_TRAIT_RESOLUTION, 'methodish_trait_function_decl_header');
-const Member MEMBER_METHODISH_TRAIT_NAME = tuple(KIND_METHODISH_TRAIT_RESOLUTION, 'methodish_trait_name');
-const Member MEMBER_METHODISH_TRAIT_SEMICOLON = tuple(KIND_METHODISH_TRAIT_RESOLUTION, 'methodish_trait_semicolon');
-const Member MEMBER_MODULE_DECLARATION_ATTRIBUTE_SPEC = tuple(KIND_MODULE_DECLARATION, 'module_declaration_attribute_spec');
-const Member MEMBER_MODULE_DECLARATION_EXPORTS = tuple(KIND_MODULE_DECLARATION, 'module_declaration_exports');
-const Member MEMBER_MODULE_DECLARATION_IMPORTS = tuple(KIND_MODULE_DECLARATION, 'module_declaration_imports');
-const Member MEMBER_MODULE_DECLARATION_KEYWORD = tuple(KIND_MODULE_DECLARATION, 'module_declaration_keyword');
-const Member MEMBER_MODULE_DECLARATION_LEFT_BRACE = tuple(KIND_MODULE_DECLARATION, 'module_declaration_left_brace');
-const Member MEMBER_MODULE_DECLARATION_MODULE_KEYWORD = tuple(KIND_MODULE_DECLARATION, 'module_declaration_module_keyword');
-const Member MEMBER_MODULE_DECLARATION_NAME = tuple(KIND_MODULE_DECLARATION, 'module_declaration_name');
-const Member MEMBER_MODULE_DECLARATION_NEW_KEYWORD = tuple(KIND_MODULE_DECLARATION, 'module_declaration_new_keyword');
-const Member MEMBER_MODULE_DECLARATION_RIGHT_BRACE = tuple(KIND_MODULE_DECLARATION, 'module_declaration_right_brace');
-const Member MEMBER_MODULE_EXPORTS_EXPORTS = tuple(KIND_MODULE_EXPORTS, 'module_exports_exports');
-const Member MEMBER_MODULE_EXPORTS_EXPORTS_KEYWORD = tuple(KIND_MODULE_EXPORTS, 'module_exports_exports_keyword');
-const Member MEMBER_MODULE_EXPORTS_LEFT_BRACE = tuple(KIND_MODULE_EXPORTS, 'module_exports_left_brace');
-const Member MEMBER_MODULE_EXPORTS_RIGHT_BRACE = tuple(KIND_MODULE_EXPORTS, 'module_exports_right_brace');
-const Member MEMBER_MODULE_IMPORTS_IMPORTS = tuple(KIND_MODULE_IMPORTS, 'module_imports_imports');
-const Member MEMBER_MODULE_IMPORTS_IMPORTS_KEYWORD = tuple(KIND_MODULE_IMPORTS, 'module_imports_imports_keyword');
-const Member MEMBER_MODULE_IMPORTS_LEFT_BRACE = tuple(KIND_MODULE_IMPORTS, 'module_imports_left_brace');
-const Member MEMBER_MODULE_IMPORTS_RIGHT_BRACE = tuple(KIND_MODULE_IMPORTS, 'module_imports_right_brace');
-const Member MEMBER_MODULE_MEMBERSHIP_DECLARATION_MODULE_KEYWORD = tuple(KIND_MODULE_MEMBERSHIP_DECLARATION, 'module_membership_declaration_module_keyword');
-const Member MEMBER_MODULE_MEMBERSHIP_DECLARATION_NAME = tuple(KIND_MODULE_MEMBERSHIP_DECLARATION, 'module_membership_declaration_name');
-const Member MEMBER_MODULE_MEMBERSHIP_DECLARATION_SEMICOLON = tuple(KIND_MODULE_MEMBERSHIP_DECLARATION, 'module_membership_declaration_semicolon');
-const Member MEMBER_MODULE_NAME_PARTS = tuple(KIND_MODULE_NAME, 'module_name_parts');
-const Member MEMBER_NAMEOF_KEYWORD = tuple(KIND_NAMEOF_EXPRESSION, 'nameof_keyword');
-const Member MEMBER_NAMEOF_TARGET = tuple(KIND_NAMEOF_EXPRESSION, 'nameof_target');
-const Member MEMBER_NAMESPACE_BODY = tuple(KIND_NAMESPACE_DECLARATION, 'namespace_body');
-const Member MEMBER_NAMESPACE_DECLARATIONS = tuple(KIND_NAMESPACE_BODY, 'namespace_declarations');
-const Member MEMBER_NAMESPACE_GROUP_USE_CLAUSES = tuple(KIND_NAMESPACE_GROUP_USE_DECLARATION, 'namespace_group_use_clauses');
-const Member MEMBER_NAMESPACE_GROUP_USE_KEYWORD = tuple(KIND_NAMESPACE_GROUP_USE_DECLARATION, 'namespace_group_use_keyword');
-const Member MEMBER_NAMESPACE_GROUP_USE_KIND = tuple(KIND_NAMESPACE_GROUP_USE_DECLARATION, 'namespace_group_use_kind');
-const Member MEMBER_NAMESPACE_GROUP_USE_LEFT_BRACE = tuple(KIND_NAMESPACE_GROUP_USE_DECLARATION, 'namespace_group_use_left_brace');
-const Member MEMBER_NAMESPACE_GROUP_USE_PREFIX = tuple(KIND_NAMESPACE_GROUP_USE_DECLARATION, 'namespace_group_use_prefix');
-const Member MEMBER_NAMESPACE_GROUP_USE_RIGHT_BRACE = tuple(KIND_NAMESPACE_GROUP_USE_DECLARATION, 'namespace_group_use_right_brace');
-const Member MEMBER_NAMESPACE_GROUP_USE_SEMICOLON = tuple(KIND_NAMESPACE_GROUP_USE_DECLARATION, 'namespace_group_use_semicolon');
-const Member MEMBER_NAMESPACE_HEADER = tuple(KIND_NAMESPACE_DECLARATION, 'namespace_header');
-const Member MEMBER_NAMESPACE_KEYWORD = tuple(KIND_NAMESPACE_DECLARATION_HEADER, 'namespace_keyword');
-const Member MEMBER_NAMESPACE_LEFT_BRACE = tuple(KIND_NAMESPACE_BODY, 'namespace_left_brace');
-const Member MEMBER_NAMESPACE_NAME = tuple(KIND_NAMESPACE_DECLARATION_HEADER, 'namespace_name');
-const Member MEMBER_NAMESPACE_RIGHT_BRACE = tuple(KIND_NAMESPACE_BODY, 'namespace_right_brace');
-const Member MEMBER_NAMESPACE_SEMICOLON = tuple(KIND_NAMESPACE_EMPTY_BODY, 'namespace_semicolon');
-const Member MEMBER_NAMESPACE_USE_ALIAS = tuple(KIND_NAMESPACE_USE_CLAUSE, 'namespace_use_alias');
-const Member MEMBER_NAMESPACE_USE_AS = tuple(KIND_NAMESPACE_USE_CLAUSE, 'namespace_use_as');
-const Member MEMBER_NAMESPACE_USE_CLAUSE_KIND = tuple(KIND_NAMESPACE_USE_CLAUSE, 'namespace_use_clause_kind');
-const Member MEMBER_NAMESPACE_USE_CLAUSES = tuple(KIND_NAMESPACE_USE_DECLARATION, 'namespace_use_clauses');
-const Member MEMBER_NAMESPACE_USE_KEYWORD = tuple(KIND_NAMESPACE_USE_DECLARATION, 'namespace_use_keyword');
-const Member MEMBER_NAMESPACE_USE_KIND = tuple(KIND_NAMESPACE_USE_DECLARATION, 'namespace_use_kind');
-const Member MEMBER_NAMESPACE_USE_NAME = tuple(KIND_NAMESPACE_USE_CLAUSE, 'namespace_use_name');
-const Member MEMBER_NAMESPACE_USE_SEMICOLON = tuple(KIND_NAMESPACE_USE_DECLARATION, 'namespace_use_semicolon');
-const Member MEMBER_NULLABLE_AS_LEFT_OPERAND = tuple(KIND_NULLABLE_AS_EXPRESSION, 'nullable_as_left_operand');
-const Member MEMBER_NULLABLE_AS_OPERATOR = tuple(KIND_NULLABLE_AS_EXPRESSION, 'nullable_as_operator');
-const Member MEMBER_NULLABLE_AS_RIGHT_OPERAND = tuple(KIND_NULLABLE_AS_EXPRESSION, 'nullable_as_right_operand');
-const Member MEMBER_NULLABLE_QUESTION = tuple(KIND_NULLABLE_TYPE_SPECIFIER, 'nullable_question');
-const Member MEMBER_NULLABLE_TYPE = tuple(KIND_NULLABLE_TYPE_SPECIFIER, 'nullable_type');
-const Member MEMBER_OBJECT_CREATION_NEW_KEYWORD = tuple(KIND_OBJECT_CREATION_EXPRESSION, 'object_creation_new_keyword');
-const Member MEMBER_OBJECT_CREATION_OBJECT = tuple(KIND_OBJECT_CREATION_EXPRESSION, 'object_creation_object');
-const Member MEMBER_OLD_ATTRIBUTE_SPECIFICATION_ATTRIBUTES = tuple(KIND_OLD_ATTRIBUTE_SPECIFICATION, 'old_attribute_specification_attributes');
-const Member MEMBER_OLD_ATTRIBUTE_SPECIFICATION_LEFT_DOUBLE_ANGLE = tuple(KIND_OLD_ATTRIBUTE_SPECIFICATION, 'old_attribute_specification_left_double_angle');
-const Member MEMBER_OLD_ATTRIBUTE_SPECIFICATION_RIGHT_DOUBLE_ANGLE = tuple(KIND_OLD_ATTRIBUTE_SPECIFICATION, 'old_attribute_specification_right_double_angle');
-const Member MEMBER_PACKAGE_DECLARATION_ATTRIBUTE_SPEC = tuple(KIND_PACKAGE_DECLARATION, 'package_declaration_attribute_spec');
-const Member MEMBER_PACKAGE_DECLARATION_INCLUDES = tuple(KIND_PACKAGE_DECLARATION, 'package_declaration_includes');
-const Member MEMBER_PACKAGE_DECLARATION_LEFT_BRACE = tuple(KIND_PACKAGE_DECLARATION, 'package_declaration_left_brace');
-const Member MEMBER_PACKAGE_DECLARATION_NAME = tuple(KIND_PACKAGE_DECLARATION, 'package_declaration_name');
-const Member MEMBER_PACKAGE_DECLARATION_PACKAGE_KEYWORD = tuple(KIND_PACKAGE_DECLARATION, 'package_declaration_package_keyword');
-const Member MEMBER_PACKAGE_DECLARATION_RIGHT_BRACE = tuple(KIND_PACKAGE_DECLARATION, 'package_declaration_right_brace');
-const Member MEMBER_PACKAGE_DECLARATION_USES = tuple(KIND_PACKAGE_DECLARATION, 'package_declaration_uses');
-const Member MEMBER_PACKAGE_EXPRESSION_KEYWORD = tuple(KIND_PACKAGE_EXPRESSION, 'package_expression_keyword');
-const Member MEMBER_PACKAGE_EXPRESSION_NAME = tuple(KIND_PACKAGE_EXPRESSION, 'package_expression_name');
-const Member MEMBER_PACKAGE_INCLUDES_INCLUDE_KEYWORD = tuple(KIND_PACKAGE_INCLUDES, 'package_includes_include_keyword');
-const Member MEMBER_PACKAGE_INCLUDES_INCLUDES = tuple(KIND_PACKAGE_INCLUDES, 'package_includes_includes');
-const Member MEMBER_PACKAGE_INCLUDES_LEFT_BRACE = tuple(KIND_PACKAGE_INCLUDES, 'package_includes_left_brace');
-const Member MEMBER_PACKAGE_INCLUDES_RIGHT_BRACE = tuple(KIND_PACKAGE_INCLUDES, 'package_includes_right_brace');
-const Member MEMBER_PACKAGE_USES_LEFT_BRACE = tuple(KIND_PACKAGE_USES, 'package_uses_left_brace');
-const Member MEMBER_PACKAGE_USES_RIGHT_BRACE = tuple(KIND_PACKAGE_USES, 'package_uses_right_brace');
-const Member MEMBER_PACKAGE_USES_USE_KEYWORD = tuple(KIND_PACKAGE_USES, 'package_uses_use_keyword');
-const Member MEMBER_PACKAGE_USES_USES = tuple(KIND_PACKAGE_USES, 'package_uses_uses');
-const Member MEMBER_PARAMETER_ATTRIBUTE = tuple(KIND_PARAMETER_DECLARATION, 'parameter_attribute');
-const Member MEMBER_PARAMETER_CALL_CONVENTION = tuple(KIND_PARAMETER_DECLARATION, 'parameter_call_convention');
-const Member MEMBER_PARAMETER_DEFAULT_VALUE = tuple(KIND_PARAMETER_DECLARATION, 'parameter_default_value');
-const Member MEMBER_PARAMETER_ELLIPSIS = tuple(KIND_PARAMETER_DECLARATION, 'parameter_ellipsis');
-const Member MEMBER_PARAMETER_NAME = tuple(KIND_PARAMETER_DECLARATION, 'parameter_name');
-const Member MEMBER_PARAMETER_OPTIONAL = tuple(KIND_PARAMETER_DECLARATION, 'parameter_optional');
-const Member MEMBER_PARAMETER_PARAMETER_END = tuple(KIND_PARAMETER_DECLARATION, 'parameter_parameter_end');
-const Member MEMBER_PARAMETER_PRE_ELLIPSIS = tuple(KIND_PARAMETER_DECLARATION, 'parameter_pre_ellipsis');
-const Member MEMBER_PARAMETER_READONLY = tuple(KIND_PARAMETER_DECLARATION, 'parameter_readonly');
-const Member MEMBER_PARAMETER_TYPE = tuple(KIND_PARAMETER_DECLARATION, 'parameter_type');
-const Member MEMBER_PARAMETER_VISIBILITY = tuple(KIND_PARAMETER_DECLARATION, 'parameter_visibility');
-const Member MEMBER_PARENTHESIZED_EXPRESSION_EXPRESSION = tuple(KIND_PARENTHESIZED_EXPRESSION, 'parenthesized_expression_expression');
-const Member MEMBER_PARENTHESIZED_EXPRESSION_LEFT_PAREN = tuple(KIND_PARENTHESIZED_EXPRESSION, 'parenthesized_expression_left_paren');
-const Member MEMBER_PARENTHESIZED_EXPRESSION_RIGHT_PAREN = tuple(KIND_PARENTHESIZED_EXPRESSION, 'parenthesized_expression_right_paren');
-const Member MEMBER_PIPE_VARIABLE_EXPRESSION = tuple(KIND_PIPE_VARIABLE, 'pipe_variable_expression');
-const Member MEMBER_POSTFIX_UNARY_OPERAND = tuple(KIND_POSTFIX_UNARY_EXPRESSION, 'postfix_unary_operand');
-const Member MEMBER_POSTFIX_UNARY_OPERATOR = tuple(KIND_POSTFIX_UNARY_EXPRESSION, 'postfix_unary_operator');
-const Member MEMBER_PREFIX_UNARY_OPERAND = tuple(KIND_PREFIX_UNARY_EXPRESSION, 'prefix_unary_operand');
-const Member MEMBER_PREFIX_UNARY_OPERATOR = tuple(KIND_PREFIX_UNARY_EXPRESSION, 'prefix_unary_operator');
-const Member MEMBER_PREFIXED_CODE_BODY = tuple(KIND_PREFIXED_CODE_EXPRESSION, 'prefixed_code_body');
-const Member MEMBER_PREFIXED_CODE_EXPRESSION = tuple(KIND_PREFIXED_CODE_EXPRESSION, 'prefixed_code_expression');
-const Member MEMBER_PREFIXED_CODE_LEFT_BACKTICK = tuple(KIND_PREFIXED_CODE_EXPRESSION, 'prefixed_code_left_backtick');
-const Member MEMBER_PREFIXED_CODE_PREFIX = tuple(KIND_PREFIXED_CODE_EXPRESSION, 'prefixed_code_prefix');
-const Member MEMBER_PREFIXED_CODE_RIGHT_BACKTICK = tuple(KIND_PREFIXED_CODE_EXPRESSION, 'prefixed_code_right_backtick');
-const Member MEMBER_PREFIXED_STRING_NAME = tuple(KIND_PREFIXED_STRING, 'prefixed_string_name');
-const Member MEMBER_PREFIXED_STRING_STR = tuple(KIND_PREFIXED_STRING, 'prefixed_string_str');
-const Member MEMBER_PROPERTY_ATTRIBUTE_SPEC = tuple(KIND_PROPERTY_DECLARATION, 'property_attribute_spec');
-const Member MEMBER_PROPERTY_DECLARATORS = tuple(KIND_PROPERTY_DECLARATION, 'property_declarators');
-const Member MEMBER_PROPERTY_INITIALIZER = tuple(KIND_PROPERTY_DECLARATOR, 'property_initializer');
-const Member MEMBER_PROPERTY_MODIFIERS = tuple(KIND_PROPERTY_DECLARATION, 'property_modifiers');
-const Member MEMBER_PROPERTY_NAME = tuple(KIND_PROPERTY_DECLARATOR, 'property_name');
-const Member MEMBER_PROPERTY_SEMICOLON = tuple(KIND_PROPERTY_DECLARATION, 'property_semicolon');
-const Member MEMBER_PROPERTY_TYPE = tuple(KIND_PROPERTY_DECLARATION, 'property_type');
-const Member MEMBER_QUALIFIED_NAME_PARTS = tuple(KIND_QUALIFIED_NAME, 'qualified_name_parts');
-const Member MEMBER_RECORD_ATTRIBUTE_SPEC = tuple(KIND_RECORD_DECLARATION, 'record_attribute_spec');
-const Member MEMBER_RECORD_CREATION_LEFT_BRACKET = tuple(KIND_RECORD_CREATION_EXPRESSION, 'record_creation_left_bracket');
-const Member MEMBER_RECORD_CREATION_MEMBERS = tuple(KIND_RECORD_CREATION_EXPRESSION, 'record_creation_members');
-const Member MEMBER_RECORD_CREATION_RIGHT_BRACKET = tuple(KIND_RECORD_CREATION_EXPRESSION, 'record_creation_right_bracket');
-const Member MEMBER_RECORD_CREATION_TYPE = tuple(KIND_RECORD_CREATION_EXPRESSION, 'record_creation_type');
-const Member MEMBER_RECORD_EXTENDS_KEYWORD = tuple(KIND_RECORD_DECLARATION, 'record_extends_keyword');
-const Member MEMBER_RECORD_EXTENDS_OPT = tuple(KIND_RECORD_DECLARATION, 'record_extends_opt');
-const Member MEMBER_RECORD_FIELD_INIT = tuple(KIND_RECORD_FIELD, 'record_field_init');
-const Member MEMBER_RECORD_FIELD_NAME = tuple(KIND_RECORD_FIELD, 'record_field_name');
-const Member MEMBER_RECORD_FIELD_SEMI = tuple(KIND_RECORD_FIELD, 'record_field_semi');
-const Member MEMBER_RECORD_FIELD_TYPE = tuple(KIND_RECORD_FIELD, 'record_field_type');
-const Member MEMBER_RECORD_FIELDS = tuple(KIND_RECORD_DECLARATION, 'record_fields');
-const Member MEMBER_RECORD_KEYWORD = tuple(KIND_RECORD_DECLARATION, 'record_keyword');
-const Member MEMBER_RECORD_LEFT_BRACE = tuple(KIND_RECORD_DECLARATION, 'record_left_brace');
-const Member MEMBER_RECORD_MODIFIER = tuple(KIND_RECORD_DECLARATION, 'record_modifier');
-const Member MEMBER_RECORD_NAME = tuple(KIND_RECORD_DECLARATION, 'record_name');
-const Member MEMBER_RECORD_RIGHT_BRACE = tuple(KIND_RECORD_DECLARATION, 'record_right_brace');
-const Member MEMBER_REFINEMENT_PATTERN_COLON = tuple(KIND_REFINEMENT_PATTERN, 'refinement_pattern_colon');
-const Member MEMBER_REFINEMENT_PATTERN_SPECIFIER = tuple(KIND_REFINEMENT_PATTERN, 'refinement_pattern_specifier');
-const Member MEMBER_REFINEMENT_PATTERN_VARIABLE = tuple(KIND_REFINEMENT_PATTERN, 'refinement_pattern_variable');
-const Member MEMBER_REIFIED_TYPE_ARGUMENT_REIFIED = tuple(KIND_REIFIED_TYPE_ARGUMENT, 'reified_type_argument_reified');
-const Member MEMBER_REIFIED_TYPE_ARGUMENT_TYPE = tuple(KIND_REIFIED_TYPE_ARGUMENT, 'reified_type_argument_type');
-const Member MEMBER_REQUIRE_CONSTRAINT_KEYWORD = tuple(KIND_REQUIRE_CLAUSE_CONSTRAINT, 'require_constraint_keyword');
-const Member MEMBER_REQUIRE_CONSTRAINT_NAME = tuple(KIND_REQUIRE_CLAUSE_CONSTRAINT, 'require_constraint_name');
-const Member MEMBER_REQUIRE_CONSTRAINT_OPERATOR = tuple(KIND_REQUIRE_CLAUSE_CONSTRAINT, 'require_constraint_operator');
-const Member MEMBER_REQUIRE_CONSTRAINT_SEMICOLON = tuple(KIND_REQUIRE_CLAUSE_CONSTRAINT, 'require_constraint_semicolon');
-const Member MEMBER_REQUIRE_CONSTRAINT_THIS = tuple(KIND_REQUIRE_CLAUSE_CONSTRAINT, 'require_constraint_this');
-const Member MEMBER_REQUIRE_KEYWORD = tuple(KIND_REQUIRE_CLAUSE, 'require_keyword');
-const Member MEMBER_REQUIRE_KIND = tuple(KIND_REQUIRE_CLAUSE, 'require_kind');
-const Member MEMBER_REQUIRE_NAME = tuple(KIND_REQUIRE_CLAUSE, 'require_name');
-const Member MEMBER_REQUIRE_SEMICOLON = tuple(KIND_REQUIRE_CLAUSE, 'require_semicolon');
-const Member MEMBER_RETURN_EXPRESSION = tuple(KIND_RETURN_STATEMENT, 'return_expression');
-const Member MEMBER_RETURN_KEYWORD = tuple(KIND_RETURN_STATEMENT, 'return_keyword');
-const Member MEMBER_RETURN_SEMICOLON = tuple(KIND_RETURN_STATEMENT, 'return_semicolon');
-const Member MEMBER_SAFE_MEMBER_NAME = tuple(KIND_SAFE_MEMBER_SELECTION_EXPRESSION, 'safe_member_name');
-const Member MEMBER_SAFE_MEMBER_OBJECT = tuple(KIND_SAFE_MEMBER_SELECTION_EXPRESSION, 'safe_member_object');
-const Member MEMBER_SAFE_MEMBER_OPERATOR = tuple(KIND_SAFE_MEMBER_SELECTION_EXPRESSION, 'safe_member_operator');
-const Member MEMBER_SCOPE_RESOLUTION_NAME = tuple(KIND_SCOPE_RESOLUTION_EXPRESSION, 'scope_resolution_name');
-const Member MEMBER_SCOPE_RESOLUTION_OPERATOR = tuple(KIND_SCOPE_RESOLUTION_EXPRESSION, 'scope_resolution_operator');
-const Member MEMBER_SCOPE_RESOLUTION_QUALIFIER = tuple(KIND_SCOPE_RESOLUTION_EXPRESSION, 'scope_resolution_qualifier');
-const Member MEMBER_SCRIPT_DECLARATIONS = tuple(KIND_SCRIPT, 'script_declarations');
-const Member MEMBER_SHAPE_EXPRESSION_FIELDS = tuple(KIND_SHAPE_EXPRESSION, 'shape_expression_fields');
-const Member MEMBER_SHAPE_EXPRESSION_KEYWORD = tuple(KIND_SHAPE_EXPRESSION, 'shape_expression_keyword');
-const Member MEMBER_SHAPE_EXPRESSION_LEFT_PAREN = tuple(KIND_SHAPE_EXPRESSION, 'shape_expression_left_paren');
-const Member MEMBER_SHAPE_EXPRESSION_RIGHT_PAREN = tuple(KIND_SHAPE_EXPRESSION, 'shape_expression_right_paren');
-const Member MEMBER_SHAPE_TYPE_ELLIPSIS = tuple(KIND_SHAPE_TYPE_SPECIFIER, 'shape_type_ellipsis');
-const Member MEMBER_SHAPE_TYPE_FIELDS = tuple(KIND_SHAPE_TYPE_SPECIFIER, 'shape_type_fields');
-const Member MEMBER_SHAPE_TYPE_KEYWORD = tuple(KIND_SHAPE_TYPE_SPECIFIER, 'shape_type_keyword');
-const Member MEMBER_SHAPE_TYPE_LEFT_PAREN = tuple(KIND_SHAPE_TYPE_SPECIFIER, 'shape_type_left_paren');
-const Member MEMBER_SHAPE_TYPE_RIGHT_PAREN = tuple(KIND_SHAPE_TYPE_SPECIFIER, 'shape_type_right_paren');
-const Member MEMBER_SIMPLE_INITIALIZER_EQUAL = tuple(KIND_SIMPLE_INITIALIZER, 'simple_initializer_equal');
-const Member MEMBER_SIMPLE_INITIALIZER_VALUE = tuple(KIND_SIMPLE_INITIALIZER, 'simple_initializer_value');
-const Member MEMBER_SIMPLE_TYPE_SPECIFIER = tuple(KIND_SIMPLE_TYPE_SPECIFIER, 'simple_type_specifier');
-const Member MEMBER_SOFT_AT = tuple(KIND_SOFT_TYPE_SPECIFIER, 'soft_at');
-const Member MEMBER_SOFT_TYPE = tuple(KIND_SOFT_TYPE_SPECIFIER, 'soft_type');
-const Member MEMBER_SUBSCRIPT_INDEX = tuple(KIND_SUBSCRIPT_EXPRESSION, 'subscript_index');
-const Member MEMBER_SUBSCRIPT_LEFT_BRACKET = tuple(KIND_SUBSCRIPT_EXPRESSION, 'subscript_left_bracket');
-const Member MEMBER_SUBSCRIPT_RECEIVER = tuple(KIND_SUBSCRIPT_EXPRESSION, 'subscript_receiver');
-const Member MEMBER_SUBSCRIPT_RIGHT_BRACKET = tuple(KIND_SUBSCRIPT_EXPRESSION, 'subscript_right_bracket');
-const Member MEMBER_SWITCH_EXPRESSION = tuple(KIND_SWITCH_STATEMENT, 'switch_expression');
-const Member MEMBER_SWITCH_KEYWORD = tuple(KIND_SWITCH_STATEMENT, 'switch_keyword');
-const Member MEMBER_SWITCH_LEFT_BRACE = tuple(KIND_SWITCH_STATEMENT, 'switch_left_brace');
-const Member MEMBER_SWITCH_LEFT_PAREN = tuple(KIND_SWITCH_STATEMENT, 'switch_left_paren');
-const Member MEMBER_SWITCH_RIGHT_BRACE = tuple(KIND_SWITCH_STATEMENT, 'switch_right_brace');
-const Member MEMBER_SWITCH_RIGHT_PAREN = tuple(KIND_SWITCH_STATEMENT, 'switch_right_paren');
-const Member MEMBER_SWITCH_SECTION_FALLTHROUGH = tuple(KIND_SWITCH_SECTION, 'switch_section_fallthrough');
-const Member MEMBER_SWITCH_SECTION_LABELS = tuple(KIND_SWITCH_SECTION, 'switch_section_labels');
-const Member MEMBER_SWITCH_SECTION_STATEMENTS = tuple(KIND_SWITCH_SECTION, 'switch_section_statements');
-const Member MEMBER_SWITCH_SECTIONS = tuple(KIND_SWITCH_STATEMENT, 'switch_sections');
-const Member MEMBER_THROW_EXPRESSION = tuple(KIND_THROW_STATEMENT, 'throw_expression');
-const Member MEMBER_THROW_KEYWORD = tuple(KIND_THROW_STATEMENT, 'throw_keyword');
-const Member MEMBER_THROW_SEMICOLON = tuple(KIND_THROW_STATEMENT, 'throw_semicolon');
-const Member MEMBER_TRAIT_USE_ALIAS_ITEM_ALIASED_NAME = tuple(KIND_TRAIT_USE_ALIAS_ITEM, 'trait_use_alias_item_aliased_name');
-const Member MEMBER_TRAIT_USE_ALIAS_ITEM_ALIASING_NAME = tuple(KIND_TRAIT_USE_ALIAS_ITEM, 'trait_use_alias_item_aliasing_name');
-const Member MEMBER_TRAIT_USE_ALIAS_ITEM_KEYWORD = tuple(KIND_TRAIT_USE_ALIAS_ITEM, 'trait_use_alias_item_keyword');
-const Member MEMBER_TRAIT_USE_ALIAS_ITEM_MODIFIERS = tuple(KIND_TRAIT_USE_ALIAS_ITEM, 'trait_use_alias_item_modifiers');
-const Member MEMBER_TRAIT_USE_CONFLICT_RESOLUTION_CLAUSES = tuple(KIND_TRAIT_USE_CONFLICT_RESOLUTION, 'trait_use_conflict_resolution_clauses');
-const Member MEMBER_TRAIT_USE_CONFLICT_RESOLUTION_KEYWORD = tuple(KIND_TRAIT_USE_CONFLICT_RESOLUTION, 'trait_use_conflict_resolution_keyword');
-const Member MEMBER_TRAIT_USE_CONFLICT_RESOLUTION_LEFT_BRACE = tuple(KIND_TRAIT_USE_CONFLICT_RESOLUTION, 'trait_use_conflict_resolution_left_brace');
-const Member MEMBER_TRAIT_USE_CONFLICT_RESOLUTION_NAMES = tuple(KIND_TRAIT_USE_CONFLICT_RESOLUTION, 'trait_use_conflict_resolution_names');
-const Member MEMBER_TRAIT_USE_CONFLICT_RESOLUTION_RIGHT_BRACE = tuple(KIND_TRAIT_USE_CONFLICT_RESOLUTION, 'trait_use_conflict_resolution_right_brace');
-const Member MEMBER_TRAIT_USE_KEYWORD = tuple(KIND_TRAIT_USE, 'trait_use_keyword');
-const Member MEMBER_TRAIT_USE_NAMES = tuple(KIND_TRAIT_USE, 'trait_use_names');
-const Member MEMBER_TRAIT_USE_PRECEDENCE_ITEM_KEYWORD = tuple(KIND_TRAIT_USE_PRECEDENCE_ITEM, 'trait_use_precedence_item_keyword');
-const Member MEMBER_TRAIT_USE_PRECEDENCE_ITEM_NAME = tuple(KIND_TRAIT_USE_PRECEDENCE_ITEM, 'trait_use_precedence_item_name');
-const Member MEMBER_TRAIT_USE_PRECEDENCE_ITEM_REMOVED_NAMES = tuple(KIND_TRAIT_USE_PRECEDENCE_ITEM, 'trait_use_precedence_item_removed_names');
-const Member MEMBER_TRAIT_USE_SEMICOLON = tuple(KIND_TRAIT_USE, 'trait_use_semicolon');
-const Member MEMBER_TRY_CATCH_CLAUSES = tuple(KIND_TRY_STATEMENT, 'try_catch_clauses');
-const Member MEMBER_TRY_COMPOUND_STATEMENT = tuple(KIND_TRY_STATEMENT, 'try_compound_statement');
-const Member MEMBER_TRY_FINALLY_CLAUSE = tuple(KIND_TRY_STATEMENT, 'try_finally_clause');
-const Member MEMBER_TRY_KEYWORD = tuple(KIND_TRY_STATEMENT, 'try_keyword');
-const Member MEMBER_TUPLE_EXPRESSION_ITEMS = tuple(KIND_TUPLE_EXPRESSION, 'tuple_expression_items');
-const Member MEMBER_TUPLE_EXPRESSION_KEYWORD = tuple(KIND_TUPLE_EXPRESSION, 'tuple_expression_keyword');
-const Member MEMBER_TUPLE_EXPRESSION_LEFT_PAREN = tuple(KIND_TUPLE_EXPRESSION, 'tuple_expression_left_paren');
-const Member MEMBER_TUPLE_EXPRESSION_RIGHT_PAREN = tuple(KIND_TUPLE_EXPRESSION, 'tuple_expression_right_paren');
-const Member MEMBER_TUPLE_LEFT_PAREN = tuple(KIND_TUPLE_TYPE_SPECIFIER, 'tuple_left_paren');
-const Member MEMBER_TUPLE_OR_UNION_OR_INTERSECTION_ELEMENT_ELLIPSIS = tuple(KIND_TUPLE_OR_UNION_OR_INTERSECTION_ELEMENT_TYPE_SPECIFIER, 'tuple_or_union_or_intersection_element_ellipsis');
-const Member MEMBER_TUPLE_OR_UNION_OR_INTERSECTION_ELEMENT_OPTIONAL = tuple(KIND_TUPLE_OR_UNION_OR_INTERSECTION_ELEMENT_TYPE_SPECIFIER, 'tuple_or_union_or_intersection_element_optional');
-const Member MEMBER_TUPLE_OR_UNION_OR_INTERSECTION_ELEMENT_PRE_ELLIPSIS = tuple(KIND_TUPLE_OR_UNION_OR_INTERSECTION_ELEMENT_TYPE_SPECIFIER, 'tuple_or_union_or_intersection_element_pre_ellipsis');
-const Member MEMBER_TUPLE_OR_UNION_OR_INTERSECTION_ELEMENT_TYPE = tuple(KIND_TUPLE_OR_UNION_OR_INTERSECTION_ELEMENT_TYPE_SPECIFIER, 'tuple_or_union_or_intersection_element_type');
-const Member MEMBER_TUPLE_RIGHT_PAREN = tuple(KIND_TUPLE_TYPE_SPECIFIER, 'tuple_right_paren');
-const Member MEMBER_TUPLE_TYPE_KEYWORD = tuple(KIND_TUPLE_TYPE_EXPLICIT_SPECIFIER, 'tuple_type_keyword');
-const Member MEMBER_TUPLE_TYPE_LEFT_ANGLE = tuple(KIND_TUPLE_TYPE_EXPLICIT_SPECIFIER, 'tuple_type_left_angle');
-const Member MEMBER_TUPLE_TYPE_RIGHT_ANGLE = tuple(KIND_TUPLE_TYPE_EXPLICIT_SPECIFIER, 'tuple_type_right_angle');
-const Member MEMBER_TUPLE_TYPE_TYPES = tuple(KIND_TUPLE_TYPE_EXPLICIT_SPECIFIER, 'tuple_type_types');
-const Member MEMBER_TUPLE_TYPES = tuple(KIND_TUPLE_TYPE_SPECIFIER, 'tuple_types');
-const Member MEMBER_TYPE_ARGUMENTS_LEFT_ANGLE = tuple(KIND_TYPE_ARGUMENTS, 'type_arguments_left_angle');
-const Member MEMBER_TYPE_ARGUMENTS_RIGHT_ANGLE = tuple(KIND_TYPE_ARGUMENTS, 'type_arguments_right_angle');
-const Member MEMBER_TYPE_ARGUMENTS_TYPES = tuple(KIND_TYPE_ARGUMENTS, 'type_arguments_types');
-const Member MEMBER_TYPE_ATTRIBUTE_SPEC = tuple(KIND_TYPE_PARAMETER, 'type_attribute_spec');
-const Member MEMBER_TYPE_CONST_ATTRIBUTE_SPEC = tuple(KIND_TYPE_CONST_DECLARATION, 'type_const_attribute_spec');
-const Member MEMBER_TYPE_CONST_EQUAL = tuple(KIND_TYPE_CONST_DECLARATION, 'type_const_equal');
-const Member MEMBER_TYPE_CONST_KEYWORD = tuple(KIND_TYPE_CONST_DECLARATION, 'type_const_keyword');
-const Member MEMBER_TYPE_CONST_MODIFIERS = tuple(KIND_TYPE_CONST_DECLARATION, 'type_const_modifiers');
-const Member MEMBER_TYPE_CONST_NAME = tuple(KIND_TYPE_CONST_DECLARATION, 'type_const_name');
-const Member MEMBER_TYPE_CONST_SEMICOLON = tuple(KIND_TYPE_CONST_DECLARATION, 'type_const_semicolon');
-const Member MEMBER_TYPE_CONST_TYPE_CONSTRAINT = tuple(KIND_TYPE_CONST_DECLARATION, 'type_const_type_constraint');
-const Member MEMBER_TYPE_CONST_TYPE_CONSTRAINTS = tuple(KIND_TYPE_CONST_DECLARATION, 'type_const_type_constraints');
-const Member MEMBER_TYPE_CONST_TYPE_KEYWORD = tuple(KIND_TYPE_CONST_DECLARATION, 'type_const_type_keyword');
-const Member MEMBER_TYPE_CONST_TYPE_PARAMETERS = tuple(KIND_TYPE_CONST_DECLARATION, 'type_const_type_parameters');
-const Member MEMBER_TYPE_CONST_TYPE_SPECIFIER = tuple(KIND_TYPE_CONST_DECLARATION, 'type_const_type_specifier');
-const Member MEMBER_TYPE_CONSTANT_LEFT_TYPE = tuple(KIND_TYPE_CONSTANT, 'type_constant_left_type');
-const Member MEMBER_TYPE_CONSTANT_RIGHT_TYPE = tuple(KIND_TYPE_CONSTANT, 'type_constant_right_type');
-const Member MEMBER_TYPE_CONSTANT_SEPARATOR = tuple(KIND_TYPE_CONSTANT, 'type_constant_separator');
-const Member MEMBER_TYPE_CONSTRAINTS = tuple(KIND_TYPE_PARAMETER, 'type_constraints');
-const Member MEMBER_TYPE_IN_REFINEMENT_CONSTRAINTS = tuple(KIND_TYPE_IN_REFINEMENT, 'type_in_refinement_constraints');
-const Member MEMBER_TYPE_IN_REFINEMENT_EQUAL = tuple(KIND_TYPE_IN_REFINEMENT, 'type_in_refinement_equal');
-const Member MEMBER_TYPE_IN_REFINEMENT_KEYWORD = tuple(KIND_TYPE_IN_REFINEMENT, 'type_in_refinement_keyword');
-const Member MEMBER_TYPE_IN_REFINEMENT_NAME = tuple(KIND_TYPE_IN_REFINEMENT, 'type_in_refinement_name');
-const Member MEMBER_TYPE_IN_REFINEMENT_TYPE = tuple(KIND_TYPE_IN_REFINEMENT, 'type_in_refinement_type');
-const Member MEMBER_TYPE_IN_REFINEMENT_TYPE_PARAMETERS = tuple(KIND_TYPE_IN_REFINEMENT, 'type_in_refinement_type_parameters');
-const Member MEMBER_TYPE_NAME = tuple(KIND_TYPE_PARAMETER, 'type_name');
-const Member MEMBER_TYPE_PARAM_PARAMS = tuple(KIND_TYPE_PARAMETER, 'type_param_params');
-const Member MEMBER_TYPE_PARAMETERS_LEFT_ANGLE = tuple(KIND_TYPE_PARAMETERS, 'type_parameters_left_angle');
-const Member MEMBER_TYPE_PARAMETERS_PARAMETERS = tuple(KIND_TYPE_PARAMETERS, 'type_parameters_parameters');
-const Member MEMBER_TYPE_PARAMETERS_RIGHT_ANGLE = tuple(KIND_TYPE_PARAMETERS, 'type_parameters_right_angle');
-const Member MEMBER_TYPE_REFINEMENT_KEYWORD = tuple(KIND_TYPE_REFINEMENT, 'type_refinement_keyword');
-const Member MEMBER_TYPE_REFINEMENT_LEFT_BRACE = tuple(KIND_TYPE_REFINEMENT, 'type_refinement_left_brace');
-const Member MEMBER_TYPE_REFINEMENT_MEMBERS = tuple(KIND_TYPE_REFINEMENT, 'type_refinement_members');
-const Member MEMBER_TYPE_REFINEMENT_RIGHT_BRACE = tuple(KIND_TYPE_REFINEMENT, 'type_refinement_right_brace');
-const Member MEMBER_TYPE_REFINEMENT_TYPE = tuple(KIND_TYPE_REFINEMENT, 'type_refinement_type');
-const Member MEMBER_TYPE_REIFIED = tuple(KIND_TYPE_PARAMETER, 'type_reified');
-const Member MEMBER_TYPE_VARIANCE = tuple(KIND_TYPE_PARAMETER, 'type_variance');
-const Member MEMBER_UNION_LEFT_PAREN = tuple(KIND_UNION_TYPE_SPECIFIER, 'union_left_paren');
-const Member MEMBER_UNION_RIGHT_PAREN = tuple(KIND_UNION_TYPE_SPECIFIER, 'union_right_paren');
-const Member MEMBER_UNION_TYPES = tuple(KIND_UNION_TYPE_SPECIFIER, 'union_types');
-const Member MEMBER_UNSET_KEYWORD = tuple(KIND_UNSET_STATEMENT, 'unset_keyword');
-const Member MEMBER_UNSET_LEFT_PAREN = tuple(KIND_UNSET_STATEMENT, 'unset_left_paren');
-const Member MEMBER_UNSET_RIGHT_PAREN = tuple(KIND_UNSET_STATEMENT, 'unset_right_paren');
-const Member MEMBER_UNSET_SEMICOLON = tuple(KIND_UNSET_STATEMENT, 'unset_semicolon');
-const Member MEMBER_UNSET_VARIABLES = tuple(KIND_UNSET_STATEMENT, 'unset_variables');
-const Member MEMBER_UPCAST_LEFT_OPERAND = tuple(KIND_UPCAST_EXPRESSION, 'upcast_left_operand');
-const Member MEMBER_UPCAST_OPERATOR = tuple(KIND_UPCAST_EXPRESSION, 'upcast_operator');
-const Member MEMBER_UPCAST_RIGHT_OPERAND = tuple(KIND_UPCAST_EXPRESSION, 'upcast_right_operand');
-const Member MEMBER_USING_BLOCK_AWAIT_KEYWORD = tuple(KIND_USING_STATEMENT_BLOCK_SCOPED, 'using_block_await_keyword');
-const Member MEMBER_USING_BLOCK_BODY = tuple(KIND_USING_STATEMENT_BLOCK_SCOPED, 'using_block_body');
-const Member MEMBER_USING_BLOCK_EXPRESSIONS = tuple(KIND_USING_STATEMENT_BLOCK_SCOPED, 'using_block_expressions');
-const Member MEMBER_USING_BLOCK_LEFT_PAREN = tuple(KIND_USING_STATEMENT_BLOCK_SCOPED, 'using_block_left_paren');
-const Member MEMBER_USING_BLOCK_RIGHT_PAREN = tuple(KIND_USING_STATEMENT_BLOCK_SCOPED, 'using_block_right_paren');
-const Member MEMBER_USING_BLOCK_USING_KEYWORD = tuple(KIND_USING_STATEMENT_BLOCK_SCOPED, 'using_block_using_keyword');
-const Member MEMBER_USING_FUNCTION_AWAIT_KEYWORD = tuple(KIND_USING_STATEMENT_FUNCTION_SCOPED, 'using_function_await_keyword');
-const Member MEMBER_USING_FUNCTION_EXPRESSION = tuple(KIND_USING_STATEMENT_FUNCTION_SCOPED, 'using_function_expression');
-const Member MEMBER_USING_FUNCTION_SEMICOLON = tuple(KIND_USING_STATEMENT_FUNCTION_SCOPED, 'using_function_semicolon');
-const Member MEMBER_USING_FUNCTION_USING_KEYWORD = tuple(KIND_USING_STATEMENT_FUNCTION_SCOPED, 'using_function_using_keyword');
-const Member MEMBER_VARIABLE_EXPRESSION = tuple(KIND_VARIABLE_SYNTAX, 'variable_expression');
-const Member MEMBER_VARIABLE_PATTERN_VARIABLE = tuple(KIND_VARIABLE_PATTERN, 'variable_pattern_variable');
-const Member MEMBER_VARIADIC_PARAMETER_CALL_CONVENTION = tuple(KIND_VARIADIC_PARAMETER, 'variadic_parameter_call_convention');
-const Member MEMBER_VARIADIC_PARAMETER_ELLIPSIS = tuple(KIND_VARIADIC_PARAMETER, 'variadic_parameter_ellipsis');
-const Member MEMBER_VARIADIC_PARAMETER_TYPE = tuple(KIND_VARIADIC_PARAMETER, 'variadic_parameter_type');
-const Member MEMBER_VARRAY_INTRINSIC_EXPLICIT_TYPE = tuple(KIND_VARRAY_INTRINSIC_EXPRESSION, 'varray_intrinsic_explicit_type');
-const Member MEMBER_VARRAY_INTRINSIC_KEYWORD = tuple(KIND_VARRAY_INTRINSIC_EXPRESSION, 'varray_intrinsic_keyword');
-const Member MEMBER_VARRAY_INTRINSIC_LEFT_BRACKET = tuple(KIND_VARRAY_INTRINSIC_EXPRESSION, 'varray_intrinsic_left_bracket');
-const Member MEMBER_VARRAY_INTRINSIC_MEMBERS = tuple(KIND_VARRAY_INTRINSIC_EXPRESSION, 'varray_intrinsic_members');
-const Member MEMBER_VARRAY_INTRINSIC_RIGHT_BRACKET = tuple(KIND_VARRAY_INTRINSIC_EXPRESSION, 'varray_intrinsic_right_bracket');
-const Member MEMBER_VARRAY_KEYWORD = tuple(KIND_VARRAY_TYPE_SPECIFIER, 'varray_keyword');
-const Member MEMBER_VARRAY_LEFT_ANGLE = tuple(KIND_VARRAY_TYPE_SPECIFIER, 'varray_left_angle');
-const Member MEMBER_VARRAY_RIGHT_ANGLE = tuple(KIND_VARRAY_TYPE_SPECIFIER, 'varray_right_angle');
-const Member MEMBER_VARRAY_TRAILING_COMMA = tuple(KIND_VARRAY_TYPE_SPECIFIER, 'varray_trailing_comma');
-const Member MEMBER_VARRAY_TYPE = tuple(KIND_VARRAY_TYPE_SPECIFIER, 'varray_type');
-const Member MEMBER_VECTOR_INTRINSIC_EXPLICIT_TYPE = tuple(KIND_VECTOR_INTRINSIC_EXPRESSION, 'vector_intrinsic_explicit_type');
-const Member MEMBER_VECTOR_INTRINSIC_KEYWORD = tuple(KIND_VECTOR_INTRINSIC_EXPRESSION, 'vector_intrinsic_keyword');
-const Member MEMBER_VECTOR_INTRINSIC_LEFT_BRACKET = tuple(KIND_VECTOR_INTRINSIC_EXPRESSION, 'vector_intrinsic_left_bracket');
-const Member MEMBER_VECTOR_INTRINSIC_MEMBERS = tuple(KIND_VECTOR_INTRINSIC_EXPRESSION, 'vector_intrinsic_members');
-const Member MEMBER_VECTOR_INTRINSIC_RIGHT_BRACKET = tuple(KIND_VECTOR_INTRINSIC_EXPRESSION, 'vector_intrinsic_right_bracket');
-const Member MEMBER_VECTOR_TYPE_KEYWORD = tuple(KIND_VECTOR_TYPE_SPECIFIER, 'vector_type_keyword');
-const Member MEMBER_VECTOR_TYPE_LEFT_ANGLE = tuple(KIND_VECTOR_TYPE_SPECIFIER, 'vector_type_left_angle');
-const Member MEMBER_VECTOR_TYPE_RIGHT_ANGLE = tuple(KIND_VECTOR_TYPE_SPECIFIER, 'vector_type_right_angle');
-const Member MEMBER_VECTOR_TYPE_TRAILING_COMMA = tuple(KIND_VECTOR_TYPE_SPECIFIER, 'vector_type_trailing_comma');
-const Member MEMBER_VECTOR_TYPE_TYPE = tuple(KIND_VECTOR_TYPE_SPECIFIER, 'vector_type_type');
-const Member MEMBER_WHERE_CLAUSE_CONSTRAINTS = tuple(KIND_WHERE_CLAUSE, 'where_clause_constraints');
-const Member MEMBER_WHERE_CLAUSE_KEYWORD = tuple(KIND_WHERE_CLAUSE, 'where_clause_keyword');
-const Member MEMBER_WHERE_CONSTRAINT_LEFT_TYPE = tuple(KIND_WHERE_CONSTRAINT, 'where_constraint_left_type');
-const Member MEMBER_WHERE_CONSTRAINT_OPERATOR = tuple(KIND_WHERE_CONSTRAINT, 'where_constraint_operator');
-const Member MEMBER_WHERE_CONSTRAINT_RIGHT_TYPE = tuple(KIND_WHERE_CONSTRAINT, 'where_constraint_right_type');
-const Member MEMBER_WHILE_BODY = tuple(KIND_WHILE_STATEMENT, 'while_body');
-const Member MEMBER_WHILE_CONDITION = tuple(KIND_WHILE_STATEMENT, 'while_condition');
-const Member MEMBER_WHILE_KEYWORD = tuple(KIND_WHILE_STATEMENT, 'while_keyword');
-const Member MEMBER_WHILE_LEFT_PAREN = tuple(KIND_WHILE_STATEMENT, 'while_left_paren');
-const Member MEMBER_WHILE_RIGHT_PAREN = tuple(KIND_WHILE_STATEMENT, 'while_right_paren');
-const Member MEMBER_XHP_ATTRIBUTE_ATTRIBUTES = tuple(KIND_XHP_CLASS_ATTRIBUTE_DECLARATION, 'xhp_attribute_attributes');
-const Member MEMBER_XHP_ATTRIBUTE_DECL_INITIALIZER = tuple(KIND_XHP_CLASS_ATTRIBUTE, 'xhp_attribute_decl_initializer');
-const Member MEMBER_XHP_ATTRIBUTE_DECL_NAME = tuple(KIND_XHP_CLASS_ATTRIBUTE, 'xhp_attribute_decl_name');
-const Member MEMBER_XHP_ATTRIBUTE_DECL_REQUIRED = tuple(KIND_XHP_CLASS_ATTRIBUTE, 'xhp_attribute_decl_required');
-const Member MEMBER_XHP_ATTRIBUTE_DECL_TYPE = tuple(KIND_XHP_CLASS_ATTRIBUTE, 'xhp_attribute_decl_type');
-const Member MEMBER_XHP_ATTRIBUTE_KEYWORD = tuple(KIND_XHP_CLASS_ATTRIBUTE_DECLARATION, 'xhp_attribute_keyword');
-const Member MEMBER_XHP_ATTRIBUTE_SEMICOLON = tuple(KIND_XHP_CLASS_ATTRIBUTE_DECLARATION, 'xhp_attribute_semicolon');
-const Member MEMBER_XHP_BODY = tuple(KIND_XHP_EXPRESSION, 'xhp_body');
-const Member MEMBER_XHP_CATEGORY_CATEGORIES = tuple(KIND_XHP_CATEGORY_DECLARATION, 'xhp_category_categories');
-const Member MEMBER_XHP_CATEGORY_KEYWORD = tuple(KIND_XHP_CATEGORY_DECLARATION, 'xhp_category_keyword');
-const Member MEMBER_XHP_CATEGORY_SEMICOLON = tuple(KIND_XHP_CATEGORY_DECLARATION, 'xhp_category_semicolon');
-const Member MEMBER_XHP_CHILDREN_EXPRESSION = tuple(KIND_XHP_CHILDREN_DECLARATION, 'xhp_children_expression');
-const Member MEMBER_XHP_CHILDREN_KEYWORD = tuple(KIND_XHP_CHILDREN_DECLARATION, 'xhp_children_keyword');
-const Member MEMBER_XHP_CHILDREN_LIST_LEFT_PAREN = tuple(KIND_XHP_CHILDREN_PARENTHESIZED_LIST, 'xhp_children_list_left_paren');
-const Member MEMBER_XHP_CHILDREN_LIST_RIGHT_PAREN = tuple(KIND_XHP_CHILDREN_PARENTHESIZED_LIST, 'xhp_children_list_right_paren');
-const Member MEMBER_XHP_CHILDREN_LIST_XHP_CHILDREN = tuple(KIND_XHP_CHILDREN_PARENTHESIZED_LIST, 'xhp_children_list_xhp_children');
-const Member MEMBER_XHP_CHILDREN_SEMICOLON = tuple(KIND_XHP_CHILDREN_DECLARATION, 'xhp_children_semicolon');
-const Member MEMBER_XHP_CLOSE = tuple(KIND_XHP_EXPRESSION, 'xhp_close');
-const Member MEMBER_XHP_CLOSE_LEFT_ANGLE = tuple(KIND_XHP_CLOSE, 'xhp_close_left_angle');
-const Member MEMBER_XHP_CLOSE_NAME = tuple(KIND_XHP_CLOSE, 'xhp_close_name');
-const Member MEMBER_XHP_CLOSE_RIGHT_ANGLE = tuple(KIND_XHP_CLOSE, 'xhp_close_right_angle');
-const Member MEMBER_XHP_ENUM_KEYWORD = tuple(KIND_XHP_ENUM_TYPE, 'xhp_enum_keyword');
-const Member MEMBER_XHP_ENUM_LEFT_BRACE = tuple(KIND_XHP_ENUM_TYPE, 'xhp_enum_left_brace');
-const Member MEMBER_XHP_ENUM_LIKE = tuple(KIND_XHP_ENUM_TYPE, 'xhp_enum_like');
-const Member MEMBER_XHP_ENUM_RIGHT_BRACE = tuple(KIND_XHP_ENUM_TYPE, 'xhp_enum_right_brace');
-const Member MEMBER_XHP_ENUM_VALUES = tuple(KIND_XHP_ENUM_TYPE, 'xhp_enum_values');
-const Member MEMBER_XHP_LATEINIT_AT = tuple(KIND_XHP_LATEINIT, 'xhp_lateinit_at');
-const Member MEMBER_XHP_LATEINIT_KEYWORD = tuple(KIND_XHP_LATEINIT, 'xhp_lateinit_keyword');
-const Member MEMBER_XHP_OPEN = tuple(KIND_XHP_EXPRESSION, 'xhp_open');
-const Member MEMBER_XHP_OPEN_ATTRIBUTES = tuple(KIND_XHP_OPEN, 'xhp_open_attributes');
-const Member MEMBER_XHP_OPEN_LEFT_ANGLE = tuple(KIND_XHP_OPEN, 'xhp_open_left_angle');
-const Member MEMBER_XHP_OPEN_NAME = tuple(KIND_XHP_OPEN, 'xhp_open_name');
-const Member MEMBER_XHP_OPEN_RIGHT_ANGLE = tuple(KIND_XHP_OPEN, 'xhp_open_right_angle');
-const Member MEMBER_XHP_REQUIRED_AT = tuple(KIND_XHP_REQUIRED, 'xhp_required_at');
-const Member MEMBER_XHP_REQUIRED_KEYWORD = tuple(KIND_XHP_REQUIRED, 'xhp_required_keyword');
-const Member MEMBER_XHP_SIMPLE_ATTRIBUTE_EQUAL = tuple(KIND_XHP_SIMPLE_ATTRIBUTE, 'xhp_simple_attribute_equal');
-const Member MEMBER_XHP_SIMPLE_ATTRIBUTE_EXPRESSION = tuple(KIND_XHP_SIMPLE_ATTRIBUTE, 'xhp_simple_attribute_expression');
-const Member MEMBER_XHP_SIMPLE_ATTRIBUTE_NAME = tuple(KIND_XHP_SIMPLE_ATTRIBUTE, 'xhp_simple_attribute_name');
-const Member MEMBER_XHP_SIMPLE_CLASS_ATTRIBUTE_TYPE = tuple(KIND_XHP_SIMPLE_CLASS_ATTRIBUTE, 'xhp_simple_class_attribute_type');
-const Member MEMBER_XHP_SPREAD_ATTRIBUTE_EXPRESSION = tuple(KIND_XHP_SPREAD_ATTRIBUTE, 'xhp_spread_attribute_expression');
-const Member MEMBER_XHP_SPREAD_ATTRIBUTE_LEFT_BRACE = tuple(KIND_XHP_SPREAD_ATTRIBUTE, 'xhp_spread_attribute_left_brace');
-const Member MEMBER_XHP_SPREAD_ATTRIBUTE_RIGHT_BRACE = tuple(KIND_XHP_SPREAD_ATTRIBUTE, 'xhp_spread_attribute_right_brace');
-const Member MEMBER_XHP_SPREAD_ATTRIBUTE_SPREAD_OPERATOR = tuple(KIND_XHP_SPREAD_ATTRIBUTE, 'xhp_spread_attribute_spread_operator');
-const Member MEMBER_YIELD_BREAK_BREAK = tuple(KIND_YIELD_BREAK_STATEMENT, 'yield_break_break');
-const Member MEMBER_YIELD_BREAK_KEYWORD = tuple(KIND_YIELD_BREAK_STATEMENT, 'yield_break_keyword');
-const Member MEMBER_YIELD_BREAK_SEMICOLON = tuple(KIND_YIELD_BREAK_STATEMENT, 'yield_break_semicolon');
-const Member MEMBER_YIELD_KEYWORD = tuple(KIND_YIELD_EXPRESSION, 'yield_keyword');
-const Member MEMBER_YIELD_OPERAND = tuple(KIND_YIELD_EXPRESSION, 'yield_operand');
-// #endregion
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/NodeElaboratedGroup.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-enum NodeElaboratedGroup: int {
-  SYNTAX = 0;
-  TOKEN = 1;
-  TRIVIUM = 2;
-  LIST = 3;
-  MISSING = 4;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/NodeGroup.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-enum NodeGroup: int {
-  SYNTAX = 0;
-  TOKEN = 1;
-  TRIVIUM = 2;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/PhaException.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use type Exception;
-
-/**
- * The exception thrown for all the known reachable error states.
- * If another exception is thrown from this library,
- * this is a bug and you may report it as such.
- */
-interface PhaException {
-  require extends Exception;
-  public function getMessage()[]: string;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/RetainTrivia.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-enum RetainTrivia: int {
-  NEITHER = 0;
-  LEADING = 1;
-  TRAILING = 2;
-  BOTH = 3;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/Index.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-final class Index<Tnode as Node, Tkind as Kind> {
-  /**
-   * @param $nodes are sorted by kind, then by source order within each kind.
-   * @param $ranges values are (start, length).
-   *   The order is interned string numeric order, but this is not relied upon.
-   */
-  public function __construct(
-    private ParseContext $ctx,
-    private Pha\NodeGroup $group,
-    private vec<Tnode> $nodes,
-    private dict<InternedString<Tkind>, (int, int)> $ranges,
-  )[] {}
-
-  /**
-   * The returned nodes are in source order.
-   */
-  public function getByKind(Tkind $kind)[]: vec<Tnode> {
-    switch ($this->group) {
-      case Pha\NodeGroup::SYNTAX:
-        $interned = Pha\syntax_kind_from_kind($kind)
-          |> $this->ctx->getSyntaxKinds()->internOrMax($$);
-        break;
-      case Pha\NodeGroup::TOKEN:
-        $interned = Pha\token_kind_from_kind($kind)
-          |> $this->ctx->getTokenKinds()->internOrMax($$);
-        break;
-      case Pha\NodeGroup::TRIVIUM:
-        $interned = Pha\trivium_kind_from_kind($kind)
-          |> $this->ctx->getTriviumKinds()->internOrMax($$);
-    }
-
-    return idx($this->ranges, $interned)
-      |> $$ is null ? vec[] : Vec\slice($this->nodes, $$[0], $$[1]);
-  }
-
-  /**
-   * Careful, `Tnode_` ought to be `Syntax`, `Token`, or `Trivium`, not /just/
-   * `Node`, but there is no way to enforce this.
-   * If `Tnode_` is `Syntax`, please exclude the LIST and MISSING nodes.
-   * `$group` has to belong together with `Tnode_` and `Tkind_`.
-   */
-  public static function create<Tnode_ as Node, <<__Explicit>> Tkind_ as Kind>(
-    ParseContext $ctx,
-    Pha\NodeGroup $group,
-    vec<Tnode_> $nodes,
-  )[]: Index<Tnode_, Tkind_> {
-    if (C\is_empty($nodes)) {
-      return new Index<Tnode_, Tkind_>($ctx, $group, vec[], dict[]);
-    }
-
-    $sorted = Vec\sort_by($nodes, node_get_index_mask<>);
-    $ranges = dict[];
-    $last_interned = node_get_interned_kind<Tkind_>(C\firstx($sorted));
-    $start_range = 0;
-
-    // This $i is just the loop counter, I need it to outlive the loop.
-    // A foreach ($sorted as $i => $node) would be more expressive, but
-    // HHClientLinter warns about the shadowing, so a manual `++$i` it is...
-    $i = 0;
-    foreach ($sorted as $node) {
-      $interned = node_get_interned_kind<Tkind_>($node);
-      if ($interned !== $last_interned) {
-        $ranges[$last_interned] = tuple($start_range, $i - $start_range);
-        $start_range = $i;
-        $last_interned = $interned;
-      }
-      ++$i;
-    }
-
-    $ranges[$last_interned] = tuple($start_range, $i - $start_range + 1);
-
-    return new Index<Tnode_, Tkind_>($ctx, $group, $sorted, $ranges);
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/InternedStringStorage.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Dict};
-
-final class InternedStringStorage<T as Kind> {
-  private vec<T> $items;
-  private dict<T, int> $flipped;
-  private int $size;
-  public function __construct(
-    private keyset<T> $asKeyset,
-    private (function(string)[]: T) $castFunc,
-  )[] {
-    $this->items = vec($this->asKeyset);
-    $this->flipped = Dict\flip($this->items);
-    $this->size = C\count($this->items);
-  }
-
-  public function asKeyset()[]: keyset<T> {
-    return $this->asKeyset;
-  }
-
-  public function asVec()[]: vec<string> {
-    return $this->items;
-  }
-
-  public function fromInterned(InternedString<T> $interned)[]: T {
-    return
-      $this->items[interned_string_to_int($interned)] |> ($this->castFunc)($$);
-  }
-
-  public function intern(T $string)[]: InternedString<T> {
-    return interned_string_from_int<T>($this->flipped[$string]);
-  }
-
-  public function internOrMax(T $string)[]: InternedString<T> {
-    return interned_string_from_int<T>(
-      idx($this->flipped, $string, MAX_INTERNED_STRING),
-    );
-  }
-
-  public function isOfSameSize(keyset<string> $new_names)[]: bool {
-    return $this->size === C\count($new_names);
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/ParseContext.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Str;
-use namespace HTL\Pha;
-use type Exception;
-use function gettype, sha1;
-
-final class ParseContext {
-  public function __construct(
-    private Structs $structs,
-    private InternedStringStorage<SyntaxKind> $syntaxKinds,
-    private InternedStringStorage<TokenKind> $tokenKinds,
-    private InternedStringStorage<TriviumKind> $triviumKinds,
-  )[] {}
-
-  public function getStructs()[]: Structs {
-    return $this->structs;
-  }
-
-  public function getSyntaxKinds()[]: InternedStringStorage<SyntaxKind> {
-    return $this->syntaxKinds;
-  }
-
-  public function getTokenKinds()[]: InternedStringStorage<TokenKind> {
-    return $this->tokenKinds;
-  }
-
-  public function getTriviumKinds()[]: InternedStringStorage<TriviumKind> {
-    return $this->triviumKinds;
-  }
-
-  public function upgradeIfNeeded(
-    dict<SyntaxKind, vec<Member>> $new_member_names,
-    keyset<TokenKind> $new_token_kinds,
-    keyset<TriviumKind> $new_trivium_kinds,
-  )[]: ParseContext {
-    $structs = $this->structs;
-    $syntax_kinds = $this->syntaxKinds;
-    $token_kinds = $this->tokenKinds;
-    $trivium_kinds = $this->triviumKinds;
-
-    $upgrade_needed = false;
-
-    if (!$structs->isOfSameSize($new_member_names)) {
-      $upgrade_needed = true;
-      $structs = new Structs($new_member_names);
-      $syntax_kinds = $structs->asInternedStrings();
-    }
-
-    if (!$token_kinds->isOfSameSize($new_token_kinds)) {
-      $upgrade_needed = true;
-      $token_kinds = new InternedStringStorage<TokenKind>(
-        $new_token_kinds,
-        Pha\token_kind_from_string<>,
-      );
-    }
-
-    if (!$trivium_kinds->isOfSameSize($new_trivium_kinds)) {
-      $upgrade_needed = true;
-      $trivium_kinds = new InternedStringStorage<TriviumKind>(
-        $new_trivium_kinds,
-        Pha\trivium_kind_from_string<>,
-      );
-    }
-
-    return $upgrade_needed
-      ? new ParseContext($structs, $syntax_kinds, $token_kinds, $trivium_kinds)
-      : $this;
-  }
-
-  // #region Materialization
-  const string VERSION = 'VERSION';
-  const int VERSION_NUMBER = 3;
-  const string STRUCTS = 'STRUCTS';
-  const string SYNTAX_KINDS = 'SYNTAX_KINDS';
-  const string TOKEN_KINDS = 'TOKEN_KINDS';
-  const string TRIVIUM_KINDS = 'TRIVIUM_KINDS';
-
-  // Memoize because this value can be shared across many scripts.
-  <<__Memoize>>
-  public function getMaterializationHash()[]: string {
-    return $this->dematerialize()
-      |> static::toHashable($$)
-      |> sha1($$, false) as string;
-  }
-
-  // Memoize because this value can be shared across many scripts.
-  <<__Memoize>>
-  public function dematerialize()[]: dict<arraykey, mixed> {
-    return dict[
-      static::VERSION => static::VERSION_NUMBER,
-      static::STRUCTS => $this->structs->dematerialize(),
-      static::SYNTAX_KINDS => $this->syntaxKinds->asVec(),
-      static::TOKEN_KINDS => $this->tokenKinds->asVec(),
-      static::TRIVIUM_KINDS => $this->triviumKinds->asVec(),
-    ];
-  }
-
-  public static function materialize(dict<arraykey, mixed> $raw)[]: this {
-    $version = idx($raw, static::VERSION, -1);
-    if ($version !== static::VERSION_NUMBER) {
-      throw new PhaException(
-        'Could not materialize this Context, it was dematerialized with version '.
-        (($version ?as int) ?? 0).
-        ', but this version is version '.
-        static::VERSION_NUMBER.
-        '. You should regenerate this Context and update the cache.',
-      );
-    }
-
-    try {
-      return new static(
-        $raw[static::STRUCTS] |> Structs::materialize($$ as dict<_, _>),
-        $raw[static::SYNTAX_KINDS]
-          |> as_vec_of_syntax_kind($$)
-          |> keyset($$)
-          |> new InternedStringStorage($$, Pha\syntax_kind_from_string<>),
-        $raw[static::TOKEN_KINDS]
-          |> as_vec_of_token_kind($$)
-          |> keyset($$)
-          |> new InternedStringStorage($$, Pha\token_kind_from_string<>),
-        $raw[static::TRIVIUM_KINDS]
-          |> as_vec_of_trivium_kind($$)
-          |> keyset($$)
-          |> new InternedStringStorage($$, Pha\trivium_kind_from_string<>),
-      );
-    } catch (PhaException $e) {
-      throw $e;
-    } catch (Exception $e) {
-      throw
-        new PhaException('Could not materialize Context.', $e->getCode(), $e);
-    }
-  }
-
-  /**
-   * The encoding does not need to make sense, as long as it is not ambiguous.
-   * json_encode_pure wasn't available in 4.102, so something inline was done.
-   * Changing this breaks backwards compatibility with VERSION=2 serialization.
-   * This can be removed when VERSION=3 comes around.
-   *
-   * The encoding will look a little like json, but instead of quoting strings,
-   * they will be encoded as `s<length><bytes>`. This is not ambiguous with
-   * anything, since no json construct starts with an `s`.
-   */
-  private static function toHashable(mixed $mixed)[]: string {
-    if ($mixed is string) {
-      return 's'.Str\length($mixed).$mixed;
-    } else if ($mixed is int) {
-      return (string)$mixed;
-    } else if ($mixed is dict<_, _>) {
-      $out = '{';
-      foreach ($mixed as $k => $v) {
-        $out .= static::toHashable($k).':'.static::toHashable($v).',';
-      }
-      $out .= '}';
-
-      return $out;
-    } else if ($mixed is vec<_>) {
-      $out = '[';
-      foreach ($mixed as $v) {
-        $out .= static::toHashable($v).',';
-      }
-      $out .= ']';
-
-      return $out;
-    } else if ($mixed is AnyArray<_, _>) {
-      $out = '{?';
-      foreach ($mixed as $k => $v) {
-        $out .= static::toHashable($k).':'.static::toHashable($v).',';
-      }
-      $out .= '?}';
-
-      return $out;
-    }
-
-    invariant_violation('Unhandled type: %s', gettype($mixed) as string);
-  }
-  // #endregion
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/PatchNode.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str};
-use namespace HTL\Pha;
-
-final class PatchNode {
-  public function __construct(
-    private Pha\Node $node,
-    private string $text,
-    private Pha\RetainTrivia $retainTrivia,
-  )[] {
-    // Missing nodes don't have tokens, which means they can't have trivia either.
-    // The algorithm for slicing leading and trailing trivia depends on tokens.
-    // By special casing it here, we remove a special case from the algorithm.
-    if (Pha\is_missing($node)) {
-      $this->retainTrivia = Pha\RetainTrivia::NEITHER;
-    }
-
-    if (
-      $this->retainTrivia !== Pha\RetainTrivia::NEITHER && Pha\is_trivium($node)
-    ) {
-      throw new PhaException(Str\format(
-        'You may not replace a trivium with %s::%s set. '.
-        'This instruction does not make sense.',
-        (string)Pha\RetainTrivia::class,
-        Pha\RetainTrivia::getNames()[$retainTrivia],
-      ));
-    }
-  }
-
-  public function toReplacement(Script $script)[]: Replacement {
-    if ($this->retainTrivia === Pha\RetainTrivia::NEITHER) {
-      $source_range = Pha\node_get_source_range($script, $this->node);
-      return new Replacement(
-        Pha\source_range_to_line_and_column_numbers($script, $source_range),
-        $source_range,
-        $this->text,
-      );
-    }
-
-    list($keep_leading, $keep_trailing) =
-      retain_trivia_keep_leading_and_trailing($this->retainTrivia);
-
-    $descendants = Pha\node_get_descendants($script, $this->node);
-
-    $start_node = $keep_leading
-      ? C\findx(
-          $descendants,
-          $d ==> Pha\is_trivium($d) &&
-            Pha\node_get_kind($script, $d) === Pha\KIND_TOKEN_TEXT,
-        )
-      : $this->node;
-
-    $end_node = $keep_trailing
-      ? find_lastx(
-          $descendants,
-          $d ==> Pha\is_trivium($d) &&
-            Pha\node_get_kind($script, $d) === Pha\KIND_TOKEN_TEXT,
-        )
-      : $this->node;
-
-    $start = Pha\node_get_source_range($script, $start_node)
-      |> source_range_reveal($$)[0];
-
-    $end = Pha\node_get_source_range($script, $end_node)
-      |> source_range_reveal($$)[1];
-
-    $source_range = source_range_hide(tuple($start, $end));
-
-    return new Replacement(
-      Pha\source_range_to_line_and_column_numbers($script, $source_range),
-      $source_range,
-      $this->text,
-    );
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/PatchSet.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-use namespace HTL\Pha;
-
-final class PatchSet {
-  private vec<Replacement> $replacements;
-
-  public function __construct(
-    private string $beforeText,
-    vec<Replacement> $replacements,
-  )[] {
-    $this->replacements = Vec\sort_by(
-      $replacements,
-      $r ==> tuple(
-        $r->getStartOffset(),
-        $r->getEndOffset() === $r->getStartOffset() ? 0 : 1,
-      ),
-    );
-    $shifted = Vec\drop($this->replacements, 1);
-    $with_next = Vec\zip($this->replacements, $shifted);
-
-    foreach ($with_next as list($cur, $next)) {
-      if (Pha\source_range_overlaps($cur->getRange(), $next->getRange())) {
-        throw new PhaException(
-          Str\format(
-            "The following two patches conflict:\n - %s\n%s\n - %s\n%s",
-            Pha\source_range_format($cur->getRange()),
-            $cur->getText(),
-            Pha\source_range_format($next->getRange()),
-            $next->getText(),
-          ),
-        );
-      }
-    }
-  }
-
-  public function apply()[]: string {
-    if (C\is_empty($this->replacements)) {
-      return $this->beforeText;
-    }
-
-    $out = '';
-    $read_start = 0;
-
-    foreach ($this->replacements as $replacement) {
-      invariant(
-        $read_start is nonnull,
-        'Only the last patch may have an open end.',
-      );
-      $out .= Str\slice(
-        $this->beforeText,
-        $read_start,
-        source_byte_offset_to_int($replacement->getStartOffset()) - $read_start,
-      );
-
-      $out .= $replacement->getText();
-      $read_start = $replacement->getEndOffset()
-        |> $$ is null ? null : source_byte_offset_to_int($$);
-    }
-
-    if ($read_start is null) {
-      return $out;
-    }
-
-    return $out.Str\slice($this->beforeText, $read_start);
-  }
-
-  public function cayBeCombinedWith(PatchSet $other)[]: bool {
-    return $this->beforeText === $other->beforeText;
-  }
-
-  public function getBeforeText()[]: string {
-    return $this->beforeText;
-  }
-
-  public function getReplacements()[]: vec<Replacement> {
-    return $this->replacements;
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/PhaException.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-use type Exception;
-
-final class PhaException extends Exception implements Pha\PhaException {
-  <<__Override>>
-  public function getMessage()[]: string {
-    return $this->message;
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/Replacement.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-
-final class Replacement {
-  public function __construct(
-    private Pha\LineAndColumnNumbers $lineAndColumnNumbers,
-    private SourceRange $range,
-    private string $text,
-  )[] {}
-
-  public function getPosition()[]: Pha\LineAndColumnNumbers {
-    return $this->lineAndColumnNumbers;
-  }
-
-  public function getEndOffset()[]: ?SourceByteOffset {
-    return $this->range |> source_range_reveal($$)[1];
-  }
-
-  public function getRange()[]: SourceRange {
-    return $this->range;
-  }
-
-  public function getStartOffset()[]: SourceByteOffset {
-    return $this->range |> source_range_reveal($$)[0];
-  }
-
-  public function getText()[]: string {
-    return $this->text;
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/Structs.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Dict, Keyset, Vec};
-use namespace HTL\Pha;
-
-final class Structs {
-  private int $size;
-  private vec<int> $memberCounts;
-
-  public function __construct(
-    private dict<SyntaxKind, vec<Member>> $rawMembers,
-  )[] {
-    $this->size = C\count($rawMembers);
-    $this->memberCounts = Vec\map($rawMembers, C\count<>);
-  }
-
-  public function asInternedStrings()[]: InternedStringStorage<SyntaxKind> {
-    return new InternedStringStorage<SyntaxKind>(
-      Keyset\keys($this->rawMembers),
-      Pha\syntax_kind_from_string<>,
-    );
-  }
-
-  public function getMemberCount(
-    InternedString<SyntaxKind> $syntax_kind,
-  )[]: int {
-    return $this->memberCounts[interned_string_to_int($syntax_kind)];
-  }
-
-  public function getRaw()[]: dict<SyntaxKind, vec<Member>> {
-    return $this->rawMembers;
-  }
-
-  public function isOfSameSize(dict<string, vec<Member>> $new_members)[]: bool {
-    return $this->size === C\count($new_members);
-  }
-
-  //#region Materialization
-  const string VERSION = 'VERSION';
-  const int VERSION_NUMBER = 3;
-  const string MEMBERS = 'MEMBERS';
-
-  public function dematerialize()[]: dict<arraykey, mixed> {
-    return dict[
-      static::VERSION => static::VERSION_NUMBER,
-      static::MEMBERS => Vec\flatten($this->rawMembers),
-    ];
-  }
-
-  public static function materialize(dict<arraykey, mixed> $raw)[]: this {
-    $version = idx($raw, static::VERSION);
-    if ($version !== static::VERSION_NUMBER) {
-      throw new PhaException(
-        'Could not materialize these Structs, they were dematerialized with version '.
-        (($version ?as int) ?? 0).
-        ', but this version is version '.
-        static::VERSION_NUMBER.
-        '. You should regenerate the Context that contains these Structs and update the cache.',
-      );
-    }
-
-    return $raw[static::MEMBERS]
-      |> as_vec_of_member($$)
-      |> Dict\group_by($$, Pha\member_get_syntax_kind<>)
-      |> new static($$);
-  }
-  //#endregion
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/TranslationUnit.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{Str, Vec};
-use type Exception;
-
-final class TranslationUnit {
-  const SOME_LARGE_JUMP = 64;
-
-  private vec<SourceByteOffset> $lineBreaks;
-  private Structs $structs;
-  /**
-   * @param $sourceOrder is keyed by NodeId (0..n-1).
-   * @param $siblings is keyed by SiblingId (0..n-1).
-   * @param $listSizes only contains the sizes of lists 255 and above.
-   */
-  public function __construct(
-    private vec<Node> $sourceOrder,
-    private vec<Node> $siblings,
-    private dict<NodeId, int> $listSizes,
-    private string $sourceText,
-    private ParseContext $ctx,
-  )[] {
-    $line_breaks = vec[];
-
-    $byte = 0;
-    foreach (Str\split($sourceText, "\n") as $line) {
-      $line_breaks[] = source_byte_offset_from_int($byte);
-      $byte += Str\length($line) + 1;
-    }
-
-    $this->lineBreaks = $line_breaks;
-    $this->structs = $ctx->getStructs();
-  }
-
-  public function cutSourceOrder(
-    NodeId $from,
-    NodeId $to_inclusive,
-  )[]: vec<Node> {
-    $from = node_id_to_int($from);
-    $to_inclusive = node_id_to_int($to_inclusive);
-    return Vec\slice($this->sourceOrder, $from, $to_inclusive - $from + 1);
-  }
-
-  public function cutSourceRange(SourceRange $range)[]: string {
-    list($from, $to_exclusive) = source_range_reveal($range);
-    $from = source_byte_offset_to_int($from);
-    $to_exclusive =
-      $to_exclusive is null ? null : source_byte_offset_to_int($to_exclusive);
-    return $to_exclusive is null
-      ? Str\slice($this->sourceText, $from)
-      : Str\slice($this->sourceText, $from, $to_exclusive - $from);
-  }
-
-  public function getLineBreaks()[]: vec<SourceByteOffset> {
-    return $this->lineBreaks;
-  }
-
-  public function getSourceEndOffset()[]: SourceByteOffset {
-    return Str\length($this->sourceText) |> source_byte_offset_from_int($$);
-  }
-
-  public function getNodeById(NodeId $node_id)[]: NillableNode {
-    return idx($this->sourceOrder, node_id_to_int($node_id), NIL);
-  }
-
-  public function getNodeByIdx(NodeId $node_id)[]: Node {
-    return $this->sourceOrder[node_id_to_int($node_id)];
-  }
-
-  public function getNodeBySiblingId(SiblingId $sibling_id)[]: NillableNode {
-    return idx($this->siblings, sibling_id_to_int($sibling_id), NIL);
-  }
-
-  public function getNodeBySiblingIdx(SiblingId $sibling_id)[]: Node {
-    return $this->siblings[sibling_id_to_int($sibling_id)];
-  }
-
-  public function getParseContext()[]: ParseContext {
-    return $this->ctx;
-  }
-
-  public function getSourceOrder()[]: vec<Node> {
-    return $this->sourceOrder;
-  }
-
-  /**
-   * Careful, if `$node` is not a `LIST` or `MISSING`, you'll get junk.
-   */
-  public function listGetSize(Syntax $syntax)[]: int {
-    $stored_length = node_get_field_1($syntax);
-    return $stored_length < FIELD_1_MASK
-      ? $stored_length
-      : $this->listSizes[node_get_id($syntax)];
-  }
-
-  public function sliceSiblings(SiblingId $start, int $length)[]: vec<Node> {
-    return Vec\slice($this->siblings, sibling_id_to_int($start), $length);
-  }
-
-  public function syntaxGetChildCount(Syntax $syntax)[]: int {
-    return node_get_field_0($syntax) === LIST_OR_MISSING_TAG_AFTER_SHIFT
-      ? $this->listGetSize($syntax)
-      : $this->structs
-        ->getMemberCount(node_get_interned_kind<SyntaxKind>($syntax));
-  }
-
-  // #region Materialization
-  const string VERSION = 'VERSION';
-  const int VERSION_NUMBER = 3;
-  const string SOURCE_ORDER = 'SOURCE_ORDER';
-  const string SIBLINGS = 'SIBLINGS';
-  const string LIST_SIZES = 'LIST_SIZES';
-  const string SOURCE_TEXT = 'SOURCE_TEXT';
-  const string CONTEXT_ID = 'CONTEXT_ID';
-
-  public function dematerialize()[]: ReadyToSerializeScript {
-    return shape(
-      'script' => dict[
-        static::VERSION => static::VERSION_NUMBER,
-        static::SOURCE_ORDER => $this->sourceOrder,
-        static::SIBLINGS => $this->siblings,
-        static::LIST_SIZES => $this->listSizes,
-        static::SOURCE_TEXT => $this->sourceText,
-        static::CONTEXT_ID => $this->ctx->getMaterializationHash(),
-      ],
-      'context' => $this->ctx->dematerialize(),
-      'context_hash' => $this->ctx->getMaterializationHash(),
-    );
-  }
-
-  public static function materialize(
-    dict<arraykey, mixed> $raw,
-    ParseContext $ctx,
-  )[]: TranslationUnit {
-    $version = idx($raw, static::VERSION);
-    if ($version !== static::VERSION_NUMBER) {
-      throw new PhaException(
-        'Could not materialize this Script, it was dematerialized with version '.
-        (($version ?as int) ?? 0).
-        ', but this version is version '.
-        static::VERSION_NUMBER.
-        '. You should reparse this Script and update the cache.',
-      );
-    }
-    enforce(
-      $ctx->getMaterializationHash() === $raw[static::CONTEXT_ID],
-      'The Context and the Script do not belong together.',
-    );
-
-    try {
-      return new static(
-        $raw['SOURCE_ORDER'] |> as_vec_of_node($$),
-        $raw['SIBLINGS'] |> as_vec_of_node($$),
-        $raw['LIST_SIZES'] |> as_dict_of_node_id_to_int($$),
-        $raw['SOURCE_TEXT'] as string,
-        $ctx,
-      );
-    } catch (Exception $e) {
-      throw new PhaException(
-        'Failed to materialize this Script.',
-        $e->getCode(),
-        $e,
-      );
-    }
-  }
-  // #endregion
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/aliasses.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-
-type Kind = Pha\Kind;
-type Member = Pha\Member;
-type TokenKind = Pha\TokenKind;
-type TriviumKind = Pha\TriviumKind;
-type SyntaxKind = Pha\SyntaxKind;
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/enforce.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Str;
-use function vsprintf;
-
-/**
- * Think `invariant(...)`, but for `PhaException` instead.
- * Side note: `invariant()` only evaluates the `$format` and `$args`
- * arguments if `$assertion` is false.
- * If the evaluation is computationally expensive,
- * use `if (!$assertion) { ... }` instead.
- */
-function enforce(
-  bool $assertion,
-  Str\SprintfFormatString $format,
-  mixed ...$args
-)[]: void {
-  if (!$assertion) {
-    throw new PhaException(vsprintf($format, $args) as string);
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/grammatical_nth.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-function grammatical_nth(int $n)[]: string {
-  // Can't just use NumberFormatter, because it has no contexts.
-  $last_two_digits = $n % 100;
-
-  if (
-    $last_two_digits === 11 ||
-    $last_two_digits === 12 ||
-    $last_two_digits === 13
-  ) {
-    return $n.'th';
-  }
-
-  $last_digit = $n % 10;
-
-  if ($last_digit === 1) {
-    return $n.'st';
-  } else if ($last_digit === 2) {
-    return $n.'nd';
-  } else if ($last_digit === 3) {
-    return $n.'rd';
-  }
-
-  return $n.'th';
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/hsl/find_last.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\C;
-
-/**
- * Semantically equivalent to `Vec\reverse($container) |> C\find($$, $predicate)`,
- * but without the runtime overhead of reversing the vec first.
- */
-function find_lastx<T>(
-  vec<T> $container,
-  (function(T)[_]: bool) $predicate,
-)[ctx $predicate]: T {
-  for ($i = C\count($container) - 1; $i >= 0; --$i) {
-    $el = $container[$i];
-    if ($predicate($el)) {
-      return $el;
-    }
-  }
-
-  invariant_violation('%s: Couldn\'t find the target value.', __FUNCTION__);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/Context.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-newtype Context = ParseContext;
-
-function context_hide(ParseContext $ctx)[]: Context {
-  return $ctx;
-}
-
-function context_reveal(Context $ctx)[]: ParseContext {
-  return $ctx;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/IndexMask.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-newtype IndexMask as arraykey = int;
-
-function index_mask_from_int(int $int)[]: IndexMask {
-  return $int;
-}
-
-function index_mask_to_int(IndexMask $index_mask)[]: int {
-  return $index_mask;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/InternedString.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-newtype InternedString<+T> as arraykey = int;
-
-function interned_string_from_int<<<__Explicit>> T>(
-  int $int,
-)[]: InternedString<T> {
-  return $int;
-}
-
-function interned_string_recast_t<<<__Explicit>> T>(
-  InternedString<mixed> $interned_string,
-)[]: InternedString<T> {
-  return $interned_string;
-}
-
-function interned_string_to_int(InternedString<mixed> $interned_string)[]: int {
-  return $interned_string;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/KindIdentity.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-newtype KindIdentity as arraykey = int;
-
-function kind_identity_from_int(int $int)[]: KindIdentity {
-  return $int;
-}
-
-function kind_identity_to_int(KindIdentity $kind_identity)[]: int {
-  return $kind_identity;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/Node.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Math;
-
-<<__Sealed(Maybe::class)>>
-interface Taggable {}
-<<__Sealed(Any::class, SyntaxTag::class, TokenTag::class, TriviumTag::class)>>
-interface Maybe<+T as Any> extends Taggable {}
-<<__Sealed(SyntaxTag::class, TokenTag::class, TriviumTag::class)>>
-interface Any extends Maybe<Any> {}
-<<__Sealed()>>
-interface SyntaxTag extends Maybe<SyntaxTag>, Any {}
-<<__Sealed()>>
-interface TokenTag extends Maybe<TokenTag>, Any {}
-<<__Sealed()>>
-interface TriviumTag extends Maybe<TriviumTag>, Any {}
-
-newtype Tagged<+T as Taggable> = int;
-
-type Node = Tagged<Any>;
-type Syntax = Tagged<SyntaxTag>;
-type Token = Tagged<TokenTag>;
-type Trivium = Tagged<TriviumTag>;
-type NillableNode = Tagged<Maybe<Any>>;
-type NillableSyntax = Tagged<Maybe<SyntaxTag>>;
-type NillableToken = Tagged<Maybe<TokenTag>>;
-type NillableTrivium = Tagged<Maybe<TriviumTag>>;
-
-const NillableSyntax NIL = 0;
-const NillableSyntax NIL_SYNTAX = 0;
-const NillableToken NIL_TOKEN = 0;
-const NillableTrivium NIL_TRIVIUM = 0;
-const Syntax SCRIPT_NODE = Math\INT64_MIN;
-
-function cast_away_nil<T as Any>(Tagged<Maybe<T>> $t)[]: Tagged<T> {
-  return $t;
-}
-
-function node_from_int(int $int)[]: Node {
-  return $int;
-}
-
-function node_to_int(NillableNode $node)[]: int {
-  return $node;
-}
-
-function nodes_from_ints(vec<int> $ints)[]: vec<Node> {
-  return $ints;
-}
-
-function nodes_to_ints(vec<NillableNode> $nodes)[]: vec<int> {
-  return $nodes;
-}
-
-function syntax_from_int(int $int)[]: Syntax {
-  return $int;
-}
-
-function syntax_from_node(NillableNode $node)[]: Syntax {
-  return $node;
-}
-
-function syntaxes_from_nodes(vec<NillableNode> $nodes)[]: vec<Syntax> {
-  return $nodes;
-}
-
-function token_from_int(int $int)[]: Token {
-  return $int;
-}
-
-function token_from_node(NillableNode $node)[]: Token {
-  return $node;
-}
-
-function tokens_from_nodes(vec<NillableNode> $nodes)[]: vec<Token> {
-  return $nodes;
-}
-
-function trivia_from_nodes(vec<NillableNode> $nodes)[]: vec<Trivium> {
-  return $nodes;
-}
-
-function trivium_from_int(int $int)[]: Trivium {
-  return $int;
-}
-
-function trivium_from_node(NillableNode $node)[]: Trivium {
-  return $node;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/NodeId.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-newtype NodeId as arraykey = int;
-
-function node_id_add(NodeId $node_id, int $n)[]: NodeId {
-  return $node_id + $n;
-}
-
-function node_id_sub(NodeId $node_id, int $n)[]: NodeId {
-  return $node_id - $n;
-}
-
-function node_id_diff(NodeId $a, NodeId $b)[]: NodeId {
-  invariant(
-    $a >= $b,
-    '%s expected arguments to be ordered from large to small',
-    __FUNCTION__,
-  );
-
-  return $a - $b;
-}
-
-function node_id_to_int(NodeId $node_id)[]: int {
-  return $node_id;
-}
-
-function node_id_from_int(int $node_id)[]: NodeId {
-  return $node_id;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/Patch.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-newtype Patch = PatchNode;
-
-function patch_node_hide(PatchNode $patch_node)[]: Patch {
-  return $patch_node;
-}
-
-function patch_node_reveal(Patch $patch)[]: PatchNode {
-  return $patch;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/Patches.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-newtype Patches = PatchSet;
-
-function patch_set_hide(PatchSet $patch_set)[]: Patches {
-  return $patch_set;
-}
-
-function patch_set_reveal(Patches $patches)[]: PatchSet {
-  return $patches;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/ReadyToSerialize.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-/**
- * You are not allowed to observe the `mixed` values, aside from serializing them.
- * I wanted to perform the serialization myself, but `\fb_compact_unserialize()`
- * can not be called from a pure context.
- * This means I am leaving the actual encoding up to you, the caller. :)
- *
- * The serialized 'context' may be the same across some scripts.
- * You'd do well to deduplicate those before storing them.
- * You can use the 'context_hash' for this.
- */
-type ReadyToSerializeContext = shape(
-  'context' => dict<arraykey, mixed>,
-  'context_hash' => string,
-  ...
-);
-
-type ReadyToSerializeScript = shape(
-  'script' => dict<arraykey, mixed>,
-  'context' => dict<arraykey, mixed>,
-  'context_hash' => string,
-  ...
-);
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/Script.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-newtype Script = TranslationUnit;
-
-function translation_unit_hide(TranslationUnit $tu)[]: Script {
-  return $tu;
-}
-
-function translation_unit_reveal(Script $script)[]: TranslationUnit {
-  return $script;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/SearchIndex.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-newtype KindIndex<Tnode as Node, Tkind as Kind> = Index<Tnode, Tkind>;
-
-function index_hide<Tnode as Node, Tkind as Kind>(
-  Index<Tnode, Tkind> $index,
-)[]: KindIndex<Tnode, Tkind> {
-  return $index;
-}
-
-function index_reveal<Tnode as Node, Tkind as Kind>(
-  KindIndex<Tnode, Tkind> $index,
-)[]: Index<Tnode, Tkind> {
-  return $index;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/SiblingId.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-newtype SiblingId as arraykey = int;
-
-function sibling_id_add(SiblingId $sibling_id, int $n)[]: SiblingId {
-  return $sibling_id + $n;
-}
-
-function sibling_id_to_int(SiblingId $sibling_id)[]: int {
-  return $sibling_id;
-}
-
-function sibling_id_from_int(int $int)[]: SiblingId {
-  return $int;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/SourceByteOffset.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-newtype SourceByteOffset = int;
-
-function source_byte_offset_from_int(int $int)[]: SourceByteOffset {
-  return $int;
-}
-
-function source_byte_offset_to_int(SourceByteOffset $offset)[]: int {
-  return $offset;
-}
-
-function source_byte_offset_is_less_than(
-  SourceByteOffset $a,
-  SourceByteOffset $b,
-)[]: bool {
-  return $a < $b;
-}
-
-function source_byte_offset_is_less_than_or_equal(
-  SourceByteOffset $a,
-  SourceByteOffset $b,
-)[]: bool {
-  return $a <= $b;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/implemenation_types/SourceRange.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-newtype SourceRange = (SourceByteOffset, ?SourceByteOffset);
-
-function source_range_hide(
-  (SourceByteOffset, ?SourceByteOffset) $range,
-)[]: SourceRange {
-  return $range;
-}
-
-function source_range_reveal(
-  SourceRange $range,
-)[]: (SourceByteOffset, ?SourceByteOffset) {
-  return $range;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/Intermediate.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-
-final class Intermediate {
-  public function __construct(
-    private IntermediateGroup $group,
-    private int $id,
-    private int $parentId,
-    private Kind $kind,
-    private ?int $textLength = null,
-    private ?int $tokenTextTriviumOffset = null,
-  )[] {}
-
-  public function getGroup()[]: IntermediateGroup {
-    return $this->group;
-  }
-
-  public function getGroupName()[]: string {
-    return IntermediateGroup::getNames()[$this->group];
-  }
-
-  public function getId()[]: int {
-    return $this->id;
-  }
-
-  public function getParentId()[]: int {
-    return $this->parentId;
-  }
-
-  public function getSyntaxKind()[]: SyntaxKind {
-    invariant(
-      $this->group === IntermediateGroup::SYNTAX,
-      '%s can not be called on a %s.',
-      __FUNCTION__,
-      $this->getGroupName(),
-    );
-    return $this->kind |> Pha\syntax_kind_from_kind($$);
-  }
-
-  public function getTokenKind()[]: TokenKind {
-    invariant(
-      $this->group === IntermediateGroup::TOKEN,
-      '%s can not be called on a %s.',
-      __FUNCTION__,
-      $this->getGroupName(),
-    );
-    return $this->kind |> Pha\token_kind_from_kind($$);
-  }
-
-  public function getTriviumKind()[]: TriviumKind {
-    invariant(
-      $this->group === IntermediateGroup::TRIVIUM,
-      '%s can not be called on a %s.',
-      __FUNCTION__,
-      $this->getGroupName(),
-    );
-    return $this->kind |> Pha\trivium_kind_from_kind($$);
-  }
-
-  public function getTextLength()[]: ?int {
-    return $this->textLength;
-  }
-
-  public function getTextLengthx()[]: int {
-    invariant(
-      $this->textLength is nonnull,
-      '%s (%s) has no text',
-      $this->kind,
-      $this->getGroupName(),
-    );
-    return $this->textLength;
-  }
-
-  public function getTokenTextTriviumOffset()[]: ?int {
-    return $this->tokenTextTriviumOffset;
-  }
-
-  public function getTokenTextTriviumOffsetx()[]: int {
-    invariant(
-      $this->tokenTextTriviumOffset is nonnull,
-      '%s (%s) has no token text trivium offset',
-      $this->kind,
-      $this->getGroupName(),
-    );
-    return $this->tokenTextTriviumOffset;
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/IntermediateGroup.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-enum IntermediateGroup: int {
-  LIST = 0;
-  MISSING = 1;
-  SYNTAX = 2;
-  TOKEN = 3;
-  TRIVIUM = 4;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/Wrapped.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-
-final class Wrapped {
-  public function __construct(
-    private dict<arraykey, mixed> $item,
-    private int $parentId,
-  )[] {}
-
-  public function getItem()[]: dict<arraykey, mixed> {
-    return $this->item;
-  }
-
-  public function createList(int $id)[]: Intermediate {
-    return new Intermediate(
-      IntermediateGroup::LIST,
-      $id,
-      $this->parentId,
-      Pha\KIND_NODE_LIST,
-    );
-  }
-
-  public function createMissing(int $id)[]: Intermediate {
-    return new Intermediate(
-      IntermediateGroup::MISSING,
-      $id,
-      $this->parentId,
-      Pha\KIND_MISSING,
-    );
-  }
-
-  public function createSyntax(int $id, SyntaxKind $kind)[]: Intermediate {
-    return
-      new Intermediate(IntermediateGroup::SYNTAX, $id, $this->parentId, $kind);
-  }
-
-  public function createToken(
-    int $pid,
-    TokenKind $kind,
-    int $number_of_leading,
-  )[]: Intermediate {
-    return new Intermediate(
-      IntermediateGroup::TOKEN,
-      $pid,
-      $this->parentId,
-      $kind,
-      null,
-      $number_of_leading + 1,
-    );
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediate_list.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Vec;
-
-function create_intermediate_list(
-  Wrapped $next,
-  int $id,
-)[]: (Intermediate, vec<Wrapped>) {
-  $list = $next->getItem();
-
-  // Could be a dict or a vec, depending on json_decode() options...
-  // This is a square bracket array literal in the JSON,
-  // but the default for `\json_decode()` remains to create a dict.
-  // If users decode from `HH\ffp_parse_string_native(...)` and json_decode()
-  // with `\JSON_DECODE_HACK_ARRAYS`, we'd see vecs here.
-  $elements = $list['elements'] as Container<_>;
-  $intermediate = $next->createList($id);
-  $children = Vec\map($elements, $el ==> new Wrapped($el as dict<_, _>, $id));
-
-  return tuple($intermediate, $children);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediate_missing.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-function create_intermediate_missing(Wrapped $next, int $id)[]: Intermediate {
-  return $next->createMissing($id);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediate_syntax.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-
-function create_intermediate_syntax(
-  Wrapped $next,
-  int $id,
-)[]: (Intermediate, vec<Wrapped>) {
-  $syntax = $next->getItem();
-
-  $intermediate = $next->createSyntax(
-    $id,
-    Pha\syntax_kind_from_string($syntax['kind'] as string),
-  );
-
-  $children = vec[];
-  foreach ($syntax as $key => $el) {
-    if ($key === 'kind') {
-      continue;
-    }
-
-    $children[] = new Wrapped($el as dict<_, _>, $id);
-  }
-
-  return tuple($intermediate, $children);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediate_token.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str};
-use namespace HTL\Pha;
-
-function create_intermediate_token(
-  Wrapped $next,
-  int $id,
-)[]: (Intermediate, vec<Intermediate>) {
-  $token = $next->getItem()['token'] as dict<_, _>;
-  $leading_raw = $token['leading'] as vec_or_dict<_>;
-  $trailing_raw = $token['trailing'] as vec_or_dict<_>;
-
-  $intermediate = $next->createToken(
-    $id,
-    Pha\token_kind_from_string($token['kind'] as string),
-    C\count($leading_raw),
-  );
-
-  $count = 1;
-  $leading = create_intermediate_trivia($id, $count, $leading_raw);
-  $count += C\count($leading_raw);
-
-  $synthetic_token_text_trivium = new Intermediate(
-    IntermediateGroup::TRIVIUM,
-    $id + $count,
-    $id,
-    Pha\KIND_TOKEN_TEXT,
-    Str\length($token['text'] as string),
-  );
-  ++$count;
-
-  $trailing = create_intermediate_trivia($id, $count, $trailing_raw);
-
-  $trivia = vec[];
-
-  foreach ($leading as $trivium) {
-    $trivia[] = $trivium;
-  }
-
-  $trivia[] = $synthetic_token_text_trivium;
-
-  foreach ($trailing as $trivium) {
-    $trivia[] = $trivium;
-  }
-
-  return tuple($intermediate, $trivia);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediate_trivia.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Str;
-use namespace HTL\Pha;
-
-function create_intermediate_trivia(
-  int $id,
-  int $count,
-  vec_or_dict<arraykey, mixed> $trivia,
-)[]: vec<Intermediate> {
-  $out = vec[];
-
-  foreach ($trivia as $trivium) {
-    $trivium as dict<_, _>;
-    $out[] = new Intermediate(
-      IntermediateGroup::TRIVIUM,
-      $id + $count,
-      $id,
-      Pha\trivium_kind_from_string($trivium['kind'] as string),
-      Str\length($trivium['text'] as string),
-    );
-    ++$count;
-  }
-
-  return $out;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_intermediates.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Vec};
-use namespace HTL\Pha;
-
-function create_intermediates(
-  dict<arraykey, mixed> $parse_tree,
-  inout dict<SyntaxKind, vec<Member>> $known_member_names,
-  inout keyset<TokenKind> $known_token_kinds,
-  inout keyset<TriviumKind> $known_trivium_kinds,
-)[]: vec<Intermediate> {
-  $id = 0;
-  $completed = vec[];
-  $queue = vec[new Wrapped($parse_tree, $id)];
-  $queue_ptr = 0;
-
-  do {
-    $to_parse = $queue[$queue_ptr];
-    switch ($to_parse->getItem()['kind'] as string) {
-      case 'token':
-        $wrapped_nodes = vec[];
-        list($token, $trivia) = create_intermediate_token($to_parse, $id);
-        $intermediates = Vec\concat(vec[$token], $trivia);
-        $token_kind = $token->getTokenKind();
-        if (!C\contains_key($known_token_kinds, $token_kind)) {
-          $known_token_kinds[] = $token_kind;
-        }
-        foreach ($trivia as $trivium) {
-          $trivium_kind = $trivium->getTriviumKind();
-          if (!C\contains_key($known_trivium_kinds, $trivium_kind)) {
-            $known_trivium_kinds[] = $trivium_kind;
-          }
-        }
-        break;
-      case 'list':
-        list($list, $wrapped_nodes) = create_intermediate_list($to_parse, $id);
-        $intermediates = vec[$list];
-        break;
-      case 'missing':
-        $wrapped_nodes = vec[];
-        $intermediates = vec[create_intermediate_missing($to_parse, $id)];
-        break;
-      default /* syntax */:
-        list($syntax, $wrapped_nodes) =
-          create_intermediate_syntax($to_parse, $id);
-        $intermediates = vec[$syntax];
-        if (!C\contains_key($known_member_names, $syntax->getSyntaxKind())) {
-          $new_names = vec[];
-
-          foreach (Vec\keys($to_parse->getItem()) as $member_name) {
-            if ($member_name !== 'kind') {
-              $new_names[] = Pha\member_from_tuple(
-                tuple($syntax->getSyntaxKind(), $member_name as string),
-              );
-            }
-          }
-
-          $known_member_names[$syntax->getSyntaxKind()] = $new_names;
-        }
-    }
-
-    ++$queue_ptr;
-    $id += C\count($intermediates);
-
-    foreach ($intermediates as $intermediate) {
-      $completed[] = $intermediate;
-    }
-
-    foreach ($wrapped_nodes as $node) {
-      $queue[] = $node;
-    }
-  } while (C\contains_key($queue, $queue_ptr));
-
-  return Vec\sort_by($completed, $i ==> $i->getId());
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_node.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Math;
-
-function create_node(
-  Intermediate $node,
-  int $source_order_idx,
-  int $parent_idx,
-  (int, int) $child_range,
-  ParseContext $ctx,
-  inout int $byte_offset,
-)[]: Node {
-  // See bin/pseudo-fields.documentation.txt
-  switch ($node->getGroup()) {
-    case IntermediateGroup::SYNTAX:
-      $field_0_already_shifted = SYNTAX_TAG;
-      $field_1 = $ctx->getSyntaxKinds()->intern($node->getSyntaxKind())
-        |> interned_string_to_int($$);
-      $field_3 = $child_range[0];
-      break;
-    case IntermediateGroup::TOKEN:
-      $field_0_already_shifted = TOKEN_TAG;
-      $field_1 = $ctx->getTokenKinds()->intern($node->getTokenKind())
-        |> interned_string_to_int($$);
-      $field_3 = $source_order_idx + $node->getTokenTextTriviumOffsetx();
-      break;
-    case IntermediateGroup::TRIVIUM:
-      $field_0_already_shifted = TRIVIUM_TAG;
-      $field_1 = $ctx->getTriviumKinds()->intern($node->getTriviumKind())
-        |> interned_string_to_int($$);
-      $field_3 = $byte_offset;
-      $byte_offset += $node->getTextLengthx();
-      break;
-    case IntermediateGroup::LIST:
-      $field_0_already_shifted = LIST_OR_MISSING_TAG;
-      // + 1, because a range from x to x is of length 1, not 0.
-      $field_1 =
-        Math\minva(FIELD_1_MASK, $child_range[1] - $child_range[0] + 1);
-      $field_3 = $child_range[0];
-      break;
-    case IntermediateGroup::MISSING:
-      $field_0_already_shifted = LIST_OR_MISSING_TAG;
-      $field_1 = 0;
-      $field_3 = 0;
-  }
-
-  $parent_diff = $source_order_idx - $parent_idx;
-
-  switch ($node->getGroup()) {
-    case IntermediateGroup::SYNTAX:
-    case IntermediateGroup::TOKEN:
-    case IntermediateGroup::LIST:
-    case IntermediateGroup::MISSING:
-      if ($parent_diff > FIELD_2_MASK) {
-        $parent_diff = 0;
-      }
-      $field_2_already_shifted = $parent_diff << FIELD_2_OFFSET;
-      break;
-    case IntermediateGroup::TRIVIUM:
-      if ($parent_diff > FIELD_2_MASK_FOR_TRIVIA) {
-        $parent_diff = 0;
-      }
-      $field_2_already_shifted = $parent_diff << FIELD_2_OFFSET_FOR_TRIVIA;
-  }
-
-  $field_4 = $source_order_idx;
-
-  return node_from_int(
-    $field_0_already_shifted |
-      ($field_1 << FIELD_1_OFFSET) |
-      $field_2_already_shifted |
-      ($field_3 << FIELD_3_OFFSET) |
-      ($field_4 << FIELD_4_OFFSET),
-  );
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/create_translation_unit.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Str, Vec};
-
-function create_translation_unit(
-  vec<Intermediate> $intermediates,
-  string $source_text,
-  ParseContext $ctx,
-)[]: TranslationUnit {
-  enforce(
-    Str\length($source_text) < FIELD_3_MASK_FOR_TRIVIA,
-    'Implementation limit: Source may not exceed %d (0x%x) bytes, got %d.',
-    FIELD_3_MASK_FOR_TRIVIA,
-    FIELD_3_MASK_FOR_TRIVIA,
-    Str\length($source_text),
-  );
-
-  enforce(
-    C\count($intermediates) < FIELD_4_MASK,
-    'Implementation limit: Source may not exceed %d (0x%x) nodes, got %d.',
-    FIELD_4_MASK,
-    FIELD_4_MASK,
-    C\count($intermediates),
-  );
-
-  list($parent_ranges, $siblings_intermediates) =
-    layout_siblings($intermediates);
-  $source_order = layout_source_order($intermediates);
-
-  $id_to_source_idx = Vec\fill(C\count($intermediates), 0);
-  foreach ($source_order as $source_order_idx => $intermediate) {
-    $id_to_source_idx[$intermediate->getId()] = $source_order_idx;
-  }
-
-  $byte_offset = 0;
-  $nodes = vec[];
-  $list_sizes = dict[];
-  foreach ($source_order as $source_order_idx => $intermediate) {
-    $range = idx($parent_ranges, $intermediate->getId(), tuple(0, 0));
-    $nodes[] = create_node(
-      $intermediate,
-      $source_order_idx,
-      $id_to_source_idx[$intermediate->getParentId()],
-      $range,
-      $ctx,
-      inout $byte_offset,
-    );
-
-    if ($intermediate->getGroup() === IntermediateGroup::LIST) {
-      // + 1, because a range from x to x is of length 1, not 0.
-      $size = $range[1] - $range[0] + 1;
-      if ($size >= FIELD_1_MASK) {
-        $list_sizes[node_id_from_int($source_order_idx)] = $size;
-      }
-    }
-  }
-
-  $siblings = Vec\map(
-    $siblings_intermediates,
-    $x ==> $nodes[$id_to_source_idx[$x->getId()]],
-  );
-
-  return
-    new TranslationUnit($nodes, $siblings, $list_sizes, $source_text, $ctx);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/extract_ranges.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\C;
-
-function extract_ranges(
-  dict<int, vec<mixed>> $heritage,
-)[]: dict<int, (int, int)> {
-  $out = dict[];
-  $start_range = 0;
-
-  foreach ($heritage as $id => $children) {
-    $past_end = $start_range + C\count($children);
-    $out[$id] = tuple($start_range, $past_end - 1);
-    $start_range = $past_end;
-  }
-
-  return $out;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/layout_siblings.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{Dict, Vec};
-
-/**
- * Get the children of syntax and list nodes.
- * For other nodes, the children are implied:
- *  - Token -> All trivia are sequential
- *  - Trivium / Missing -> Have no children
- *
- * @return (dict<parent_id, (start, end)>, vec<siblings>)
- */
-function layout_siblings(
-  vec<Intermediate> $intermediates,
-)[]: (dict<int, (int, int)>, vec<Intermediate>) {
-  $heritage = Vec\filter(
-    $intermediates,
-    $x ==> (
-      $intermediates[$x->getParentId()]->getGroup()
-      |> $$ === IntermediateGroup::SYNTAX || $$ === IntermediateGroup::LIST
-    ) &&
-      $x->getId() !== 0,
-  )
-    |> Dict\group_by($$, $x ==> $x->getParentId());
-
-  return tuple(extract_ranges($heritage), Vec\flatten($heritage));
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/parsing/layout_source_order.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Dict};
-
-function layout_source_order(
-  vec<Intermediate> $intermediates,
-)[]: vec<Intermediate> {
-  $parents_to_children =
-    Dict\group_by($intermediates, $x ==> $x->getParentId());
-  $out = vec[$intermediates[0], $intermediates[1]];
-
-  // A `vec[]` is used as a `Stack<T>`, since we can't have `[write_props]`.
-  // This makes pushing a little cumbersome, see `$stack->push($to_push)`.
-  $stack = vec[tuple(1, 0)];
-  $stack_ptr = 0;
-  $stack_top = 0;
-
-  do {
-    list($node_id, $child_number) = $stack[$stack_ptr];
-    $children = idx($parents_to_children, $node_id, vec[]);
-    ++$stack[$stack_ptr][1];
-
-    if (C\count($children) > $child_number) {
-      $child = $children[$child_number];
-      $out[] = $child;
-
-      // `$stack->push($to_push)`, but without `[write_props]`
-      $to_push = tuple($child->getId(), 0);
-      ++$stack_ptr;
-      if ($stack_ptr > $stack_top) {
-        $stack[] = $to_push;
-        ++$stack_top;
-      } else {
-        $stack[$stack_ptr] = $to_push;
-      }
-    } else {
-      --$stack_ptr;
-    }
-  } while ($stack_ptr !== -1);
-
-  return $out;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/private_node_functions.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Math;
-use namespace HTL\Pha;
-
-const int FIELD_4_SIZE = 20;
-const int FIELD_3_SIZE = 20;
-const int FIELD_3_SIZE_FOR_TRIVIA = 24;
-const int FIELD_2_SIZE = 14;
-const int FIELD_2_SIZE_FOR_TRIVIA = 10;
-const int FIELD_1_SIZE = 8;
-const int FIELD_0_SIZE = 2;
-
-const int FIELD_4_OFFSET = 0;
-const int FIELD_3_OFFSET = FIELD_4_OFFSET + FIELD_4_SIZE;
-const int FIELD_3_OFFSET_FOR_TRIVIA = FIELD_3_OFFSET;
-const int FIELD_2_OFFSET = FIELD_3_OFFSET + FIELD_3_SIZE;
-const int FIELD_2_OFFSET_FOR_TRIVIA =
-  FIELD_3_OFFSET_FOR_TRIVIA + FIELD_3_SIZE_FOR_TRIVIA;
-const int FIELD_1_OFFSET = FIELD_2_OFFSET + FIELD_2_SIZE;
-const int FIELD_0_OFFSET = FIELD_1_OFFSET + FIELD_1_SIZE;
-
-const int FIELD_4_MASK = (1 << FIELD_4_SIZE) - 1;
-const int FIELD_3_MASK = (1 << FIELD_3_SIZE) - 1;
-const int FIELD_3_MASK_FOR_TRIVIA = (1 << FIELD_3_SIZE_FOR_TRIVIA) - 1;
-const int FIELD_2_MASK = (1 << FIELD_2_SIZE) - 1;
-const int FIELD_2_MASK_FOR_TRIVIA = (1 << FIELD_2_SIZE_FOR_TRIVIA) - 1;
-const int FIELD_1_MASK = (1 << FIELD_1_SIZE) - 1;
-const int FIELD_0_MASK = (1 << FIELD_0_SIZE) - 1;
-
-// This mask is the KindIdentity mask for non-LIST and non-MISSING nodes.
-const int FIELD_01_PRE_SHIFT_MASK =
-  (FIELD_0_MASK << FIELD_0_OFFSET) | (FIELD_1_MASK << FIELD_1_OFFSET);
-// This mask is the IndexMask for non-LIST and non-MISSING nodes.
-const int FIELD_14_PRE_SHIFT_MASK =
-  (FIELD_1_MASK << FIELD_1_OFFSET) | (FIELD_4_MASK << FIELD_4_OFFSET);
-
-const int SYNTAX_TAG = Math\INT64_MIN;
-const int TOKEN_TAG = 1 << 62;
-const int TRIVIUM_TAG = 0;
-const int LIST_OR_MISSING_TAG = Math\INT64_MIN | (1 << 62);
-
-const int SYNTAX_TAG_AFTER_SHIFT = SYNTAX_TAG >> FIELD_0_OFFSET;
-const int TOKEN_TAG_AFTER_SHIFT = TOKEN_TAG >> FIELD_0_OFFSET;
-const int TRIVIUM_TAG_AFTER_SHIFT = TRIVIUM_TAG >> FIELD_0_OFFSET;
-const int LIST_OR_MISSING_TAG_AFTER_SHIFT =
-  LIST_OR_MISSING_TAG >> FIELD_0_OFFSET;
-
-const int MAX_INTERNED_STRING = FIELD_1_MASK;
-
-/**
- * Careful, if `$kind` is `KIND_NODE_LIST` or `KIND_MISSING`, you'll get a
- * non-matching identity.
- */
-function create_syntax_identity(
-  Script $script,
-  SyntaxKind $kind,
-)[]: KindIdentity {
-  if ($kind === Pha\KIND_NODE_LIST || $kind === Pha\KIND_MISSING) {
-    // This is a hack, these nodes don't have an identity.
-    // Just return the greatest trivium kind there is.
-    // If we ever get to a world with max trivia, consider this
-    // a classic case of "This should never happen.".
-    return TRIVIUM_TAG | (MAX_INTERNED_STRING << FIELD_1_OFFSET)
-      |> kind_identity_from_int($$);
-  }
-
-  $ctx = translation_unit_reveal($script)->getParseContext();
-  return $ctx->getSyntaxKinds()->internOrMax($kind)
-    |> interned_string_to_int($$) << FIELD_1_OFFSET
-    |> $$ | SYNTAX_TAG
-    |> kind_identity_from_int($$);
-}
-
-function create_token_identity(
-  Script $script,
-  TokenKind $kind,
-)[]: KindIdentity {
-  $ctx = translation_unit_reveal($script)->getParseContext();
-  return $ctx->getTokenKinds()->internOrMax($kind)
-    |> interned_string_to_int($$) << FIELD_1_OFFSET
-    |> $$ | TOKEN_TAG
-    |> kind_identity_from_int($$);
-}
-
-function create_trivium_identity(
-  Script $script,
-  TriviumKind $kind,
-)[]: KindIdentity {
-  $ctx = translation_unit_reveal($script)->getParseContext();
-  return $ctx->getTriviumKinds()->internOrMax($kind)
-    |> interned_string_to_int($$) << FIELD_1_OFFSET
-    |> $$ | TRIVIUM_TAG
-    |> kind_identity_from_int($$);
-}
-
-/**
- * Mind the sign extension,
- * so `10`, and `11` will be `...11111110` and `...11111111` respectively.
- */
-function node_get_field_0(NillableNode $node)[]: int {
-  return node_to_int($node) >> FIELD_0_OFFSET;
-}
-
-function node_get_field_1(NillableNode $node)[]: int {
-  return node_to_int($node) >> FIELD_1_OFFSET |> $$ & FIELD_1_MASK;
-}
-
-function syntax_get_field_2(NillableSyntax $syntax)[]: int {
-  return node_to_int($syntax) >> FIELD_2_OFFSET |> $$ & FIELD_2_MASK;
-}
-
-function token_get_field_2(NillableToken $token)[]: int {
-  return node_to_int($token) >> FIELD_2_OFFSET |> $$ & FIELD_2_MASK;
-}
-
-function trivium_get_field_2(NillableTrivium $trivium)[]: int {
-  return node_to_int($trivium) >> FIELD_2_OFFSET_FOR_TRIVIA
-    |> $$ & FIELD_2_MASK_FOR_TRIVIA;
-}
-
-function syntax_get_field_3(NillableSyntax $syntax)[]: int {
-  return node_to_int($syntax) >> FIELD_3_OFFSET |> $$ & FIELD_3_MASK;
-}
-
-function token_get_field_3(NillableToken $token)[]: int {
-  return node_to_int($token) >> FIELD_3_OFFSET |> $$ & FIELD_3_MASK;
-}
-
-function trivium_get_field_3(NillableTrivium $trivium)[]: int {
-  return node_to_int($trivium) >> FIELD_3_OFFSET_FOR_TRIVIA
-    |> $$ & FIELD_3_MASK_FOR_TRIVIA;
-}
-
-function node_get_field_4(NillableNode $node)[]: int {
-  return node_to_int($node) & FIELD_4_MASK;
-}
-
-function node_get_id(Node $node)[]: NodeId {
-  return node_get_field_4($node) |> node_id_from_int($$);
-}
-
-/**
- * Careful, if `$node` is `LIST` or `MISSING`, you'll get junk.
- */
-function node_get_index_mask(Node $node)[]: IndexMask {
-  return
-    node_to_int($node) & FIELD_14_PRE_SHIFT_MASK |> index_mask_from_int($$);
-}
-
-/**
- * Careful, if `$node` is `LIST` or `MISSING`, you'll get junk.
- */
-function node_get_interned_kind<<<__Explicit>> T as Kind>(
-  Node $node,
-)[]: InternedString<T> {
-  return node_get_field_1($node) |> interned_string_from_int<T>($$);
-}
-
-/**
- * Careful, if `$node` is `LIST` or `MISSING`, you'll get junk.
- */
-function node_get_kind_identity(Node $node)[]: KindIdentity {
-  return
-    node_to_int($node) & FIELD_01_PRE_SHIFT_MASK |> kind_identity_from_int($$);
-}
-
-/**
- * This *may* read past the end of the Node to find the very next trivium.
- * This is a very strange function, therefore private.
- */
-function node_get_next_trivium(
-  Script $script,
-  NillableNode $node,
-)[]: NillableTrivium {
-  if ($node === NIL) {
-    return NIL_TRIVIUM;
-  }
-
-  $tu = translation_unit_reveal($script);
-
-  do {
-    $node = cast_away_nil($node)
-      |> node_get_id($$)
-      |> node_id_add($$, 1)
-      |> $tu->getNodeById($$);
-  } while (!Pha\is_trivium($node) && $node !== NIL);
-
-  return $node === NIL ? NIL_TRIVIUM : trivium_from_node($node);
-}
-
-function node_get_parent_offset(Node $node)[]: int {
-  switch (node_get_field_0($node)) {
-    case TRIVIUM_TAG_AFTER_SHIFT:
-      return trivium_from_node($node) |> trivium_get_field_2($$);
-    case TOKEN_TAG_AFTER_SHIFT:
-      return token_from_node($node) |> token_get_field_2($$);
-    default:
-      return syntax_from_node($node) |> syntax_get_field_2($$);
-  }
-}
-
-function node_is_between_or_at_boundary(
-  Node $compare,
-  NodeId $start,
-  NodeId $end,
-)[]: bool {
-  return node_get_id($compare)
-    |> node_id_to_int($$)
-    |> $$ >= node_id_to_int($start) && $$ <= node_id_to_int($end);
-}
-
-function syntax_get_first_child_sibling_id(Syntax $node)[]: SiblingId {
-  return syntax_get_field_3($node) |> sibling_id_from_int($$);
-}
-
-function syntax_get_parent_offset(Syntax $syntax)[]: int {
-  return syntax_get_field_2($syntax);
-}
-
-function token_get_parent_offset(Token $token)[]: int {
-  return token_get_field_2($token);
-}
-
-function trivium_get_parent_offset(Trivium $trivium)[]: int {
-  return trivium_get_field_2($trivium);
-}
-
-function token_get_token_text_trivium_id(Token $token)[]: NodeId {
-  return token_get_field_3($token) |> node_id_from_int($$);
-}
-
-function trivium_get_source_byte_offset(Trivium $trivium)[]: SourceByteOffset {
-  return trivium_get_field_3($trivium) |> source_byte_offset_from_int($$);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/retain_trivia_keep_leading_and_trailing.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HTL\Pha;
-
-function retain_trivia_keep_leading_and_trailing(
-  Pha\RetainTrivia $retain_trivia,
-)[]: (bool, bool) {
-  switch ($retain_trivia) {
-    case Pha\RetainTrivia::BOTH:
-      return tuple(true, true);
-    case Pha\RetainTrivia::NEITHER:
-      return tuple(false, false);
-    case Pha\RetainTrivia::LEADING:
-      return tuple(true, false);
-    case Pha\RetainTrivia::TRAILING:
-      return tuple(false, true);
-  }
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/_Private/type_assert.hack /////
-namespace HTL\Pha\_Private;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\Str;
-use namespace HTL\Pha;
-
-// These functions assert to AnyArray<_, _> to survive fb_compact_serialize,
-// order json_encode_pure. fb_compact_serialize erases the array kind and
-// json_encode_pure turns `dict[3 => X]` into `dict['3' => X]`.
-
-function as_dict_of_node_id_to_int(mixed $raw)[]: dict<NodeId, int> {
-  $out = dict[];
-
-  foreach (($raw as AnyArray<_, _>) as $k => $v) {
-    $key = $k is int ? $k : Str\to_int($k) as nonnull;
-    $out[node_id_from_int($key)] = $v as int;
-  }
-
-  return $out;
-}
-
-function as_vec_of_member(mixed $raw)[]: vec<Member> {
-  $out = vec[];
-
-  foreach (($raw as AnyArray<_, _>) as $v) {
-    $v as AnyArray<_, _>;
-    $out[] = Pha\member_from_tuple(
-      tuple(Pha\syntax_kind_from_string($v[0] as string), $v[1] as string),
-    );
-  }
-
-  return $out;
-}
-
-function as_vec_of_node(mixed $raw)[]: vec<Node> {
-  $out = vec[];
-
-  foreach (($raw as AnyArray<_, _>) as $v) {
-    $out[] = node_from_int($v as int);
-  }
-
-  return $out;
-}
-
-function as_vec_of_syntax_kind(mixed $raw)[]: vec<SyntaxKind> {
-  $out = vec[];
-
-  foreach (($raw as AnyArray<_, _>) as $v) {
-    $out[] = Pha\syntax_kind_from_string($v as string);
-  }
-
-  return $out;
-}
-
-function as_vec_of_token_kind(mixed $raw)[]: vec<TokenKind> {
-  $out = vec[];
-
-  foreach (($raw as AnyArray<_, _>) as $v) {
-    $out[] = Pha\token_kind_from_string($v as string);
-  }
-
-  return $out;
-}
-
-function as_vec_of_trivium_kind(mixed $raw)[]: vec<TriviumKind> {
-  $out = vec[];
-
-  foreach (($raw as AnyArray<_, _>) as $v) {
-    $out[] = Pha\trivium_kind_from_string($v as string);
-  }
-
-  return $out;
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/create_context.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-function create_context()[]: Context {
-  return new _Private\ParseContext(
-    new _Private\Structs(dict[]),
-    new _Private\InternedStringStorage(keyset[], syntax_kind_from_string<>),
-    new _Private\InternedStringStorage(keyset[], token_kind_from_string<>),
-    new _Private\InternedStringStorage(keyset[], trivium_kind_from_string<>),
-  )
-    |> _Private\context_hide($$);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/create_kind_index.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-function create_syntax_kind_index(Script $script)[]: SyntaxIndex {
-  $c = _Private\translation_unit_reveal($script)->getParseContext();
-  return script_get_syntaxes_without_missing_and_list($script)
-    |> _Private\Index::create<Syntax, SyntaxKind>($c, NodeGroup::SYNTAX, $$)
-    |> _Private\index_hide($$);
-}
-
-function create_token_kind_index(Script $script)[]: TokenIndex {
-  $c = _Private\translation_unit_reveal($script)->getParseContext();
-  return script_get_tokens($script)
-    |> _Private\Index::create<Token, TokenKind>($c, NodeGroup::TOKEN, $$)
-    |> _Private\index_hide($$);
-}
-
-function create_trivium_kind_index(Script $script)[]: TriviumIndex {
-  $c = _Private\translation_unit_reveal($script)->getParseContext();
-  return script_get_trivia($script)
-    |> _Private\Index::create<Trivium, TriviumKind>($c, NodeGroup::TRIVIUM, $$)
-    |> _Private\index_hide($$);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/materialize.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-function dematerialize_context(Context $ctx)[]: ReadyToSerializeContext {
-  return _Private\context_reveal($ctx)
-    |> shape(
-      'context' => $$->dematerialize(),
-      'context_hash' => $$->getMaterializationHash(),
-    );
-}
-
-function dematerialize_script(Script $script)[]: ReadyToSerializeScript {
-  return _Private\translation_unit_reveal($script)->dematerialize();
-}
-
-function materialize_context(dict<arraykey, mixed> $dematerialized)[]: Context {
-  return _Private\ParseContext::materialize($dematerialized)
-    |> _Private\context_hide($$);
-}
-
-/**
- * If you provide a value that was not returned by `dematerialize_script`,
- * you are invoking undefined behavior.
- */
-function materialize_script(
-  dict<arraykey, mixed> $dematerialized,
-  Context $ctx,
-)[]: Script {
-  return _Private\context_reveal($ctx)
-    |> _Private\TranslationUnit::materialize($dematerialized, $$)
-    |> _Private\translation_unit_hide($$);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/node_functions.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH\Lib\{C, Dict, Math, Str, Vec};
-
-/**
- * @package This file contains all the functions that operate on `Node`.
- * Think of them as methods on the `Node` "class".
- *
- * Some help for searching:
- *  - All functions are in `snake_case()`. `SHOUT_CASE` things are constants.
- *  - Functions that start with `node_` will work on all Nodes,
- *    sometimes even nillable nodes.
- *  - Functions that start with `syntax_`, `token_`, or `trivium_` only work on
- *    syntaxes, tokens, and trivia (or their nillable counterparts) respectively.
- *  - `Node`, `Syntax`, `Token`, and `Trivium` are not `<<__Enforceable>>`.
- *    Replacements are provided in the form of functions.
- *    - `is`: `Pha\is_x()`
- *    - `as`: `Pha\as_x()`
- *    - `?as`: `Pha\as_x_or_nil()` will return `Pha\NIL`, not `null` on failure.
- */
-
-/**
- * @throws Iff $node is NIL.
- */
-function as_nonnil<T as _Private\Any>(
-  _Private\Tagged<_Private\Maybe<T>> $node,
-)[]: _Private\Tagged<T> {
-  if ($node === NIL) {
-    throw new _Private\PhaException(Str\format('%s got NIL', __FUNCTION__));
-  }
-
-  return _Private\cast_away_nil($node);
-}
-
-/**
- * @throws Iff $node is not Syntax.
- */
-function as_syntax(NillableNode $node)[]: Syntax {
-  $ret = as_syntax_or_nil($node);
-
-  if ($ret !== NIL) {
-    return _Private\cast_away_nil($ret);
-  }
-
-  throw new _Private\PhaException(Str\format(
-    '%s expected a Syntax, got %s.',
-    __FUNCTION__,
-    node_get_group_name($node),
-  ));
-}
-
-function as_syntax_or_nil(NillableNode $node)[]: NillableSyntax {
-  return $node !== NIL &&
-    node_get_group(_Private\cast_away_nil($node)) === NodeGroup::SYNTAX
-    ? _Private\syntax_from_node($node)
-    : NIL;
-}
-
-/**
- * @throws Iff $node is not Token.
- */
-function as_token(NillableNode $node)[]: Token {
-  $ret = as_token_or_nil($node);
-
-  if ($ret !== NIL) {
-    return _Private\cast_away_nil($ret);
-  }
-
-  throw new _Private\PhaException(Str\format(
-    '%s expected a Token, got %s.',
-    __FUNCTION__,
-    node_get_group_name($node),
-  ));
-}
-
-function as_token_or_nil(NillableNode $node)[]: NillableToken {
-  return $node !== NIL &&
-    node_get_group(_Private\cast_away_nil($node)) === NodeGroup::TOKEN
-    ? _Private\token_from_node($node)
-    : NIL_TOKEN;
-}
-
-/**
- * @throws Iff $node is not Trivium.
- */
-function as_trivium(NillableNode $node)[]: Trivium {
-  $ret = as_trivium_or_nil($node);
-
-  if ($ret !== NIL) {
-    return _Private\cast_away_nil($ret);
-  }
-
-  throw new _Private\PhaException(Str\format(
-    '%s expected a Trivium, got %s.',
-    __FUNCTION__,
-    node_get_group_name($node),
-  ));
-}
-
-function as_trivium_or_nil(NillableNode $node)[]: NillableTrivium {
-  return $node !== NIL &&
-    node_get_group(_Private\cast_away_nil($node)) === NodeGroup::TRIVIUM
-    ? _Private\trivium_from_node($node)
-    : NIL_TRIVIUM;
-}
-
-/**
- * This returns an optimized predicate that checks the kind of the node passed.
- * Don't create these matchers in a loop. That defeats the perf benefits.
- * Prefer using matchers over checking the kind if the code becomes easier to read.
- *
- * ```
- * $is_basic_math_operator = create_matcher(
- *   $script,
- *   vec[],
- *   vec[Pha\KIND_PLUS, Pha\KIND_MINUS, Pha\KIND_STAR, Pha\KIND_SLASH],
- *   vec[],
- * );
- *
- * $some_node_or_nil = ...;
- * if ($is_basic_math_operator($some_node_or_nil)) { ... }
- * ```
- */
-function create_matcher(
-  Script $script,
-  vec<SyntaxKind> $syntax_kinds,
-  vec<TokenKind> $token_kinds,
-  vec<TriviumKind> $trivium_kinds,
-)[]: (function(NillableNode)[]: bool) {
-  $identities = Vec\concat(
-    Vec\map($syntax_kinds, $k ==> _Private\create_syntax_identity($script, $k)),
-    Vec\map($token_kinds, $k ==> _Private\create_token_identity($script, $k)),
-    Vec\map(
-      $trivium_kinds,
-      $k ==> _Private\create_trivium_identity($script, $k),
-    ),
-  )
-    |> Vec\unique($$);
-
-  // `-1` is a `false`, since all bits are set, even those outside the mask.
-  $id_0 = idx($identities, 0, -1);
-  $id_1 = idx($identities, 1, -1);
-  $id_2 = idx($identities, 2, -1);
-  $id_3 = idx($identities, 3, -1);
-
-  // All arms are equivalent to the `default:` arm,
-  // but they don't need to iterate the $identities vec.
-  $matcher = ()[] ==> {
-    switch (C\count($identities)) {
-      case 0:
-        return ($_)[] ==> false;
-      case 1:
-        return ($n)[] ==> $n !== NIL &&
-          (
-            _Private\node_get_kind_identity(_Private\cast_away_nil($n))
-            |> $$ === $id_0
-          );
-      case 2:
-      case 3:
-      case 4:
-        return ($n)[] ==> $n !== NIL &&
-          (
-            _Private\node_get_kind_identity(_Private\cast_away_nil($n))
-            |> $$ === $id_0 || $$ === $id_1 || $$ === $id_2 || $$ === $id_3
-          );
-      default:
-        return ($n)[] ==> $n !== NIL &&
-          (
-            _Private\node_get_kind_identity(_Private\cast_away_nil($n))
-            |> C\contains($identities, $$)
-          );
-    }
-  }();
-
-  $look_for_list = C\contains($syntax_kinds, KIND_NODE_LIST);
-  $look_for_missing = C\contains($syntax_kinds, KIND_MISSING);
-
-  if ($look_for_list || $look_for_missing) {
-    return $n ==> {
-      if ($n === NIL) {
-        return false;
-      }
-
-      $n = _Private\cast_away_nil($n);
-
-      switch (node_get_elaborated_group($n)) {
-        case NodeElaboratedGroup::LIST:
-          return $look_for_list;
-        case NodeElaboratedGroup::MISSING:
-          return $look_for_missing;
-        default:
-          return $matcher($n);
-      }
-    };
-  }
-
-  return $matcher;
-}
-
-/**
- * An alternative to `syntax_member($script, $node, $member)`.
- * This version returns a callable that takes `$node`.
- * It can also pick the "right" member to enable polymorphism on the fly.
- *
- * ```
- * $get_clauses = create_member_accessor($script, dict[
- *   Pha\KIND_NAMESPACE_USE_DECLARATION => Pha\MEMBER_NAMESPACE_USE_CLAUSES,
- *   Pha\KIND_NAMESPACE_GROUP_USE_DECLARATION => Pha\MEMBER_NAMESPACE_GROUP_USE_CLAUSES,
- * ]);
- *
- * $namespace_use_or_group_use_declaration = ...;
- * $clauses = $get_clauses($namespace_use_or_group_use_declaration);
- * ```
- *
- * If you are always selecting Syntaxes, @see `returns_syntax`.
- * If you are always selecting Tokens, @see `returns_token`.
- */
-function create_member_accessor(
-  Script $script,
-  Member ...$accessors
-)[]: (function(Syntax)[]: Node) {
-  $tu = _Private\translation_unit_reveal($script);
-  $structs = $tu->getParseContext()->getStructs();
-
-  $interned = Dict\pull(
-    $accessors,
-    $member ==> {
-      $syntax_kind = member_get_syntax_kind($member);
-      $members = idx($structs->getRaw(), $syntax_kind);
-
-      if ($members is null) {
-        return null;
-      }
-
-      $idx = C\find_key($members, $m ==> $member === $m);
-
-      if ($idx is nonnull) {
-        return $idx;
-      }
-
-      throw new _Private\PhaException(
-        Str\format(
-          '%s does not have a member named %s. Only %s does have this member.',
-          $syntax_kind,
-          member_get_name($member),
-          member_get_syntax_kind($member),
-        ),
-      );
-    },
-    $member ==>
-      _Private\create_syntax_identity($script, member_get_syntax_kind($member)),
-  );
-
-  // Optimize for the common case
-  if (C\count($interned) === 1) {
-    $identity = C\first_keyx($interned);
-    $child_number = $interned[$identity];
-    return $n ==> {
-      if (
-        _Private\node_get_kind_identity($n) !== $identity ||
-        $child_number is null
-      ) {
-        throw new _Private\PhaException(Str\format(
-          'No syntax accessor defined for %s.',
-          node_get_kind($script, $n),
-        ));
-      }
-
-      return node_get_child_at_offsetx($script, $n, $child_number);
-    };
-  }
-
-  return $n ==> {
-    $idx = idx($interned, _Private\node_get_kind_identity($n));
-
-    if ($idx is null) {
-      throw new _Private\PhaException(Str\format(
-        'No syntax accessor defined for %s.',
-        node_get_kind($script, $n),
-      ));
-    }
-
-    return node_get_child_at_offsetx($script, $n, $idx);
-  };
-}
-
-function create_syntax_matcher(
-  Script $script,
-  SyntaxKind $first,
-  SyntaxKind ...$rest
-)[]: (function(NillableNode)[]: bool) {
-  return create_matcher($script, Vec\concat(vec[$first], $rest), vec[], vec[]);
-}
-
-function create_token_matcher(
-  Script $script,
-  TokenKind $first,
-  TokenKind ...$rest
-)[]: (function(NillableNode)[]: bool) {
-  return create_matcher($script, vec[], Vec\concat(vec[$first], $rest), vec[]);
-}
-
-function create_trivium_matcher(
-  Script $script,
-  TriviumKind $first,
-  TriviumKind ...$rest
-)[]: (function(NillableNode)[]: bool) {
-  return create_matcher($script, vec[], vec[], Vec\concat(vec[$first], $rest));
-}
-
-/**
- * @param $index is a `ScriptIndex`, `TokenIndex`, or a `TriviumIndex`.
- * The returned nodes are in source order.
- */
-function index_get_nodes_by_kind<Tnode as Node, Tkind as Kind>(
-  _Private\KindIndex<Tnode, Tkind> $index,
-  Tkind $kind,
-)[]: vec<Tnode> {
-  return _Private\index_reveal($index)->getByKind($kind);
-}
-
-function is_missing(NillableNode $node)[]: bool {
-  if ($node === NIL) {
-    return false;
-  }
-
-  $node = _Private\cast_away_nil($node);
-
-  switch (node_get_elaborated_group($node)) {
-    case NodeElaboratedGroup::SYNTAX:
-    case NodeElaboratedGroup::TOKEN:
-    case NodeElaboratedGroup::TRIVIUM:
-    case NodeElaboratedGroup::LIST:
-      return false;
-    case NodeElaboratedGroup::MISSING:
-      return true;
-  }
-}
-
-function is_syntax(NillableNode $node)[]: bool {
-  if ($node === NIL) {
-    return false;
-  }
-
-  $node = _Private\cast_away_nil($node);
-
-  switch (node_get_group($node)) {
-    case NodeGroup::SYNTAX:
-      return true;
-    case NodeGroup::TOKEN:
-    case NodeGroup::TRIVIUM:
-      return false;
-  }
-}
-
-function is_token(NillableNode $node)[]: bool {
-  if ($node === NIL) {
-    return false;
-  }
-
-  $node = _Private\cast_away_nil($node);
-
-  switch (node_get_group($node)) {
-    case NodeGroup::SYNTAX:
-      return false;
-    case NodeGroup::TOKEN:
-      return true;
-    case NodeGroup::TRIVIUM:
-      return false;
-  }
-}
-
-function is_trivium(NillableNode $node)[]: bool {
-  if ($node === NIL) {
-    return false;
-  }
-
-  $node = _Private\cast_away_nil($node);
-
-  switch (node_get_group($node)) {
-    case NodeGroup::SYNTAX:
-    case NodeGroup::TOKEN:
-      return false;
-    case NodeGroup::TRIVIUM:
-      return true;
-  }
-}
-
-/**
- * The children are returned in source order.
- *
- * For the purposes of this function, NIL and MISSING are treated as a list of
- * length 0. In places where you'd expect to find a zero length list in the AST,
- * for example the parameter list of a function without parameters, you'll find
- * a missing instead. This function "does what you wanted" for "missing" lists.
- *
- * @throws For all other non-list kinds or if the list contains non-list-items.
- */
-function list_get_items_of_children(
-  Script $script,
-  NillableSyntax $node,
-)[]: vec<Node> {
-  if ($node === NIL) {
-    return vec[];
-  }
-
-  $node = _Private\cast_away_nil($node);
-
-  switch (node_get_elaborated_group($node)) {
-    case NodeElaboratedGroup::LIST:
-      break;
-    case NodeElaboratedGroup::MISSING:
-      return vec[];
-    default:
-      throw new _Private\PhaException(Str\format(
-        '%s expected a list or a missing, got a %s',
-        __FUNCTION__,
-        node_get_kind($script, $node),
-      ));
-  }
-
-  $function = __FUNCTION__;
-
-  return Vec\map(
-    node_get_children($script, $node),
-    $list_item ==> {
-      $kind = node_get_kind($script, $list_item);
-      _Private\enforce(
-        $kind === KIND_LIST_ITEM,
-        '%s expected a list with list_items, but found a %s in the list.',
-        $function,
-        $kind,
-      );
-
-      return node_get_first_childx($script, $list_item);
-    },
-  );
-}
-
-/**
- * Ancestors are returned in opposite source order.
- * So the first node is the parent, the second is the grandparent, etc.
- *
- * Special case: SCRIPT_NODE is its own parent, but this function has to have a
- * termination condition. For this reason, the ancestor chain is terminated at
- * the first instance of SCRIPT_NODE.
- */
-function node_get_ancestors(Script $script, NillableNode $node)[]: vec<Node> {
-  if ($node === NIL) {
-    return vec[];
-  }
-
-  $node = _Private\cast_away_nil($node);
-  $out = vec[];
-
-  do {
-    $node = node_get_parent($script, $node);
-    $out[] = $node;
-  } while ($node !== SCRIPT_NODE);
-
-  return $out;
-}
-
-/**
- * `$node->children[$offset] ?? Pha\NIL`
- * @throws Iff $index < 0.
- */
-function node_get_child_at_offset(
-  Script $script,
-  NillableNode $node,
-  int $offset,
-)[]: NillableNode {
-  if ($offset === 0) {
-    return node_get_first_child($script, $node);
-  }
-
-  _Private\enforce(
-    $offset > 0,
-    '%s expected a valid offset (0 or greater), got %d.',
-    __FUNCTION__,
-    $offset,
-  );
-
-  if ($node === NIL) {
-    return NIL;
-  }
-
-  $node = _Private\cast_away_nil($node);
-
-  $tu = _Private\translation_unit_reveal($script);
-
-  switch (node_get_elaborated_group($node)) {
-    case NodeElaboratedGroup::SYNTAX:
-    case NodeElaboratedGroup::LIST:
-      $node = _Private\syntax_from_node($node);
-      $child_node = _Private\syntax_get_first_child_sibling_id($node)
-        |> _Private\sibling_id_add($$, $offset)
-        |> $tu->getNodeBySiblingId($$);
-
-      if ($child_node === NIL) {
-        return NIL;
-      }
-
-      $child_node = _Private\cast_away_nil($child_node);
-
-      $child_node_id = node_get_id($child_node);
-      $node_id = node_get_id($node);
-      $parent_offset = _Private\node_get_parent_offset($child_node);
-
-      // fast path: Can see if `$node` is the parent of `$child_node` from bits
-      if (_Private\node_id_sub($child_node_id, $parent_offset) === $node_id) {
-        return $child_node;
-      }
-
-      // slow path: Need to check with the list-sizes or syntax member counts
-      return $tu->syntaxGetChildCount($node) > $offset ? $child_node : NIL;
-
-    case NodeElaboratedGroup::TOKEN:
-      $child_node = node_get_id($node)
-        |> _Private\node_id_add($$, 1 + $offset)
-        |> $tu->getNodeById($$);
-
-      if ($child_node === NIL || !is_trivium($child_node)) {
-        return NIL;
-      }
-
-      $child_node = _Private\trivium_from_node($child_node);
-      $parent_offset = _Private\trivium_get_parent_offset($child_node);
-      // fast path: Can see if `$node` is parent of `child_node` from bits
-      if ($parent_offset === $offset + 1) {
-        return $child_node;
-      }
-
-      if ($parent_offset !== 0) {
-        return NIL;
-      }
-
-      // slow path: Cannot jump to child, must verify every intermediate node
-      // is a trivium, to ensure the trivium returned is a child of `$node`.
-      $parent_id = node_get_id($node);
-      $child_id = $parent_id;
-      $child = NIL;
-
-      for ($i = 0; $i <= $offset; ++$i) {
-        $child_id = _Private\node_id_add($child_id, 1);
-        $child = $tu->getNodeById($child_id);
-        if ($child === NIL) {
-          return NIL;
-        }
-
-        $child = _Private\cast_away_nil($child);
-
-        if (node_get_group($child) !== NodeGroup::TRIVIUM) {
-          return NIL;
-        }
-      }
-      return $child;
-
-    case NodeElaboratedGroup::TRIVIUM:
-    case NodeElaboratedGroup::MISSING:
-      return NIL;
-  }
-}
-
-/**
- * `$node->children[$offset]`
- * @throws Iff $n < 0 or $node has no $nth child.
- */
-function node_get_child_at_offsetx(
-  Script $script,
-  Node $node,
-  int $offset,
-)[]: Node {
-  $child_at_offset = node_get_child_at_offset($script, $node, $offset);
-
-  if ($child_at_offset !== NIL) {
-    return _Private\cast_away_nil($child_at_offset);
-  }
-
-  throw new _Private\PhaException(Str\format(
-    '%s expected more children, the given %s has no child at offset %d (%s child).',
-    __FUNCTION__,
-    node_get_kind($script, $node),
-    $offset,
-    _Private\grammatical_nth($offset + 1),
-  ));
-}
-
-/**
- * Children are returned in source code order.
- */
-function node_get_children(Script $script, NillableNode $node)[]: vec<Node> {
-  if ($node === NIL) {
-    return vec[];
-  }
-
-  $node = _Private\cast_away_nil($node);
-  $tu = _Private\translation_unit_reveal($script);
-
-  switch (node_get_elaborated_group($node)) {
-    case NodeElaboratedGroup::SYNTAX:
-    case NodeElaboratedGroup::LIST:
-      $node = _Private\syntax_from_node($node);
-      return $tu->sliceSiblings(
-        _Private\syntax_get_first_child_sibling_id($node),
-        $tu->syntaxGetChildCount($node),
-      );
-
-    case NodeElaboratedGroup::TOKEN:
-      $parent_id = node_get_id($node);
-      $child_id = $parent_id;
-      $children = vec[];
-
-      for (; ; ) {
-        $child_id = _Private\node_id_add($child_id, 1);
-        $child = $tu->getNodeById($child_id);
-        if ($child === NIL) {
-          return $children;
-        }
-
-        $child = _Private\cast_away_nil($child);
-
-        if (node_get_group($child) !== NodeGroup::TRIVIUM) {
-          return $children;
-        }
-
-        $children[] = $child;
-      }
-
-    case NodeElaboratedGroup::TRIVIUM:
-    case NodeElaboratedGroup::MISSING:
-      return vec[];
-  }
-}
-
-function node_get_code(Script $script, NillableNode $node)[]: string {
-  if ($node === NIL) {
-    return '';
-  }
-
-  return node_get_source_range($script, _Private\cast_away_nil($node))
-    |> _Private\translation_unit_reveal($script)->cutSourceRange($$);
-}
-
-/**
- * Returns the code with all the tokens glued together (no comments or whitespace).
- *
- * The text returned is not code that can be reparsed.
- * This canonicalizes code by stripping comments and whitespace, but in doing so
- * it removes spaces that were needed for the program to parse:
- * ```
- * return 3; // >> return3;
- * ```
- */
-function node_get_code_compressed(
-  Script $script,
-  NillableNode $node,
-)[]: string {
-  if ($node === NIL) {
-    return '';
-  }
-
-  $node = _Private\cast_away_nil($node);
-
-  switch (node_get_group($node)) {
-    case NodeGroup::SYNTAX:
-      return node_get_descendants($script, $node)
-        |> Vec\filter($$, is_token<>)
-        |> Vec\map($$, $t ==> token_get_text($script, as_token($t)))
-        |> Str\join($$, '');
-    case NodeGroup::TOKEN:
-      return token_get_text($script, as_token($node));
-    case NodeGroup::TRIVIUM:
-      $token = trivium_get_parent($script, as_trivium($node));
-      return token_get_text_trivium($script, $token) === $node
-        ? node_get_code($script, $node)
-        : '';
-  }
-}
-
-function node_get_code_without_leading_or_trailing_trivia(
-  Script $script,
-  NillableNode $node,
-)[]: string {
-  if ($node === NIL) {
-    return '';
-  }
-
-  $node = _Private\cast_away_nil($node);
-
-  $nodes =
-    node_get_descendants($script, $node) |> C\is_empty($$) ? vec[$node] : $$;
-  $first = C\find($nodes, $n ==> node_is_token_text_trivium($script, $n));
-
-  if ($first is null) {
-    return '';
-  }
-
-  $end =
-    _Private\find_lastx($nodes, $n ==> node_is_token_text_trivium($script, $n))
-    |> _Private\node_get_next_trivium($script, $$)
-    |> $$ !== NIL
-      ? _Private\cast_away_nil($$)
-        |> _Private\trivium_get_source_byte_offset($$)
-      : null;
-
-  return _Private\trivium_from_node($first)
-    |> _Private\trivium_get_source_byte_offset($$)
-    |> _Private\source_range_hide(tuple($$, $end))
-    |> _Private\translation_unit_reveal($script)->cutSourceRange($$);
-}
-
-/**
- * Descendants are returned in source order.
- */
-function node_get_descendants(Script $script, NillableNode $node)[]: vec<Node> {
-  if ($node === NIL) {
-    return vec[];
-  }
-
-  $node = _Private\cast_away_nil($node);
-  $last_descendant = node_get_last_descendant($script, $node);
-
-  if ($last_descendant === NIL) {
-    return vec[];
-  }
-
-  $last_descendant = _Private\cast_away_nil($last_descendant);
-  $start = node_get_first_childx($script, $node) |> node_get_id($$);
-  $to_inclusive = node_get_id($last_descendant);
-
-  $tu = _Private\translation_unit_reveal($script);
-  return $tu->cutSourceOrder($start, $to_inclusive);
-}
-
-function node_get_elaborated_group(Node $node)[]: NodeElaboratedGroup {
-  switch (_Private\node_get_field_0($node)) {
-    case _Private\TRIVIUM_TAG_AFTER_SHIFT:
-      return NodeElaboratedGroup::TRIVIUM;
-    case _Private\TOKEN_TAG_AFTER_SHIFT:
-      return NodeElaboratedGroup::TOKEN;
-    case _Private\SYNTAX_TAG_AFTER_SHIFT:
-      return NodeElaboratedGroup::SYNTAX;
-    default:
-      return _Private\node_get_field_1($node) === 0
-        ? NodeElaboratedGroup::MISSING
-        : NodeElaboratedGroup::LIST;
-  }
-}
-
-function node_get_first_child(
-  Script $script,
-  NillableNode $node,
-)[]: NillableNode {
-  if ($node === NIL) {
-    return NIL;
-  }
-
-  $node = _Private\cast_away_nil($node);
-  $tu = _Private\translation_unit_reveal($script);
-
-  switch (node_get_elaborated_group($node)) {
-    case NodeElaboratedGroup::SYNTAX:
-    case NodeElaboratedGroup::TOKEN:
-    case NodeElaboratedGroup::LIST:
-      return node_get_id($node)
-        |> _Private\node_id_add($$, 1)
-        |> $tu->getNodeByIdx($$);
-
-    case NodeElaboratedGroup::TRIVIUM:
-    case NodeElaboratedGroup::MISSING:
-      return NIL;
-  }
-}
-
-/**
- * @throws Iff $node has no children.
- */
-function node_get_first_childx(Script $script, Node $node)[]: Node {
-  $first_child = node_get_first_child($script, $node);
-
-  if ($first_child !== NIL) {
-    return _Private\cast_away_nil($first_child);
-  }
-
-  throw new _Private\PhaException(Str\format(
-    '%s expected at least one child, got %s with 0 children.',
-    __FUNCTION__,
-    node_get_kind($script, $node),
-  ));
-}
-
-function node_get_group(Node $node)[]: NodeGroup {
-  switch (_Private\node_get_field_0($node)) {
-    case _Private\TRIVIUM_TAG_AFTER_SHIFT:
-      return NodeGroup::TRIVIUM;
-    case _Private\TOKEN_TAG_AFTER_SHIFT:
-      return NodeGroup::TOKEN;
-    default:
-      return NodeGroup::SYNTAX;
-  }
-}
-
-function node_get_group_name(NillableNode $node)[]: string {
-  if ($node === NIL) {
-    return 'NIL';
-  }
-
-  switch (node_get_group(_Private\cast_away_nil($node))) {
-    case NodeGroup::SYNTAX:
-      return 'Syntax';
-    case NodeGroup::TOKEN:
-      return 'Token';
-    case NodeGroup::TRIVIUM:
-      return 'Trivium';
-  }
-}
-
-function node_get_id(Node $node)[]: NodeId {
-  return _Private\node_get_id($node);
-}
-
-function node_get_kind(Script $script, Node $node)[]: Kind {
-  $tu = _Private\translation_unit_reveal($script);
-
-  switch (node_get_elaborated_group($node)) {
-    case NodeElaboratedGroup::SYNTAX:
-      $kinds = $tu->getParseContext()->getSyntaxKinds();
-      return _Private\node_get_interned_kind<SyntaxKind>($node)
-        |> $kinds->fromInterned($$);
-
-    case NodeElaboratedGroup::TOKEN:
-      $kinds = $tu->getParseContext()->getTokenKinds();
-      return _Private\node_get_interned_kind<TokenKind>($node)
-        |> $kinds->fromInterned($$);
-
-    case NodeElaboratedGroup::TRIVIUM:
-      $kinds = $tu->getParseContext()->getTriviumKinds();
-      return _Private\node_get_interned_kind<TriviumKind>($node)
-        |> $kinds->fromInterned($$);
-
-    case NodeElaboratedGroup::LIST:
-      return KIND_NODE_LIST;
-    case NodeElaboratedGroup::MISSING:
-      return KIND_MISSING;
-  }
-}
-
-function node_get_last_child(
-  Script $script,
-  NillableNode $node,
-)[]: NillableNode {
-  if ($node === NIL) {
-    return NIL;
-  }
-
-  $node = _Private\cast_away_nil($node);
-  $tu = _Private\translation_unit_reveal($script);
-
-  switch (node_get_elaborated_group($node)) {
-    case NodeElaboratedGroup::SYNTAX:
-      $node = _Private\syntax_from_node($node);
-      return node_get_child_at_offset(
-        $script,
-        $node,
-        $tu->syntaxGetChildCount($node) - 1,
-      );
-
-    case NodeElaboratedGroup::TOKEN:
-      $parent_id = node_get_id($node);
-      $child_id = $parent_id;
-      $last_child = NIL;
-
-      for (; ; ) {
-        $child_id = _Private\node_id_add($child_id, 1);
-        $child = $tu->getNodeById($child_id);
-        if ($child === NIL) {
-          return $last_child;
-        }
-
-        $child = _Private\cast_away_nil($child);
-
-        if (node_get_group($child) !== NodeGroup::TRIVIUM) {
-          return $last_child;
-        }
-
-        $last_child = $child;
-      }
-
-    case NodeElaboratedGroup::LIST:
-      $node = _Private\syntax_from_node($node);
-      return
-        node_get_child_at_offset($script, $node, $tu->listGetSize($node) - 1);
-
-    case NodeElaboratedGroup::TRIVIUM:
-    case NodeElaboratedGroup::MISSING:
-      return NIL;
-  }
-}
-
-/**
- * @throws Iff $node has no children.
- */
-function node_get_last_childx(Script $script, Node $node)[]: Node {
-  $last_child = node_get_last_child($script, $node);
-
-  if ($last_child !== NIL) {
-    return _Private\cast_away_nil($last_child);
-  }
-
-  throw new _Private\PhaException(
-    Str\format(
-      '%s expected at least one child, got %s without children.',
-      __FUNCTION__,
-      node_get_kind($script, $node),
-    ),
-  );
-}
-
-function node_get_last_descendant(
-  Script $script,
-  NillableNode $node,
-)[]: NillableNode {
-  if ($node === NIL) {
-    return NIL;
-  }
-
-  $node = _Private\cast_away_nil($node);
-
-  switch (node_get_elaborated_group($node)) {
-    case NodeElaboratedGroup::SYNTAX:
-    case NodeElaboratedGroup::LIST:
-      return node_get_last_childx($script, $node)
-        |> node_get_last_descendant_or_self($script, $$);
-
-    case NodeElaboratedGroup::TOKEN:
-      return node_get_last_child($script, $node);
-
-    case NodeElaboratedGroup::TRIVIUM:
-    case NodeElaboratedGroup::MISSING:
-      return NIL;
-  }
-}
-
-function node_get_last_descendant_or_self(Script $script, Node $node)[]: Node {
-  for (; ; ) {
-    switch (node_get_elaborated_group($node)) {
-      case NodeElaboratedGroup::SYNTAX:
-      case NodeElaboratedGroup::LIST:
-        $node = node_get_last_childx($script, $node);
-        break;
-
-      case NodeElaboratedGroup::TOKEN:
-        return node_get_last_childx($script, $node);
-
-      case NodeElaboratedGroup::TRIVIUM:
-      case NodeElaboratedGroup::MISSING:
-        return $node;
-    }
-  }
-}
-
-function node_get_line_and_column_numbers(
-  Script $script,
-  Node $node,
-)[]: LineAndColumnNumbers {
-  return node_get_source_range($script, $node)
-    |> source_range_to_line_and_column_numbers($script, $$);
-}
-
-/**
- * Huh, shouldn't this return a NillableNode?
- * No, every Node is defined to have a parent.
- * The `SCRIPT_NODE` is defined to have a parent of `SCRIPT_NODE`.
- */
-function node_get_parent(Script $script, Node $node)[]: Node {
-  $tu = _Private\translation_unit_reveal($script);
-  $parent_offset = _Private\node_get_parent_offset($node);
-  if ($parent_offset !== 0 || $node === SCRIPT_NODE) {
-    return _Private\node_id_sub(node_get_id($node), $parent_offset)
-      |> $tu->getNodeByIdx($$);
-  }
-
-  // slow path: Cannot find my parent from bits, must find myself by selecting
-  // an ancestor each time. The last ancestor before me is my parent.
-  $source_order = node_get_source_order($node);
-  $next = SCRIPT_NODE;
-
-  do {
-    $parent = $next;
-    $children = node_get_children($script, $parent);
-
-    $i = C\count($children) - 1;
-    do {
-      $next = $children[$i];
-      --$i;
-    } while (node_get_source_order($next) > $source_order);
-  } while ($next !== $node);
-
-  return $parent;
-}
-
-/**
- * This number can be used to sort nodes back into the order they came.
- */
-function node_get_source_order(Node $node)[]: int {
-  return node_get_id($node) |> _Private\node_id_to_int($$);
-}
-
-function node_get_source_range(Script $script, Node $node)[]: SourceRange {
-  $node = _Private\cast_away_nil($node);
-
-  $start = is_trivium($node)
-    ? _Private\trivium_from_node($node)
-    : _Private\node_get_next_trivium($script, $node);
-  $end = node_get_last_descendant_or_self($script, $node)
-    |> _Private\node_get_next_trivium($script, $$);
-
-  if ($start === NIL) {
-    // I am unable to imagine a script that has nodes past its last Trivium.
-    // My reasoning goes:
-    //  1. Every Syntax (except for Missing) has at least one member.
-    //  2. Each of these members is either a Syntax or a Token.
-    //  3. If the last member is a Syntax, go to 1.
-    //  4. You'll now either have a Token or a missing.
-    //  5. If you have a Token, it will always have a token-text-trivium.
-    //  6. If you have a Missing, and there is no end-of-file token after you,
-    //     what kind of mangled input have you given to the parser?
-    throw new _Private\PhaException(
-      'You have reached code I assumed to be unreachable.',
-    );
-  }
-
-  $start_offset = _Private\cast_away_nil($start)
-    |> _Private\trivium_get_source_byte_offset($$);
-  $end_exclusive = $end === NIL
-    ? null
-    : _Private\trivium_get_source_byte_offset(_Private\cast_away_nil($end));
-
-  return tuple($start_offset, $end_exclusive) |> _Private\source_range_hide($$);
-}
-
-/**
- * The ancestors are returned in opposite source order,
- * so parents precede grandparents, grandparents precede great-grandparents.
- *
- * The returned ancestors contain only Syntaxes, any ancestors that are not
- * Syntaxes are skipped.
- *
- * @see `node_get_ancestors` for the special handling of SCRIPT_NODE.
- */
-function node_get_syntax_ancestors(
-  Script $script,
-  NillableNode $node,
-)[]: vec<Syntax> {
-  if ($node === NIL) {
-    return vec[];
-  }
-
-  $node = _Private\cast_away_nil($node);
-
-  do {
-    $node = node_get_parent($script, $node);
-  } while (!is_syntax($node));
-
-  $node = _Private\syntax_from_node($node);
-
-  $out = vec[];
-  $out[] = $node;
-
-  while ($node !== SCRIPT_NODE) {
-    $node = syntax_get_parent($script, $node);
-    $out[] = $node;
-  }
-
-  return $out;
-}
-
-function node_is_token_text_trivium(
-  Script $script,
-  NillableNode $node,
-)[]: bool {
-  if (!is_trivium($node)) {
-    return false;
-  }
-
-  return _Private\cast_away_nil($node)
-    |> node_get_parent($script, $$)
-    |> _Private\token_from_node($$)
-    |> token_get_text_trivium($script, $$) === $node;
-}
-
-function patch_node(
-  Node $node,
-  string $replacement,
-  shape(?'trivia' => RetainTrivia /*_*/) $options = shape(),
-)[]: Patch {
-  return new _Private\PatchNode(
-    $node,
-    $replacement,
-    $options['trivia'] ?? RetainTrivia::NEITHER,
-  )
-    |> _Private\patch_node_hide($$);
-}
-
-/**
- * @throws If any Replacement in `$patches` overlaps with any other Replacement.
- */
-function patches(Script $script, Patch ...$patches)[]: Patches {
-  return Vec\map(
-    $patches,
-    $p ==> _Private\patch_node_reveal($p)->toReplacement($script),
-  )
-    |> new _Private\PatchSet(node_get_code($script, SCRIPT_NODE), $$)
-    |> _Private\patch_set_hide($$);
-}
-
-function patches_apply(Patches $patches)[]: string {
-  return _Private\patch_set_reveal($patches)->apply();
-}
-
-/**
- * This API will become an alias for `patches_combine($patches, $throw_on_conflict)`
- * where `$throw_on_conflict` is an argument that allows you to specify
- * a conflict resolution strategy.
- * For now, this was just easy to implement and it fulfills the basic need.
- *
- * @throws If any Replacement in `$patches` overlaps with any other Replacement.
- * @throws If `$patches` is empty.
- * @throws If any Patches in `$patches` was generated with a different source text.
- */
-function patches_combine_without_conflict_resolution(
-  vec<Patches> $patches,
-)[]: Patches {
-  _Private\enforce(
-    !C\is_empty($patches),
-    '%s expected Patches, but none were provided.',
-    __FUNCTION__,
-  );
-
-  $first = C\firstx($patches) |> _Private\patch_set_reveal($$);
-
-  $function_name = __FUNCTION__;
-
-  return Vec\map($patches, $p ==> {
-    $p = _Private\patch_set_reveal($p);
-
-    _Private\enforce(
-      $first->cayBeCombinedWith($p),
-      '%s expected that all Patches could be combined, '.
-      'but one of the Patches was created for a different Script.',
-      $function_name,
-    );
-
-    return $p->getReplacements();
-  })
-    |> Vec\flatten($$)
-    |> new _Private\PatchSet($first->getBeforeText(), $$)
-    |> _Private\patch_set_hide($$);
-}
-
-/**
- * Integrate a cast on the return value into the callable.
- * Commonly used in combination with `create_member_accessor`. 
- * @example
- * ```
- * $get_function_name =
- *   Pha\create_member_accessor($script, Pha\MEMBER_FUNCTION_CALL_ARGUMENT_LIST)
- *   |> returns_syntax($$);
- * ```
- * hackfmt-ignore
- */
-function returns_syntax<T>(
-  (function(T)[]: NillableNode) $func,
-)[]: (function(T)[]: Syntax) {
-  return $x ==> $func($x) |> as_syntax($$);
-}
-
-/**
- * Integrate a cast on the return value into the callable.
- * Commonly used in combination with `create_member_accessor`. 
- * @example
- * ```
- * $get_binop_operator =
- *   Pha\create_member_accessor($script, Pha\MEMBER_BINARY_OPERATOR)
- *   |> returns_token($$);
- * ```
- * hackfmt-ignore
- */
-function returns_token<T>(
-  (function(T)[]: NillableNode) $func,
-)[]: (function(T)[]: Token) {
-  return $x ==> $func($x) |> as_token($$);
-}
-
-function script_get_syntaxes(Script $script)[]: vec<Syntax> {
-  $tu = _Private\translation_unit_reveal($script);
-  return $tu->getSourceOrder()
-    |> Vec\filter($$, is_syntax<>)
-    |> _Private\syntaxes_from_nodes($$);
-}
-
-function script_get_syntaxes_without_missing_and_list(
-  Script $script,
-)[]: vec<Syntax> {
-  $tu = _Private\translation_unit_reveal($script);
-  return $tu->getSourceOrder()
-    |> Vec\filter(
-      $$,
-      $n ==> node_get_elaborated_group($n) === NodeElaboratedGroup::SYNTAX,
-    )
-    |> _Private\syntaxes_from_nodes($$);
-
-}
-
-function script_get_tokens(Script $script)[]: vec<Token> {
-  $tu = _Private\translation_unit_reveal($script);
-  return $tu->getSourceOrder()
-    |> Vec\filter($$, is_token<>)
-    |> _Private\tokens_from_nodes($$);
-}
-
-function script_get_trivia(Script $script)[]: vec<Trivium> {
-  $tu = _Private\translation_unit_reveal($script);
-  return $tu->getSourceOrder()
-    |> Vec\filter($$, is_trivium<>)
-    |> _Private\trivia_from_nodes($$);
-}
-
-function source_range_format(SourceRange $source_range)[]: string {
-  list($start, $end) = _Private\source_range_reveal($source_range)
-    |> tuple(
-      _Private\source_byte_offset_to_int($$[0]),
-      $$ is (mixed, nonnull) ? _Private\source_byte_offset_to_int($$[1]) : null,
-    );
-
-  return $end is null ? '['.$start.', '.'...]' : '['.$start.', '.$end.']';
-}
-
-function source_range_overlaps(SourceRange $a, SourceRange $b)[]: bool {
-  $a = _Private\source_range_reveal($a);
-  $b = _Private\source_range_reveal($b);
-
-  $a_end = $a[1];
-  $b_end = $b[1];
-
-  return (
-    $a_end is null || _Private\source_byte_offset_is_less_than($b[0], $a_end)
-  ) &&
-    ($b_end is null || _Private\source_byte_offset_is_less_than($a[0], $b_end));
-}
-
-function source_range_to_line_and_column_numbers(
-  Script $script,
-  SourceRange $range,
-)[]: LineAndColumnNumbers {
-  $tu = _Private\translation_unit_reveal($script);
-  $breaks = $tu->getLineBreaks();
-
-  list($start, $end_exclusive) = _Private\source_range_reveal($range);
-  $end_exclusive ??= $tu->getSourceEndOffset();
-
-  $count = C\count($breaks);
-  $i = $count - 1;
-
-  while (_Private\source_byte_offset_is_less_than($start, $breaks[$i])) {
-    // Quickly find a good place to start looking.
-    $i = Math\maxva(0, $i - _Private\TranslationUnit::SOME_LARGE_JUMP);
-  }
-
-  while (
-    $i < $count &&
-    _Private\source_byte_offset_is_less_than_or_equal($breaks[$i], $start)
-  ) {
-    ++$i;
-  }
-
-  $start_line = Math\maxva(0, $i - 1);
-  $start_column = _Private\source_byte_offset_to_int($start) -
-    _Private\source_byte_offset_to_int($breaks[$start_line]);
-
-  while (
-    $i < $count &&
-    _Private\source_byte_offset_is_less_than_or_equal(
-      $breaks[$i],
-      $end_exclusive,
-    )
-  ) {
-    ++$i;
-  }
-
-  $end_line = Math\maxva(0, $i - 1);
-  $end_column = _Private\source_byte_offset_to_int($end_exclusive) -
-    _Private\source_byte_offset_to_int($breaks[$end_line]);
-
-  return new LineAndColumnNumbers(
-    $start_line,
-    $start_column,
-    $end_line,
-    $end_column,
-  );
-}
-
-/**
- * Member names are returned in source code order.
- */
-function syntax_get_members(Script $script, Syntax $node)[]: vec<Member> {
-  $tu = _Private\translation_unit_reveal($script);
-  $structs = $tu->getParseContext()->getStructs();
-  $kind = node_get_kind($script, $node) |> syntax_kind_from_kind($$);
-  // This default is needed for List and Missing.
-  // They don't get "learned" in the same way any other syntax would.
-  return $structs->getRaw()[$kind] ?? vec[];
-}
-
-function syntax_get_parent(Script $script, Syntax $node)[]: Syntax {
-  return node_get_parent($script, $node) |> _Private\syntax_from_node($$);
-}
-
-/**
- * @see `create_member_accessor`, which is preferred over this function.
- *      `syntax_member` rediscovers offsets with each invocation.
- *      `create_member_accessor` precomputes offsets instead of doing string
- *      comparisons.
- */
-function syntax_member(Script $script, Syntax $node, Member $member)[]: Node {
-  $ii = 0;
-
-  foreach (syntax_get_members($script, $node) as $m) {
-    if ($m === $member) {
-      return node_get_child_at_offsetx($script, $node, $ii);
-    }
-
-    ++$ii;
-  }
-
-  throw new _Private\PhaException(Str\format(
-    'Expected a %s to get member %s, but got %s.',
-    member_get_syntax_kind($member),
-    member_get_name($member),
-    node_get_kind($script, $node),
-  ));
-}
-
-function token_get_parent(Script $script, Token $node)[]: Syntax {
-  return node_get_parent($script, $node) |> _Private\syntax_from_node($$);
-}
-
-function token_get_text(Script $script, NillableToken $node)[]: string {
-  if ($node === NIL) {
-    return '';
-  }
-
-  return _Private\cast_away_nil($node)
-    |> token_get_text_trivium($script, $$)
-    |> node_get_code($script, $$);
-}
-
-function token_get_text_trivium(Script $script, Token $token)[]: Trivium {
-  $tu = _Private\translation_unit_reveal($script);
-  return _Private\token_get_token_text_trivium_id($token)
-    |> $tu->getNodeByIdx($$)
-    |> _Private\trivium_from_node($$);
-}
-
-function trivium_get_parent(Script $script, Trivium $node)[]: Token {
-  return node_get_parent($script, $node) |> _Private\token_from_node($$);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/parse.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-use namespace HH;
-
-function parse(string $source, Context $ctx)[]: (Script, Context) {
-  $ffp_parsed = HH\ffp_parse_string($source) as dict<_, _>;
-  $parse_tree = $ffp_parsed['parse_tree'] as dict<_, _>;
-  return parse_from_tree($parse_tree, $source, $ctx);
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/parse_from_tree.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-/**
- * @param $parse_tree ought to be the `$ffp_parsed['parse_tree']` of a script.
- * @see `\HH\ffp_parse_string()` and `\HH\ffp_parse_string_native()`.
- */
-function parse_from_tree(
-  dict<arraykey, mixed> $parse_tree,
-  string $source_text,
-  Context $ctx,
-)[]: (Script, Context) {
-  $ctx = _Private\context_reveal($ctx);
-  $structs = $ctx->getStructs();
-  $member_names = $structs->getRaw();
-  $known_token_kinds = $ctx->getTokenKinds()->asKeyset();
-  $known_trivium_kinds = $ctx->getTriviumKinds()->asKeyset();
-
-  $intermediates = _Private\create_intermediates(
-    $parse_tree,
-    inout $member_names,
-    inout $known_token_kinds,
-    inout $known_trivium_kinds,
-  );
-
-  $ctx = $ctx->upgradeIfNeeded(
-    $member_names,
-    $known_token_kinds,
-    $known_trivium_kinds,
-  );
-
-  $tu = _Private\create_translation_unit($intermediates, $source_text, $ctx);
-
-  return
-    tuple(_Private\translation_unit_hide($tu), _Private\context_hide($ctx));
-}
-
-///// vendor/hershel-theodore-layton/portable-hack-ast/src/public_types.hack /////
-namespace HTL\Pha;
-/** portable-hack-ast is MIT licensed, see /LICENSE. */
-
-type Context = _Private\Context;
-type NillableNode = _Private\NillableNode;
-type NillableSyntax = _Private\NillableSyntax;
-type NillableToken = _Private\NillableToken;
-type NillableTrivium = _Private\NillableTrivium;
-type Node = _Private\Node;
-type NodeId = _Private\NodeId;
-type Patch = _Private\Patch;
-type Patches = _Private\Patches;
-type Script = _Private\Script;
-type ReadyToSerializeContext = _Private\ReadyToSerializeContext;
-type ReadyToSerializeScript = _Private\ReadyToSerializeScript;
-type SourceRange = _Private\SourceRange;
-type Syntax = _Private\Syntax;
-type SyntaxIndex = _Private\KindIndex<Syntax, SyntaxKind>;
-type Token = _Private\Token;
-type TokenIndex = _Private\KindIndex<Token, TokenKind>;
-type Trivium = _Private\Trivium;
-type TriviumIndex = _Private\KindIndex<Trivium, TriviumKind>;
-
-const _Private\Syntax SCRIPT_NODE = _Private\SCRIPT_NODE;
-const NillableSyntax NIL = _Private\NIL;
-const NillableSyntax NIL_SYNTAX = _Private\NIL_SYNTAX;
-const NillableToken NIL_TOKEN = _Private\NIL_TOKEN;
-const NillableTrivium NIL_TRIVIUM = _Private\NIL_TRIVIUM;
-
-///// vendor/hershel-theodore-layton/pragma/src/pragma.hack /////
-namespace HTL\Pragma;
-/** pragma is MIT licensed, see /LICENSE. */
-
-/**
- * @package The `pragma(...)` directive and `<<Pragmas(...)>>`
- * attribute are a more structured way to communicate with source analyzers.
- * The typechecker looks for hh_fixme and hh_ignore_error directives.
- * HHAST looks for hhast_ignore_error, hhast_ignore_all, and hhast_fixme directives.
- *
- * I don't like the state of things, because nothing checks the comments.
- * It is unclear if a comment is a directive for something, a normal comment,
- * or worst of all, a dangling directive that is silently misinforming you.
- *
- * I am not going to change the typechecker to stop using comments for suppressions,
- * but userspace libraries are welcome to adopt this informal standard.
- *
- * There are two ways to invoke a pragma.
- *  - The `pragma('example_lib', 'strict_mode=1')` directive.
- *  - The `<<Pragmas(vec['one', 'ok=1'], vec['two', 'ok=false'])>>` attribute.
- *
- * The pragma directive accepts any number of arguments.
- * The 1st addresses a library, and the 2nd and subsequent are implementation-defined.
- * These take effect for the lines they are on and the next line.
- *
- * The attribute takes any number of vecs, each of which is a directive.
- * The scope is from attribute to closing curly brace if atop a class.
- * A file attribute `<<file: Pragmas(...)>>` affects the entire file.
- *
- * A library that uses pragmas is required to emit a diagnostic for pragmas
- * that start with the library name and that can not be parsed or are invalid.
- * This prevents broken directives and attributes from hanging around.
- *
- * You must use a canonical use statement for the pragma directive and attribute.
- * Using a Pragma namespace and using qualified names is not allowed.
- * `use namespace HTL\Pragma; ... Pragma\pragma(...) ... <<Pragma\Pragmas(...)>>`
- * Using `use function HTL\Pragma\pragma as not_pragma` is also not allowed.
- *
- * A PragmaMap is included in `hershel-theodore-layton/portable-hack-ast-extras`.
- * A checker for aimless pragmas (where the library is not known) is included in
- * `hershel-theodore-layton/portable-hack-ast-linters`.
- */
-use namespace HH;
-
-/**
- * @param ...$_args[0] The name of the library you are targeting.
- * @param ...$_args[1..] Arguments passed to the library.
- */
-function pragma(string ...$_args)[]: void {}
-
-/**
- * Apply a set of pragmas to an entire scope.
- * Each `vec[]` is parsed as its own `pragma(...)` directive.
- */
-final class Pragmas
-  implements
-    HH\ClassAttribute,
-    HH\EnumAttribute,
-    HH\EnumClassAttribute,
-    HH\FunctionAttribute,
-    HH\MethodAttribute,
-    HH\FileAttribute {
-  public vec<vec<string>> $values;
-
-  public function __construct(vec<string> ...$values)[] {
-    $this->values = vec($values);
-  }
-}
+‹     ìı{_I’(ÿÏ§¨îU¤nÛ=³³»¾à•Anë+	w{GR5*J3=ı~ö7#ò•™•%À6çÙó;;mT™y‰ŒŒˆŒËãÇäÿEùbü8NGgé4É7/âñ§~¼1‹/“|“èíp÷èà"ŞMgËd‘’ÅU²x¾ñøÇ£y¶XÆ§Óäô{çËGSÚèQ­¢4öºÃhš“YLZQ$ÑãİîvgĞÙŒ~|¼±±Ê“HÁõöh7==úı]r“'ËV4X.ZÑûdüÇslx¶š—i6‹Î§Ùéóñ·˜Bc#Šòå"Gµù"û{2^Y¶l‘ß?!ĞôóVT;ód4I¤M¶H“ÚñG5şÛÍ(OâÅøb4IæË‹ÖFóã$9‹WÓe~üÌ„ö;é¼H–«ÅÆ{tÏa(‘K„8¢—/·°ñ"''-æ&v‰¢mé°P­%ÿ/ãE`ad£H_ŒÍúãú&àÚ$ë{´HæI¼lÔÿXo1MÒâG¤†º„ŞŒâ<ºJÆ/F[üÇ&üƒíl/—É¬Q«…ü3!ˆjŸqĞä?]QÑ’ÂQNhº?ßøccã±F»Œè¾êÕp™ôÉ 78y2¸£‹$$‹æGBS°ºĞûëGÉªöi–]ÏFóE|~“ÿ$géç„l3#Áu‰³~L°F ÿ$mÈ¸”²ÑQœçéùì2™-GËl”\Î—7dt9ùk5Ÿ&£l1Ê/âyÂFü‚m·àf6ñÙâÙdt™,/²‰§Ëj™M³x2ºÉV‹Ñ8›xÀÉŠNGcrp8Ü|´š‘EÊÇÙ‚üÆçÙl/IïÅ9Nh5ƒ&ŸÉê‘É“ãÙè4åéå|š¥ÉÄk™|^Ò%º\‘ÿ!	(²éÒ×mEx=”“tÉ¿ãé¶Yà%ùÇÊ³v2ØQ|“‘¥dgFÓ,›—´/ÈùOFgÙâ:^Lm¦ñåé$ÎKúMÒ|L:ŒfÉµ2Í²^äÈŒbÒpô÷Œ°¼-œNB/ÓiR¶çgéŒ¬Ùìø”œ±˜¬àxJH=ñt9Ofd‰—@Säö]Æ7£Y†ë|™Mè]Æ³9¾7> „·-ø	 Û>Q_‘i4ÒqXd«9N–pße‚3Î/âÓd™ş3Æ3V©3™Å"¹Ì®|„æíB© õ&¤|-ÈqÎ/8’iv,à¬»{QrÍãa°Ô¸œäO‚ì"fG«tºxŠ`°§„>H?Bó¸G‹ŒÈd$|wgdd‘µgÓ+8èl<ÍrypÜPfÉ9R[š«Œa’8@w³„|ÃyyÖPÜ7ä*H¯àäæ7—§Ù´JXr8V¾UŸ‘‰Mó$=ó7ÁÛ#dïIczBÙR’ÓOÿ.=¥¤'á1ä39RKÀµX²3}ãN§á>ó‹ù(ù9ËéòÆÛ^Ğ#üaMKÎ»–é¡aÌƒlaî#C¸ÃŒËØ,k· Ã&‚áˆÜiIiã<¹L	»$C>%,ŒŒBî~iW2mÂÿ±Ê€FÙ2°[¨|”
+M‘C¸ ·4pM\ğ31EŠ´
+¤ÁjR¹şrÌ€D$‡Î‰à0N@,Œ`‘œã›]Rä—åi<ÉšyvøĞErŠW—„6/OÉïY˜è	¹üˆŒ”“½!ç?QYÿò4=_á¸ V3rñ/p¦~h5[=ÍS‚ğ*^¤Ø¥¬uÈgM`®w9­{-éıÈL?¨ñuº¼ù•¥ù”ˆà@ë§DÖÈ	7º¨ÒèS:óÌF,/Aœßõ9|Å³«ù‰˜ß¨åãE:'*sm¤ücNDÏj‚†åà]T¥ ¢%U4(\®=rÀB‘ä ÅOVı„~mŞÕPum‰Q‚R†UP­¼c ªÌ2şLXÍ$ù>ª -oÈÿÄ“I
+§ D2àÅAhCòCWp­¬6÷rÕ|ôããºº¾ÌğÀ§hèÈÓôô±ªU~ŠòïYKYÒ?ÈL`=#u¨°U\Ûƒe#ÍbÕğ/\´._3øi˜}JfÚ/}*¬-øß¸¨{°¦BïV6şÛY,²Å,¯¾„×«Nàs|æbE4ÂÑâ	q÷¿;ÚvÁ„b­™#ìh©Ì Ör¯á¥K­83‚ y?ŒP]&ûıä9ùÈåp5’sªtãmœ7±§Ñ÷§—Ñ6Õº¼ÀúNHz5tD/	*†Ÿï÷³ˆvüîhö½èË€Á­§3öKXÕ#2ÈËxIOó÷?L"ê#lûC‰Æ›››X«0Üâ/ÑVô4zÕózô,ªã×7³˜Ñ+‹hRÌÀ¨-.üÒ¨ÍãåEK®·3¢¹µ$_©Í-y´µÌ¸æf=ÊÎ¢ú&BPÌ0]Ğ×ÑZ÷ıÑŒÌH·ıÙlnó{\×?JÕU?$šû{şM0.z®Èb>cišÕæ0bs¯	ıŒ*eô½ıÑá~g°İ>èìŒ»íÁÛÎ eş~¸ßİîít¼§Õ¾xwx`GêD°93"î?¿±¤Ê¯@ø"îCJµxıJûv=OÈv½®‘?K›u€ãü@ö-ÏúœódIWbŸlé¯T¬Ûç»ÛMèÇFSf{°Ìø¢SS>xå(4šj7ªÇ`¿ú£Ğè-Pv{0ŒØvD”ë*ºd
+úDwFù‹0ÀÀk,iL´aÙ¤ğyíÁ3“¿ow*Ö`WåõàX™
+ƒ‰¨v;ˆ—ã‹$o4ğ„¯ÔjpH¶´á¿Âik¿=Ã«}t@MGs HÔ30Õ\%ñGÄÔOæS²§¨)šè
+Ï+æş½°Ñ`ùº.|ëÊ¶‡äG×†vÂ}k´¶o
+ûGĞ»ŒÉÄyÓMgäØ;o`gZÑ¿\‹N>òX®‚4·OÉô†è®é7Ãğ»=üq#ú1êE`IrÆÈ h|§SÀÜŠ®“(^$dí¢íİntIÖlz/H3h¡U•°ı‹„Ìm™E—ñ§$ÊÉDË‹xIş'!0N#:bè
+æÁh–-£x<N'„lÁ¥"#C…—`Ìü:@ó`|,omMÚ+æi–MÕ·ËnïH›\£‰ç/›Qö^Ø.äçßà2|wÈe×ŠŞqıxYoà»–¼¯õÉğ«ï¹ø|Gï;ñ^u¯Ğä¦ıëã)ºÏ=°//xö®W"¼Ê×s}J–Á9Ÿ¨áê¯! Â@€.E×Šè"×æÈD™I?Ø¬£lP]c”Í¦7¤Â¢U‹MmÁ=ùõ"™í¤9œƒIÃÖj¹¸ÙÍÆŸ>70üsH4ÌgÏoÛıÎëÁ(Ÿ²sU`hEu|¿!÷şBgÅ@Ã ÛÓi§Ö¤Š34Œ—ŸÉ\à2b/kìˆ±<õ%Šb©!G*;tı@Í	%‡‚tÃå¸Ÿ+j4@‚cofréğ–-ÎÍÉèZ&]²• %é»í#xœ «¾Ğ¢ø@èà?²1àJƒ5…µ£@şàj7J..Æ!Æù %ûMÈ%WüMÏ3,=PÄ6%ºa,Ão¡À­÷0Å¤E`7âKDƒ„~@TMM:­²/hĞÄÏ.í¸ÛŠ­ıàêÆ^Ëz4‡òOn“œ‚“B“61üİÌ¦N«Š‰Æ¨áGª"OƒÆÖ’ÓÔí‡ÁN2émš5¡œÂqšwÏgà÷€l¦p@ @îıÍœ!`¶kŞ¸b2ìÎ7-˜#ìWŞU–NØ}f¿E®‰b˜ĞÛÉ'ä	ºE:¿mïºï;ìL¡^'n?ë=ñ¼xXGÆQ¥`ZÖûƒ"ª~j)1æ§E9e°É„ö1èRBğ 9O´É0DRx´EˆæSã‰úËr±çœ„.‡¶Z¸Wb¹Ø¬T?ÃwiíM Iæ›A`ZD¦vú0¶@6?ÃVi.¬–sáš®[u—WªÃbÆ 6víœ‰÷Î!Ñ™}“>€Qã2ıL¤ö¹YôŞ£’t‰À*{Fèª!`Rç,¡o2ğºƒ"l4sAÚ­§¥Ñ–ı‡€-3ŸÅŸş¤®7ûU\ÑZŒ}™ñÁ0s[5{…×;ç:BvÔ§hyK®Ao{½:;KÈ5ÑGò ÂdS±È±ƒvº Lép¶LÙ9«ÿø¸n;d†ã›q°T…/ÓÊŒLvÛÙtu9Û_á‹>)Ú1¹Õ¦~$Š}¬&ø7%Èş18‘%ş[„oH&õd6Y³+şk£©*İŠ%©0*şè'0Ô>£Mh í`¢Ò0d UÒ¥hè§Ã˜„SŸ¥x:|Á5,&YÁCÀ·À¢Ÿ»™6°kï£Ùïoßşep‘^âmru¢CëV„RLò™\öğ¶öâÅhÔ™‘3}‘±om™Ö…qôr9‡é—s‚b1š[0ñ#2	àñtDö£QıÒÖ‘c£Y`ÔŠF[ÍõÑHïÏ&„>%õãèÕ+ÁÛÚ0¥‚É3¦xD/¤F}›êšQE ²<OÉÄêL¿LÆYTÇ]ä0?}Vß´¡Ù¬“ŒàGÀ°È¦jÔî?~œ'Ó³Ç³üñ<Ô{bSïEV!™]5êoÛÛïFÛ½½ƒîn§?túïÉºûƒa{»SìÏnÃ&ô¿¼!(¸mìæ’‰2 ¢?MGñâüŠ,¾±ôğ+üŠŞ–|ES^D"­qP­èiß&ë û<"ªóuNgèH2“7§€´ÑDñ
+Ê¿SøŒöÏ¢ùEüÑà–PÁs3¿ˆŞu’şğzw˜Ò¹€ÿñçcíî—W¥¼%Õ[›,Ø;(’mÂ±¨[„à¯/àÎm|§²‚\°yqA³ô¼.5ê3Šû…Gøˆ\(Å4øp4(MÍV­ï‡õYYÃlV? F8W°Ü‘ı˜lòs`®%×*ÍÑH¤Xcñ'iA*|§¿5„¯‹**
+Ä-FêÓ&|`ƒ¹š0Ë5û„¶šqF»ígœëFd¥N“„Èµä"^ÂG"UHÏ©[3ƒ#‡°;ë°iO–dj¯$WÃU	>‰Ø˜»—àécØÈÎÑßë°ô?”òAê• 	hUÇg2#6Yú:W„L/@şÙ8(ƒªØ`‹ •øöÀ'rkI@äuõ?ŸOÓ%Z!ê­:İü:]¢’.?Nà¼ÕñI"=»y‘À˜ëÏŸa'%MS¹«Û.|~BTöÁñˆuæà5ßNâ.›½%J	œ²YàÿQc}C]~ùÖÆ‡zJn§O…‘â•cUÚğ£Í8@ÛzÈ–©¾`îó|7”GOÕâ[#ôÃlÓÑ3ú:•òjÇ–ù2I%hÃåóo—0Ñi:ÁÇ±ˆé
+Şb[ğ¢E™h”Ù,7”|Ç[‘\ÑãzaıñZ~*}}µÒ#§S+©jãr‡Rw¤i¢²ÎšPí	Ëÿ„¬üSzğø¨©Šóbo;x‡wÈ}ÿvÂ˜©‡F`ñ[‘²>e"Ô‘+¢şd‹Ç„ù\$ÓGË‹$#'¦ñÍ2›=¾¸¸º|DîíÅ£œ
+he¸ˆ'W±[{a2UZôî~Eh(Ò6”,ÁR>:÷‘æÑ‰¼ôNÈÛîı^ô—Í§OşüÓ¦Ş.^,â[ËŸ×ala,TdFü5fúÃï”¶©ÉA1Í²Ã·)¦Êe+:'’Î9Û6½Ã"…,¦2ÊÇ#l@uHc!èmî_„+¶¡+€ñk­€«Î!Şİìw‰î`lX+:]Q¯ôM¥{Œ‹@"
+‘ÆôO²ë‘Ó&ğ¸K~É/^?Á84¹ôZÑğjKxŒ?áß …Œ—ìAª=»iãâòŠ=Û¹‡ÍÖäVÃ&ë£ŞjÀÊÉØÈõ¡)f¨ì
+÷ŠÄ´\¬à5æ±!š±vâŠ~lù8Íàp¦cı¤ÿPâÅq0‚/®E•!pIø¼+N÷ÅÙ²ì'×D¹¸ u´-"#bi1D€Xº:ÍTJ"—ü›ÜD:7Kıí\nFİe·X&rÖ›0_"-ç'-Ğ.‰ü ^<,òj~:9¡Îüì&Ê¦ê—#ÆBPŠnF¯oàÒ^‚Mzà*!ÿ!’LD°.Òóè,]€ğ~Ö3 ÷)IæÑ<YÀgìLfãAhÔ7hæZk5ˆ è G)‘ÊaÜlbÑ­·@3’ÕiDN*Ec¹ qD#üî½&@—ÕºİÓş†Fr‰áà„ç«SSŞÁ#ì¹X·gÁ“xz4î ÙlÍÔõ†=´4·Ä³òw"Xÿbª‰\=²¡Óx>'ıèØrŠÙnĞ^±(Y2 ÔE@Á»¥?Y(Ì\‡XÅşÑ–26ú+}Ì¡Àup´õ’|øøôØ´@Gú“Ô¥”j“j_Ã¦lIp¯à|,>–â½eİˆ©¬—XJ›¤­–¾6ÕGï	àî©Á·˜‡¥xOƒğh½§c#bœuì¸nÈ¬#Ây~áÑšÑéM”Æ†¾‰lÇ¨1ÇÛŒœ¥²ÈI
+¬r¼Œ˜9°óM
+mx‘ÌZ ‰¨ZD²‡æ’ÙC`g¾ÄP†	…™à€@<Ş‡V†ÁšîmAÜ‘”újiŞÎ»9sĞiñß¸cùûÿğ¸VXñ+X¾Í–ïA“ÑZıv1¾Âqd¸“,¦r"á¤;²bND³â¯zW”B`º@*Ü‘9°àpsKîZ(:¹Aš1£“éìßİK ádòF7·„tå•\tCábÚæE/?)zH\¢›¹âlMŞu÷wFıÎ›îoàÅ<ìw÷á¦ZŞ «ûnï˜Şîo»½ıÑv{wwÔù`Èßî†½îş°Ó/´5©åZ«ğ?‡íİî›.Y†ıö^Ç„¯÷m`»·Oùp{ØëãüÒÙïô»Û£á‡ƒÎhpĞÙ†!õÍÛ=ò¬Ho÷×É³–ƒîŞÁn§"~>h÷ÉÜ‡ü³¹â<ëKàŸ;„+8ùØÚ¾(ûòÛÛƒÑön{0°}èìvö:ûÃ"´cûÿ±9ïî1Ûgu@Ê¬×÷éê”\gåJæŠ23
+†¹A²¨Oàâà¿è¦]èÌEiï85h?GŒÎ3&y›‘ª.¢—˜$™Œ¸·(N£ÁYí~:ÅÈ
+¨ø’%|r¬øñ6ŠÛlà ^¶:ÔîQK´ßİmr¯^ü‘~ÈşR¤8ÊçDıÑ€Ü-¸€o@éˆN AA&ò2¸‘nrXDUºŒ?Qe'ã‚G4Í²O¼’’á¯¦ñ"I$h‹ïO•'¢3'4pâPÎÀ0e°@“¡`¾Z€£êjtÿ +¶ÙäNÖÚäYŒ'‹È±¬MıYüÏÑQ[:aÕñı„Şßlİ ‡chorèX½«»ec yÃv6ùCå-v]ˆè±ËßŸ(2]b ‹?Iàám”N8±Iš4àÈGk×Ğ´ö¶¬g€EÈïğ¬ÓNlú­Â«ûÆ ½|æØûÙ3¸
+à1’=¤ãgÏÒüõŠèOélˆ¶;Øú«ëÀ—¤u Û $Şå`‰0º@yş³SŞs®± 	˜øëõR2ŸZ¾:#´K>€*—ƒ>Ò MĞ·ÁŒF°ğ+üc³Vc@²EzÉ$ûàâeå‚ m’.aÄTsœ¡ûô¬Oğ8=" àâªS°Øp?/¶S£¢l@Ä,ºhE*áÀ)ÙqÒ;2È‰vL)¼E/sãÑ^h &¯èdW4Š5ÇS¼›¨×‡²Y|êŒæ ¹í¤f‘,’)\ñƒƒövÇˆÏètê”•57a1›–vÊ/mP/èdÔxGÑdóÛhq¦|;ş8cbğÊ–0F%<•ßc…•.‚
+Xîb/¾rêÉµÌoÃ¹G\fšmLjPŒÍæs³jgÚüÖG.Û9Øœ{ˆŒÛj‚w44½iñø#©Q*Üt³S*+2-V>Yhw’).2‰OMe".¬ 1‘- ÷Ó¤ ]®m ¶â-Q<Á‚hN@ÀÖù¶¹îÉ <ä™NñZ¹GØ)TEÍX£Ù ¯ò‰Ğ{=R^r´û]î<ùiQÔáhØ ,’'ïGÖ~4ª£¯!´Jfg›ğA¢ÄÇˆyÜCTPßÆQ=ú×¿\mù¸ESÉ¯»»Ãî>˜†ß¨¦9h©#¹£-Fnƒ#M{ÈòÇ_ÚŠ;K®ñ¡«/cêTƒ¬êÏãÑFé$ihf[«†[¦Ysù¦-Ä?l0YZÄ‚Ø
+õ÷F¦9\AğqûpØu÷zıaGÚÓ_j«ÈÜş~½X.çù³ÇÏ	¯N7	o||F0’ƒò	ßVŸN³ÓÇOşëì¯?ÿçŸÏÆ“ÓI<ş¯Ó¿$ã§ÿõıÏÉ>ù¯$ùÉÏOşœüõéÏ/æóÇ0\Œ#«w1‚2ÅrórºAóÊæTÇ‚ÈdÒÜ€éyA‰¯š¸¦±%rú0È‹šø!S#kdo@ÅçÌÿIÿ¦¯íìßé˜ö%‹ÖLèø¦Ó‰óx÷P„Fé?.’x~¾ˆç,·±ùëä,%“ó$·}€Û­ğZ›¿±¸mï7 æú>ˆæ7ÔŸÉbZG‡!İ ó«ù°oÖPìùú®A€ûn¹+ÂÉeD4‰)äDA‚Í|ÉòÑ(®R–ÕøÀşÌGê3w	ñ¥8ñç•Ş”¨<ôßj3$Š%;ıû|‘!©Mâe\ü³ĞŸi¸Èè:^\®æ¸6+öey1[—ñâüÎòŞ‹Ÿ“KÌw ¯úR³Z$¶ß0µ0Šòô«:;1µÏ	ÑÔ±?ÿÒ<„—ÿå‡êbè¼»ÑC?E.tş§Ë·„	Må#{Í¶ß¬=ºËB‡wÉM21~ç@ÊŸíéÔ„ˆ¶ş¹-ò¦ó¿gŒ§›ÉšÆÒò}±–]ï|&ƒ%:ÓLçÊ‚ »GNQúÏä ²xÓŸ÷í7f&D]lĞ½¼Ü‹çâßÎÈ¿ß£?6û“³Îçq2—³ÅK¦¯'.±17¹ì¢“e'ğ§á"çÙPåRbÌ=Ê‡ÈÈh’}°ß€5¦Éø”ßâ”á&Õø"™¬¦‰¹¼äËê†c~‹6 oAq0M’y¡%Êúæ¯9ùÜ°E-Ìø¤8Ğ:cÔ~Håˆ¯_¥)ƒOâgAf‚qª»ÿ+;æÀæ:ˆAdÿBœÕª”üˆ·*5‘u-d=’:q¤{…~à#BüsöÃ4‰ÉMŸ%ÆŸàó:f×æÏïnJüg6K&Ê?õ.ô'³9ªôo¼ñi‹öÇâ3ÿ¯—üÍ~	R³x}|%/"§‡1<êcÇÌ
+Ôñ„VZæm}3¿¾;Ê0ó3&ÄË–amCÃGl¸Ğp†|¹Õ^˜‡:‹‘? û"$È$‹`ø­¼²ÍY±å\VøÜ!‚_}5ã×Ÿíér˜Ùœ¼ŞqÔri$ñ,¸ºÑ÷d=Ùâ«HydÙ&{µ‡f•}ãá!0¢W.J±Ï–>™ PßÎÙ`Ãf:!Ë÷#İnëµÆQ5.&Ëë$™aQšåè¢@ãÅµ ¶LBhé[}/,+3a«ó-16¤j¹ÜNÍ´O*ƒ Eìl€>¼Û¿MùËš³«x®*õôåWÜc…ÍFt¸>ÊÇ§Ës€ÅEy8,áb!¼§\{½+ã>Jã øHX4û’çVıK(T"0»¬õ`ùÓÅ‹ßËè)ü-ŞXÈ?ÃøŞö2ú3~ìíÃ¿ÿr×Y°$£k"ãÿ3uç=¢liiû´á½>mEÃŸÉÿıã-‡|Úb-óËÏäKv4)|úóRãb¢dğkH,Ìã¼qŒ(³7J–fï:ã¿Rğìg2ÿ€ÀE¸|N„i&^£#FÂ>™V¦t	º†HAp7[2[Aªı	È˜»:KÔR$¯ˆü÷…ÿyôÓOµTø¦ÑÑ`¡ş¦:K>ÖÒãÎŒÿàÃ¿¥ğ¢¼ wD¶dƒ_#şDæ¤5Üíñ5Ç<	G¿«/(-›Dİâ·d‹sƒ?dÀècµ4‹;CAâ)–k
+cŒ@+Ü,¶;!¬%~`' í)…¤.ãùIÄÓkù/Á•?'+‘]&<â7R0‚§ ÂèÌA†ä”|FÕ¼]Ò€—è„¬È	†LÉ€“(/1#jzA÷Ì«¡È”L hnÑ	º<²D ˜T/Íè{ãûf3rdˆÂ¨ºèC¶BÂ9H °4ìXegÑÉYÌ(ñ½c¹¾oğlÎ¸dŒÔ°ùI!ˆÉ#î×Æœ	Ï ¹3%ˆ¶°ò)ózP’hÄ˜G†&Ã1ôÊäé¨!ş-İ @Ì0‹ÇŠ‘¯LÉ5Û„×8RŒ—e!f˜Şc’b†±ÙàÁÀñ1¿Lí¸ÁU\½Q×3–İÅĞ¹ÿ¥gÆøÆªÌ–şıpgªDáY³ .XŒøPŠÜËÉr7z:R³Şƒ³¡²:½²E`ØHÖ|èB÷Œ7/>8;1¼zõ2Ññtù¼€âótF;?½9‰’FW/#«3¼‘‘,g.Ö—¸Ğ}4IA.¨OÏØC“?ø£6ô ‘Îön»ßÆ¿í´w:}‰V\LóU{áÛŞNwğVE"¡§yN«âÁê<¾z«~v«(]ö
+  àáMà(˜ÑëŞÎ¬[í‰„îÙ‰KÖP]o{$º_ú½ÃƒÑá cİ(‰QÖ\  àÉ°³…kR‘'bH‹8± Tædmc½Hª £Ô«QÒŠ%&
+`¡ØD³Àn˜ v;qîõ1ĞÒ“#"É:S`ìuö^C&4~Ğå( š‹üËÀÙN€OÙ·\'“pØÊFD&**æçlÕiU÷vI?T›_w’(h„Ÿ—í€‡c`çºÒìªm½ÄåÚ{y s7Øâ!+À—'{àh!×SiWmòX„uW°“3Ù¸ ÏdüãZÀ}ËÌbNn·ÆÀJ˜7b¼C“×Mµ~†z[¡ÈùR5D#ÓAèñE:|–“l÷»ÃÑ~o§ƒA±¾sìı!ÃyCŠ,AA‰L­)‡¯!,šAJ„7(@É2‡Ş±/±Şıé¹¬F]ù›ª=Vô¹E¿Ü*Y "< î.\ %ÆËğ°. £YÊáH‡cÂ‡µ·/[oëY"„ĞMĞÃ¹q¿¦]õòZ‚E
+2ê"®d¯5İ3¨ëõÂ„j xK:E÷+N`,Ü`ËÃ4Ñ’±by|f[&—9Ö‡Ã³€ŒgÊh7,ÕÃ (Gı‹-k›W}±—Ë”ƒ$ÕY ¶ƒñ5ˆ¦Q^,|t´ÓX{)bÚh”@®í#è r‰1}ç} Fş\ëÇ‰•),DF#K>Tx™à—«¸®@X¶Î+EGaÀÖgÌóÅ'×ÜVgŒSŞª
+4Ğ²µ	¿bo·ô¼lê;Uhø,’q§4Ğ¨aïÙRV´P»NY½â'ŞË(a§.İZ—ia›7ajJ0I±ª€‚wq††%ì¸µFwïµ–ª‚fÍö”îNoUb¤Ç)‚"°ØåÁ§7–°@úF(îtEk ÷)ÚğÑš cÒß¸Õ\W.Ÿ™ÁÑÈ9ÊP²h1ÚÌ¬YPôµ•¤T I/ØË­Ğº?+JQ
+ûbBÂŠ—NÈ¶õJ]Ÿ`MYå5ÎĞlZ‹e­Šª†1ÛĞ›`˜º2b½–¯S`ƒ\±:Ï·lœ}Ã!u(¡’gªPªÅõ¥ÉhñŸÚGØúMW©hª×,E_El©3+)x¨‘ájr\óĞ¨…ÑŠŠ»ºÑÿW²f!“6É3dşÚ^øˆ×nÖ§ewY±u¥Ô­hr¬‡©[Ö2˜›•Ğ+ìTÓÃ*›%’g¨•i´I5”%B(•};VæR‹‘¿™‘«3%NX §‰°Èráñe!XMR”¥o#Z•X”„÷Ñ®Ö<'6 ¹eRÇâ2ˆPr±<=jâ+A)U»N” Èu2Nfˆ!”™Â‹‹Ë€èÑŞÊuøü¿şE¢UN·¡	alXxK®}n(&;,Ø“/Gzˆ?¦	aüÇã«îÈB€Ñ³âõ!Ñ¡àMk”_@&ÇÑ©xš@Îæ4¯j8ån·¨;§ıÃ½ùµ×7~dé}¬ß÷Úıw‡£Áá›7İßÔß©cĞÙíl[s1…Új#·±Yù¬Ûd•Q8˜ÒôQ”P
+]ÄÜş¸yÁÖ"}ÿäÙgë.Ù›¹¾iiù,ÍR¥v*jXõX»ĞV§}W·©€£°1…¸)üWºG{ñì&Â|=ytMGÂÒEhœÇÚx>OâE4ÉfuH§J3»&<ªuÂ‚…è
+Í²}Òx˜±wK¨‰AäÈ³®dİ[OäE<›ŒDñä‚ƒ„3“.3&T FÙÓƒ c!ÖdæXíƒÖ¦†åÉÙú°¼´d½X§dzÓ"Æh«pXŞÔÁ§‰/çÙlËOnëG)¼®£¡ ŞØaÿD¾(pĞXÂÆÂ}ûI61§«	¤~L1İ/ømP4?f›EITÚ~\«i3¬øV‡…)Ù±Ä´¨·ªÈÑb5…ËÒ_ÓwY5L_×ún«Ó“:jÿ›²kÚs”ŠBˆ´·!îgJ4aò=jéŒl[ºŒ¨a!Ém[4äïB
+m‘*\·¸IÓ›ª.²8Ç]†ŒÚx=·ÜÕ^=,W%¯r×¥í¾êŸ<şÖëØÛù²Uæ¨ri¶ øÚ¤KX¸.Ä¿sv*.¹÷"¶+üª=ã:îLû}§ËâÖëÎ´Óˆ9øØ/Ì])¢k¬1ZÆ))K’©†(ÈyŠÛÏ•Tæ³êĞE¿ÿqÊÉÉQûèÔy‚÷İËò<¼osù1º(p…JTeápÂ‡V8ì¡x¯>°©f÷ ÓÉLTúâš¦èDÑÚZ^Şè´F@0FdÂæ¤¦´sßÿNy¤˜äFN¼˜³.`Ë~àVÕJ3h™z°²D®iÑGö¡š%[ÕàNc§VÖ[0@­Z·òˆ#pÑxÍ3g·‚ƒ
+KFª&IgØW³ô«„›z•0şÜÄMÂs2o
+]¥oojãÁŠåjrnè+¾Š–D±ª
+\\ ¢ó¡üd÷t|_ò\ĞÊÊw?=ñ¨»ô%—¥³¿–#¹âB^p(U
+{Wõ&¥ñHZYY×\ã{v!f%Ÿ‘)‚(i30iRW3©‰È<ÄlÂ6*àè#^ª¢;‰†»İÿåsïvÃw}‹dœ¤WU}ˆô!ô;Ûî{î!HšÅ¹Aüàz³4smWŸ¨:êóv+üÌ‡®V‚û¾ƒ »û­}ĞİfÆ¿“­I¾€çf¹šT`n3L	züİ
+÷òÛX¿
+<ïÈM}hËå"%Ú¡ÅÍ‡l(ıÄÏæøİ+(/r¾vµ{lgŸi­nL¥	LêQ@`cùr/!¹Ø\x¡HÙYáÓ¤Qó½U+›¢ûkÔÆÒ±Ä<(ÚxG7š"Õ3Q‹ÙÑ)&ggÉéÖ”BÌJ.sûĞé7$iÜÖãÅíÍB¸8Uüÿ)².Tío–
+3/¸Æq…ßEbm²•§¾qÊ€ç ßÉè/Ê«<Sú1ãÅ¡„Ê6¢Ø2ı[ó—"cR#á((şZÜ]¬i]¹œL`HÙ•-	-IJîœ
+lÂ+—ª|ÂJm·9•Mç_îŒ+˜ˆ j+é£Q³şPËúM¯X¯|•5~ŠÚ¾š=‹,h‡
+We*éLz»ˆÒ¨­Ï–èìîˆ+9Ä8àKş³ÏÑ²ó!Ä~-¤×5qIóßFl*Ÿ–ZÃ‚AÚè6—,gCV™p)­·ğ‰^ÆzQÏÿ›?W«”ëÀrACFÌ– ª†’Â÷`TÜ©´O­"ói4á»p<…¡¸+=Œ¦ :à=«`f®UAlJÂÕÛOHUÎïyBf&Wj÷'ÛWÌäÚ²ê¼"‰šÃÚÌÈÀHAEü]}vX"]¦nb-?#5ÁÜÅÀ½ÅVĞÖÅŞú_b¶o=ç½Øëu#8ë"éÊ8b`N³tÊÜ 4Ë£F]fš]™]—<ò\ÕËÙb5:QlrXŞ£-[¡FÀ¢‹ERBŒ¡b¦f`Q>ÄÓZ³c}ş1¥•æñ¼AÕù”¬ö6V›ŞuæÀ/YzOŒ»Zf‘ÂGìÎa.:°k…rq2÷Ñé”ôì‹Ìõj{Êy–§Eˆ2¿¹		“*±³{>#ûi$òyxĞh é?¬évÌÔåÔ°à/¬‡À…ù«&-if.1º
+#™À__aÅÚ±´ÈwğÍZc&¼Øì¯éò‚ÍÕel5‡YÆY†Y6;İ–‚]öå,Œğë¯lä¥mÑi²rhÒ_­TQ†Ét7Eú¡kÕ¨¸øÖÓO¤S7Äjcâíeõ vœº—óiC]‡6T)++¨†¨úÙñ<…‡DÈŞÁ‰·Ñ<¡^DÃ!—<m<;fsV‡8Š'“ˆÁ§À®‰£0Fl‰	4È !UuO0¥ùõ4
+iùIûÆßWù2ºI–M¥hıú#âÇÔ,]¯ÅÑğ”äc¹ºä}â¹#SšıK¸7ß™¸Ë‰¦a M	w™6Z@gwbâ;‹q8´ñ€ã˜chú“+Rz ÙUFhÏªˆß¼ s[i½å­ĞYW_nEÊ”ÎÂ!¬$kç„´ÌhÖd÷ƒ–.l2Dè{¤?äÍgÑùÑìü¿£™òÏŞ,‚›€||ßÒËfTüªQ¬ñy¬=}­¬å±Ê²¨Ü=”W…ˆkÆåÚ/‰'b)h.àW1jQ£l!Î%ATÄVTÿş¨^7ƒ_jÌ~.¤w¨5#~Öûºéxï‹°ÒwÈ²CÊA§#²Ï¬ĞO«zC»“ó~™<+@°¢Õ+E:û+Es „‡Ï¨w9ÉXHÅ{Y©JYZ•(=–TşXW„:‚#
+§^Úp—µ»mzHUäÿ¾¸@%Ï‰,ò8†\şÒÊ	ò$õèdcıªºgˆâÉ÷ºl"pjí2“ÌmêÈ^ÔV#ş£4êˆŸœìì•šy¼†Y¹!ï7nº™y
+š
+-š%a¤³ ó‹4Á¤»¥Yõñ[­ûìz¨†6æ;¿’	Ş`YÁŞzÒ,® kà'ñ¾< ¹ødBtT*>“¶€º1Akp‹Ò‡ç,gM¶ ©Z“Ùøe©	ÕhÃq'3r‹Ò°B¸o‹®˜…-"Q‹gCgÊçÏ¦¨xøEÊx)0l]mø¹Ş\·Æ—P¢½,p·ÇØÖ†X X-¥J™³™ f¡x©1¶ª6`Õ"á`¦hò‡úÁ4‰sLßiô(É²¯ºŠ­ˆ-y+jÓ¿³ı×çæ¦¼b…,sŸ,wLÖw:£‹eQùhEq‘A<’^eßŞnEıä^ÿª0ãªSü_æ¼s>‹Á[â—=—U´´zÍí3ØHn-åHı7&#ÕTÉHÈEè$ñêUT¯;º¼¨·¢Ÿ•Nxg4øc.«ro,ŞÉLY5JÎ"ñ]2Å•5Z$õÇÿ÷cüèŸOı×èø§Úãº¢nßšb¸²ŒÈğ?şnû(İHv	¯¸08ÆïñóEv•’İSÃKE"› Ï«cé _:ãcøŸö£¿‘™ÿ¨O¼têÌõùÜ+{”uE—`¯Ã¤¬À×¶cÈŠV?™T4Ég.cŒm¾ôÍ2!Z<ß¥K¨Ï¦Y6ÿF.‘À‹Ã3ƒ
+wÄÈv1yg«]kp~²Å½Ùô†ÿådaó<…4ÀÔ3!’NÇÔ/1ÇÜÁD†ùGÒ¡‰E¼/2²|Pÿ/™°”Òä×ÆææfóD°¥ıšBAº<MXzaÂKÑ€Í‘â0 íjd‡Éèf’ãk­•B_aôÓE|•P`±2tS=ø›sT§„Æs“MÆ,ÜË8L?%ÏXH<cÃtØØ???¡öå³8b”çE6l²ËOñÙV¯ÓÒP8h‹L;=é¸İŠøRêm:ÛoÕVÆG‹¸ÑäM¯_„4ê´·ß–7ì¾)oÓïûî~íCPßö{¿:¡Bz\ùuôz··ıÆDï¸ š}Äqñwûõmw·ã¯ÈsÊ«Ö¬K
+íıŞş‡½Şá@ŒÊlğk»;l¿&#Ù&{eÄ—Ûi‰V4šì¶÷^ï´İ ¬ÉŒ}äë£º2bó¯·ºÌÀïä´}™áÒªöñôö¬¢äPY‹²ˆöCÈSqR-ê®`…¦0î·ûTÇK‘«;[€¡„—î½õ¤+o‹ı5cZ î2dUOí"õ”ÇÌª:†Rt‡İön÷o<¢WÿCÚîí²”rLJ.Õ†½ÃâëtF l"xM©R;Öxğl{CSµ
+ñ°©edC?‹§´À’QÒ`|!nVG1¾ï³p¥æ@e~/˜–.ŞÃf6ú&À1şZT»(C¤>h~øÚ¬ÜÓÑsâyIP‚-^øÚ›,`˜¾U—^ëbÙ¡”8¨GhÕBZƒ
+¤ôŒÊF˜Â ó•	cÙ—?[@¡ìZJh\®›eõN¯P „¢ÕDx»IšåËM]õÓ®¿:Kİ´«‘ƒ~«BWˆ&©ª)©Š¨e@ñò'b&Ùm°ÑhĞ˜îÌ¸x¨ªh€ÎIõš¨Åª}Úü4ÂuQ²cè•€â÷5uEd§‚9:ÀgÄæ†zJ¤!İÎVèÀ›>}w'C,©}-–İ„\Ç‹	œa²4§“8€úlÙ\¾¶õSÉû÷ª>ËF	Ğ4²p>NŒ™Ã!†ä“	Ãúƒ§œ³ãÁK;¥Ç?Ğ§©Õ¨XP)’æzFÔ=ØØ ˜ÅQ|\oäÇ`œd?yÑ[]T•©€b“dœAú¡Éíä="ú÷ˆäßÙ±	{“lÉÿ¯ÚPwzCşÅ*/är«A;Ãƒ8®tF#à*¹»ß;jU<`¯â…!M:EZ0š
+hFZ6‰æ}»ßEoğaØşíØÒz(¿ë’>ÍÂò×®lšƒÎîUÜo÷iDù—Ö#0¾H©y;lv#ÙÊXôí0û§fóaáYjİu_`<êĞ<$ßÄ¿ÕHŠù”óñ‡ûu00ëD›¬ãv.­àr°z)Uòæ[Á9¡›Âğßú…@ÏÀ€çäúŠÁpz+Ğƒî/ûíáa_/V2n¢A]—³íô„ «GIk»·ÿĞ¸8¨:FVB‘œİé*¹-¾Î›öáîáİCëü”b)k#Ñ¦HØëoº„­ï;eÒ„‹) [ó˜k\š°PLîeEyçïÃşDP¸xÚŸ5çS¸ø=Ü—ïÙª|‡ïÙääĞxNÆšJ.[Tíä§÷Àü­:J%†ânCônSØ,¬Š|GÃÓ`àQ[,5¾¥T«=#Òlñ¡n(£ZÒm%ñw‘şÍ\ª§&/v8Z8[)ê‚•ÜÓ8Ôæä¶¿J³U^ÒÅxLñ¯Èm2t²ƒÛcƒÏ¡L°ÓİŞP“è›õ-J(Æà­H<–RîA üj«iáìq°Ûîîë…(Äş]™3_Ü¡’Ñk|ÇÎ”xÅb‹¹ã%;â7 ¡"¡x2HÅÔ).İ¡=Š	Õ0Ğ¢»ËóŸÑ%›»üñ[ûóà})39„)ÑŞ°W*CC@Rl–Ívé‘ÕŞ¦Ãƒ.ş«4fÌKÀV¯5r‰h®àö\uÚÆi‹¢'ìPöá))sáÑÜ}Î“eVÉÏ¬©šæS(_ hWJc€‚ÀÃÀ™%”%¿_ílFjAÕÍÇeì§]%}'Ì‹œÀÆ¾¹¶å	ŸCAdàÈŒı×ï³â®“+ĞØt!ÜÚvmçîpšó=Ú(<!oÁPa[1eê·X	§Uú™ÜMCÂşi{ «a'Œä¹yå‹&?ĞöÚ-]-É‘¡æÅ––nÓjFûÓŸ
+²—Eğª¶oõ]J9ø"/RxuÈ>Å7›QãÂıÀ¸|Çy)vÄµÙ¬{öb¹X%klqoø–?¶Ÿ ¢<§Ê–æ)Ñ2³¼Ò”û‚7Tƒ#^õb…ŠC=:+uµ—ù jbµ`Ì#%úP*V5
+UrĞx×P‡aJBUå gÕ„7µ0Uqx;’6¥ò!/ÿ‘¶6´za¾:Dâˆâ‹É•ÊÖ±‡ëÉ=Wr!É/õeÜû®gr;±hOhjDYá‰
+ÇÆ-~˜÷
+ãeæ±{ÉoÈğ\sŒuÂS"›èò¹R˜'¾]e¶qnÈn©°Jeµ6ÿ¨±¹cí%ÅW³e£ìUi3úîåKãi 0ÜÕº	x1_™éÊ»Zrd":#sÛÅzÉN¡?c¦:Yv7›¬’$íc˜é¯ÿ”s^€G´ êUm“åªˆ2m:‡\:Z;ï±Bé·÷M¦À|¶X	ƒáÄ·aöÆˆÎ’ğNœÎfDgâÊÒfTßT¢f YK±sOEÏULdğUŞ'i>&Í’k…›¯¿dóC~ı“øºÏ¾k=ÃÙåôï„8è“ö­ß†z¯ÿOg{hs©ToTk;Ù\u÷Kõ>,÷sÜ‰Ö¤ĞÎr…s$2PG•^’&7€¹W^I:XÎ¡òååÒí½²¦ë
+Bõ1*¨ŠÅcP·oà;††Îj3RBøÒ%¸,æDÃ°¥6:ÙTTXï9MQÉ
+Ä½Òò½êÃ#ã© Dóæ†ÃÑ…]So:m@ÊÜEœ‚Hş‘^¥±æıt©{¡QÁ¯N
+e¶Ÿ€Û|öì5UóNó+0Z,lL¨hô÷,=@çÛøï5TDÍßw÷üU/®°OÕİÂ…|»»k•’ŠØŠ™yK}"gÍÛ”ĞÀk"¼|V*}VrLÚ3>6Õ´„PÚ„â€äêÁœ÷^œ½lßï`a+8H8`o£¹ùı—e3˜¸g|šS;%æ	L˜+_Ù4¤8G36VòÆÂJRÂuG,øİaÈÊ~Oí×ƒa¿½=T½Èºûí]­¶)æ-œ ´âZJÙû)¹¹Î“[B~×ùğk¯¿c ‡ºx—Ùßrò[bØëíà{ùàN$U[Á·0:	*pŠâRBUíLÆì‹S¬DPÁuÜæî] Ìf!'9Ïß½¨¬Ó3LÛ'8oS£”Gãó!çuÁx¬IÅô ß¥X<~h2±,.¢Fñt~Ÿ&ËôŸ¼öøº¶Â'ôğ.0v” ´öz¼ÕV)˜V…-w Xyr‹›I¯H+Ev8¡|]ÅĞ
+Ë7T)B× !¿i£|O¤x¡‚&01±àl:¡uÙ¹E¸0Huì!`¼Æø† Çs6+€Œ×ôÑ½‚ÔÕoX¼‚jF(éµ8A¨Î ŒK™ƒåáÕ³®ã<à±Ô`ªv†Ì{Aî@w\(6²
+”†ñ©Ñˆ©[ƒwk0«ä1´^c›››Ìs÷P­Ö•	FÓoKŠ½‡	E–Sé=Õ*Ñn=øEâôõÎ‡şöJ…-ğèaóª`Ôên%+Ú'Pıh2vsHÑŠ1Yq=b1VU¼âÜQİÉ¯.Ÿ|+z4æ¬–&Ì3™'Œ@•cšŞ’¢D—«é2ö/‹ˆBz"±O“VôıõÅM”LÉú\#íA7}µheòWhª! 1Ô—!¿N§SjHgåæf„oP…ªÕ/¡áò"‘jˆj}}‘/°ë‹"ˆ0`V±ÏWçç	<!bÊ3L#3¾€âWh«Ï“Ë¨çÏ¢‹‹«KJ•ÿöç'ÿÁ’Óté´'É8#„İ»dv`‚üéÓì<ƒ)?§ÊTg+¹´ Ú‰>`úõè Ïê·OàeæÉ ln(¯ìTı[G–· §`j=¬¨×ö‡°œ@‹Š–¨áWº«ƒSW„´¨eê«ÃÀ“É60Š¢
+%—lìĞ-^øtAxšÈË7T‚\	âEYµ»R,h¼…f ºÍ¥ŠÎ¢a¾­e–‰e‹êõç² C)>ª"R¿œ+Ê…Œó\qdäÆšºXœÃåùR@‰š-™-y´¤ÏM­=ŠpĞ/ÀÊ&ÒkQ.•&UêÔÙ¨™Ê^P·áÍ>M¥K¨ÊÌV—…ÑP¶ªAğFEê”w‡yòtyöyá†Í•OåÉÕ‰sÄİg¯Q¸ĞØ]²¾ uKs‰ŒFYñ8±St¶f]oßŞŞÄªX?éŞÊúdüà´(Ÿş„…Û)m³'¼}émí
+ğK›òŸa}eS˜Vf2~Í€R³Ø Í'¦~ëÑpK¶Õ’5~âïv§Êõİıâ¢ïÿç³sH#³b©iˆÈHEw×‡™7šŞÅD¾†(Ç{Ñì/
+­¶ìg@øMš]ÕÕsõ-“÷³ìÒï´w…1 ËCEµÈmÂ+å*¹wèä³11ìß¢¸¤R£9]Y©ŞÏ-ëK>4¥å1éëp+Têı¤bÁZDiœ”É“È“¥­à1kçuõeåõXfÚ¦–WK¦´}©Üğªo'ì|:[]X¡»IÚ m8£è&Mˆr†ƒ²¤Rûcùäš.sØ<FaYA¯4œñõ3ß¢2	‡UTQÆD™<M"FG,ÙTÄ#8õÆ_Úe”Ù+FI<!²ë·a!ÂUˆÄ:v¿ùÃÉ‡eşN>ÏÉF@<|m7H:K|Œ—ëyzîµûïÈu3èpåuCF³`X#…ı„÷ìgÜ`»ß=ö{;‡Üë|)6“®Ñ“ô]q‚„5SÔî"$c¹gC™Œ‚MÉİ]8Â<8Œç«KÀ©>™k“}	ÚÑ‹Ê±ášYäMdøBì†¿îÒË²·Ö£V‹Ü¥ÃFÖØ°-øAˆèĞ£˜g:›ÓÅÌĞõL}ŸvúºâÊ6jx"õ©üû£Ù÷Ş§sµX»ï—aBZh4¼.À4‰)³€ÚÙtt6Í®ŒŸ}àD¦sQŞ!U¥òrOf—İ>µëvoï wÙ™ù]µLÓºyL	É^ÇN·ÓC#kÑCwĞ±‡}6THkÊsÂZ?ÒÔÁü“ÌB‚”4MĞ/Õ¦£bş¬46>„…í”ğPt	UXÇl­¦Tn¶ÖYØÄ[@Q7è`´¤Ã·ƒ£'(¾,#ÇtÓõ*,òçrºSğ}x×A_-¦7e˜Ñï€B1Ï¼C™rB4O íCéc´ËË[ÿûÑ,ú~³VÛ¬ÿQÿzbâZ±òƒ„ÿ^’kç›Ñ>ÊŞa±8òôáİDÀÈhâ<*NPZ+ø$iÿxÉûƒ	(Çb1ĞØ,[’±sƒ*‹	µˆimĞKX„ ÉÊ¼ªãÙ"»$š¦ìMkHÀ#a~AE¨…‚e tÒM1%x&\Â[)¤¾FB£¬Òñ'xŠM’É)l&¹%İÌÅ˜d	$²ŞÕùõŞ)éc)Ñ†sL«¼:¿õ2@PEQh Á{g‚ó¿aP+ÈP‰ˆ:+h÷}¶ZæDY~àP@Œä*?–"O	áİ¡¨óã`ä$U:©®xJƒ§êçüü>£mhöq1~¦ÎÜòím§½Óé‡>ğIìwñÆ§Lí’¨£ê›ñÚwª}_,eÀş7€É*1(¡óŠ@H(“ˆÌùKTc±TÎK U>ä‘Ï¢êíht@É’mZ	_şà	Á÷O£W0õL´}”Í¦7Ô8€àThÊ¨¸±–æ,°V‡{Ø¯,¹– jšêõÀ6Û¥¸{*)‹k)"
+¡µ‡~šŒ%°¼{ É½mÖ2OAaÒÊ}ÁŸ”m,Ê‚ÑöV¦óû“Y9š½ÜÏë:KÎ×z™<W;sò"ÇßpÜ5¿ã+z<[>æ7ÿcô±!"‘˜PÄe$1M=ÅÂ‘ôƒdøçruI®UE|bòËjÉì°õ¯-\eÏ)`CÅÕ2ÊfXpc	cq®Špİ]Ay™Œ—¹övJİáğúÆ÷4•?áõ$jA÷D°ë“&@’ˆ-º"1ÀËÈœJŠŠè±¬‚ÈA;KMî ŒürÉa–KÒ'''Ú¨}Ô‚`ÿ~Ö—¬}4àb¿¸Ã»ò‹+YìôºĞÖº4²1P'=øõ7Âõd‡£ßx—.úQNôÆoú½½Ñ6ˆ¦¾öt‚^Á¼@´ÿëÖZÕ­õ¡øƒ®í‡yï2;cæWÏ;p"Qdw¦¡h¶1UŒ‡í¦`£)/¢äsš“)€JÍÅÃ&#Z³XÏ“Í¶¯–¹2‘MÚ¡ˆPÊ´8šM‰DÑá{hÁ¼ad€eÉÛ¨’P’™9¨ã¶OĞpqR=×ğtKdŸ+Î–ªÌøtK˜2DGŠÎUög/Zé0ÔñLÈ*wˆÆé5Å*¸u¨Öâ+M™C˜uÍjh…^ÉÌs!ÚïëÓØîD_Óäïr}m‹ PS&vGOˆ„sŠñ!)Ù®îE|¿Ò"ô|4ª™“—şXpÏFÀ®Ò³ó‚lø¡Õ™6œ×-l	¯€İ7<ïìYğ³”q^,§¥v&Ó#jÇ£ğr#+K6
+İå@Ğã@Y4•O2ïËìŠ(X§îl…õUÈc¢8äíÛ÷{’ø+=cÉÔl|ÊCSåHX3åş}Ÿ¿Ëùòæ¬èÂƒôâˆ§×ñMÎ¦äJfx‡¥ª·Ûƒ¡»²´¬;Úí;ıö®»íN»ßou÷‡ıîş »íiÙEPH& uwàû6èx†ÿ®ó¾ )+±ÍfoŞ&ø»û¿X7¤Áákæ”èlò,9–/.¶QÄ¬øÕ·#ŠKzû:q¯»Å
+qZ©;ÂLÓŞ¶Ê!-s÷¶3èşÍ¬tÈëÑ¥Da¡ujÕ¢JnUÛwzö:ıAî;xº3¾¾n÷­¿oƒ oı•m¿Û~ûÒœB­¨·í}ı[ë]²ô«ü—­İ^wŸğÛ2ÓmLsjû¶ëèô?‡+ÏÄşak5ØmŞÚ¿kˆÌ¯ä^$ÑÉ¿¶N"±³XÎ7‚mD·,—Ô(‚o:I³Ëh–$4Õ1²O›ä	øŒÆ+°—à?@AIĞ(I1{~"‡C=æhï\€ó"™QÜ„ÈWÓeGçP	‹ ^€Ğ:µ@ß]Ò0ìeDY?¹OÉá ÿÒn¿8b‰¥2œ’ŞÜÜ<+Ck4£,Øı¹¬rÚ.ã˜úU–Nö6æM'ø™'O•#Bcêf‘îU‚4=şÒY6¿e93ÆL”Bf_'¿oMH.²¯»‹‹£ÙÇ£`O™” ú2ÛÀõEJè§áã½Ì'Q5H!Œà)7L3‚³–Ëp‹5Â3Ò^[©p/ñö®dq3ô¤1ßcÕëÁòF©Sl±ÑwÎ{EkÛTË&üñEòC‹Ø+ıh8Hò	°‰ C¼sÇC€’õƒæF¹ª…½éèU99”/’Æ×ñYİéË¸SFß"‘K%"Âiãèä92VpwÃs+Ø9½°(O.™/x¢¥
+×ß,¾Ä—Â(W¯ÁÏ½1-»¢ç¿ÖÓ­æ	T\#ülò_ÜòDS´ÂCb6!Gıı ³ÍÎæá&…äŸ·sí³f0ÙUh.ÚJ©UlIgï++ÃÁvWT3„¹…è±×¾%H.±ì°8¶·¹ĞbÕ·œ¼‡eòÇú¼òŞÏnhàH¡=C>ûÂQ2iIrº“¼»r‹*'Ş¥Ä‚÷vCÏ'k#£k_Ì™XÜ[37e•&Ni-ÔqÎX14ÓÁ%¹
+©„B¡w>UŸİOB`û5‹{Æî|‚VMãÌèŸåeŞDm;_‘‘¯f óD4ÿ7È0SPdoü…7¼¹$½±&(,!Äuò@[IÉHÿl&™´ËMÑ¨^_GXÚ%¬·»ÿKÓ™\³ùÅÅ¤YrM¾%£x9ÂXLi¢ÆL¢—ÎCzÀ«4£)3%™)ÍĞ°q<Ó
+KoF»İıN!éœ%Š3ü	B“-4ˆ`ë»õ4¬4ãiJâˆ†«­'zñ8×~÷—·ÃÑë¾ÈX‡7”ôp¼t¡Ê”áÓo- Ô˜”¥q£z„©WC´°ç:PÒ$XÓ°’%¬2"¸xVAAÔ6£¨_íÖE"‹k&ëˆ2UÚ|©Ë,»$,:u¯W+hë¯«ª½½«'?µk-Ã7BM	[°š´}4"K&¡lzç¢AM0Xo­%•yŠ¢‰_€­³¤3ÜÜ,¿j¬*¢E®òæ—¿vçóQ‚ÎÒË›‡t¹ZÆıĞ|dğ¨ü£š9 Ÿ©èÿ®¹ïğµQ@·Öò¹8÷Úò®è€øm„œïdÌâ›D'/_@İ’“ï^˜oItš\ÄW)ä#FcpB:p³|†c¢$œ¥c°/30O‰œ½®âÍÀ?k*K'ÿÀü<¯¢:¹Oëä¢¬Gş{·ò¿<G¢é¢FøyM¿•ê&ÁœÉ3şìÅÊ\øy6†jø'‚3Éÿö†ÁúD?`¬ì(íÃö¶Óïìô¶Kğ°¨‹»Éqç—/¼ÂHŸÏYB5ÂZ)”N0]lU2£&lÂØà	ç‚£Ènnn6¿´û-u[`uÔNµdë°œ~5©èÕ·¾-²òí}æ;¸5ÑI£Iİş8aÇÉ-y"6‘´ _¿Å/ˆ„š.’9ÉCsxuOáAšªÔyT¹ûDíö;£Ş¾j¦áğnU§±»¿½{ˆ~‰õ!Œéìµ;yé‘(¯F§¯‡1K§ÒÏÛáPeKuÑz£æWÑ	üwïÌw÷Â%ÊîPµ:!Dh´¥„üoÖMùŞY7³	İ÷¥=ÔÕ!?lñ)°ƒM“Ñ?VäÃd2ø4%âişp‚óMö2­‡¦U:€e=»\>¢‘Õèq˜	ÙrB—ÏO:Šútõ£#ˆï?ÒıA7¢Mù—3ú&&Ïâ¿/éïÙ"ı'd¬FdGùÇı8‹4>OT¦J¾ÎèWö~Ã]Ñ_g)8j¡w-¡2KŞàŠ6 Ë†EºT|ŸÙ`’ÏøË÷õï[Ì™–ìn„»Ë›~O›ÒIN¢I¶:5šÔh¨|ôè*&€š2Àa=©cŒäSúŸŸéşLÿóúŸ§ÿù+ıÏÔr6&ËE`W«hWPÂ‚¾@å‹Â)o’r YTMa…uxdƒ‡
+Á¼œLwiKø‚¥Gx"yˆ2ş¾îl¦V(!ÍLÖöª “ÒR=ñ¢Áæ¡ —?\-3ğQNbS“f…w>€»µ¿±aá$–á¥„µcÁµİ{°¨9ÆÇèfqY7áÜ>ä»2G×Òqœ'X(ƒÉ¨.Ï?‡Y1&r›P†ÎşábĞ³Ë•)ë9ŒdaN©Í$çIØ[áñÑ“wÂÌ±šÏ“Ğ€pLæCŞïÈH‘øĞ…:C*ºğL0xÛ;BPdçK[&V3¬sİ¨ÃùC±Æ9şğN;êŸ)p«ÜŸ*İ’œ§·Ó!r¯×H»å#siÀ‰£Š«‚pÌP‡†ÇêOÒûOc«K =~ ë®³‰¿îwÚïî$_övoØİ?ìÜ	°~gxØß¿PÃ·ıŞ¯¡y¼];ş­&djR|F+¿bòc\©Hä4¾<$g2š§D¾æJÔÃ
+ÆğÌàAZh'Ùt/Øª™hwz»»í>ûp+Ä•!~v]šxzïA§ğÅE~+¸Ô©¡ïï(Áñ°Z$iñe$ŒEü»É+hÊBd—Ö”7·O‚7fÇ¡Z}íeŒjFñ"îh¦á¼µT[L-&Üò°EË27hˆÜ£ß9–Š5ù–¿B”ã$‡pá¯Õ"a{Êh¦ÎEz~±Œ.0}:a±á4ş+q÷o.=ë;¬9X•ÅßgÂÎ¯•M'&+½Şÿª½k;®ıöö€ÆÄİœÎ.õ‚µ™¦ÏÉíweOÿøô¸Ä+wL9Ô%uæyíóÑE_yJ¹Z3=Mü]<NÚê‡‡1a:¿ï,%Z'²”©1èFm\ÁH:¾#“Á8(A+DÎb´a_‰…~c²1”ÿmE{ñò",×õc=Ïµ¬#ã˜é±A³¥ÄÓ<c¯/X
+–‹Ûñ‚àYÊzjsxĞ›S¯k/:8ğ'åƒY±4Ô3^gGlçe²Y¸Öú¿÷çÓ„>29œ´hĞ„-H8Œë)l…F`:Ë\g§ùr—Õ´€öëÁ°ßŞ
+u‚ær ¡2ß±°|5H–<XÆj4¼ù®|ëN@ŞÀt !jÂ8AØB¬xËÅê({ Š ñ¾H*gqUî>ÑÔŞˆ *°_á©óŒ¡	ftÁfÆ˜½±È ûË~{xØWĞCmö İ[móÑò†i|Efàj€ƒÏ¢çN·M4ÃùÖÛ=ZÓÿ°Úº1N]ö rmFíµhïtA0l›4§cšac8 hÉ8 œ£eóéŠıœÌ”°Pú¿Ee»ŒŞ0MüOËLx†ÿ+0æãl”mİ=‡-*#¡ì¸Zš)¥¨öïXS½è«Rnf¤yëwŞtŒÍL×]Í$jS+z1BE%×ëİŞö;:Ç–¿©Ø'Ùº`šŞÒt³Ûy#-7)1 EJÍdr;ÿIq§½ë|øµ×W€³kÀ¯™ÃƒİRr*ÔîKn÷}{÷°SH¹¢ßÃßFÂuP÷™x¥xó®ƒÁ~)#|~+s5À•Mÿ­^ŞUë§‘÷ËS€}•æéi
+!·Åğ¾;è¾îîv‡
+un‰õ§R¸6ôÑ™„™¯ŸÔP½Iƒ)6Ò.¥•u<…,®·á§!#bÍ”!áÍ¦?ZTô.£—¼HvâŒwn ËZ)ó_‡|D¾a[æ]EÓÒe‘2$§£C£kXŸAxÒI)_¢?.gZ¬Æ ì‰S
+š¬Ğ­™Z­k²!Ùˆh·-wŒx÷°JÆj~´Í İ>= -äİ¨ªáä*°‘Mî£Û«ƒÙl9Óä¹§ú¸f4¡3MlnÈ|µruÑa‹:÷Q¥ërÅPq7ÙYtR»:yÿûhT²„ON61m–Ü¢´?BÄ,E&œ
+)ãQ‡ÚI’8ÛBHÌE×Ï^Nbq¹¾•ŒGËøS2Â$¨#,¢‘§W	İ#IŠø/t£r¼fJ§·8»!oÎKj$9LÒİıŞá0ÀÂ™ŠE‘nX‡‘TsÄúÎIFÎ¤W˜{qCMÆhøòr^Šzô¯ÕB¦ª•„
+É“pY],ÏÖTZnµÆ’±!({B%‹	{Ë‘«ExÀ²yt¾ÈVs^ŠUñË¾ª°:Çz°ƒmrl/,úô7øÈà|ds>æüŒÈxf@#gàÍgÑ+NíÃC49¾gŸ¨¡÷0×y™’\o?{Vãt|]’’“c-™fÙ§hš~7_<È-È"<¾€ü¨ÔØ-fÓ¡áÎkPiıìËŠ]«hÚS
+–B©QòeÇÆCÕbÎÏEI­gïQŸ…’}Î-KÉÆÿF ¥4"2$³l -Íq| 3ÑM]»ÅğÜ`¡YQÌd’æó,ÇûØh§æB­ã9ƒüTÀÈ…ó~w·Ø‚ŠéÖ6”Iá',E'>™Ò3Í§¬~‰#ïõ [$^?Ä=c…ÍÜ,Éï
+'ĞtÅÀo¤zñàÚìÈ{É9ÍXÅú©¶„a¤GTTT­½F2eµMu÷I)¯­B”}ØQ@!çğÕâZ¥—¹‚_İ²¹¬
+’}>+`Ã¢¨p*®GAÉÑa‘5Rã¾èjÆi×b­_B¸xo6½!÷ÀâaÕñ	ÖT$<û¥?DL@ğ£§ñÇÚ)¯Œ›'JÙs‘ÌŒe^Gõ\ZÆH‘Ù”n3ii|Ë–¦ÿÅF¤N¶¢d­˜òÂï¬ùhcO…|ûôŞøh\Ç„©µ¹ÿ¯³ª¨ıv9^½zéĞb(#ªúDPòh‚qÜp|·'cÊ1•biÒM|‘üX«ëè,Ë
+Úb³ØÅë!adù4"Œ¬µÏ¦[ÜÜâ>ËÄªº®Ø2c6Ë&*f;Ë’£ù>YÜDä¾Çâ%­hš,ë9¯u›.7£ı8_Ş`>…<»Ô®2¿ÂY–5¢j	‘É•ÿKîñÓéÆÍ“M­˜üwÛG¼<@ƒ“ ›ÖjòR$âå>UbÔe˜cnp¬imtÒ¸)ø3i’\{ 9€² Ö1Â“f	»”·ßî!ƒÕWaCå \¶uNïÇÇ j"˜İ¨j>”AE'¨±H÷@©ı/Ñ$UÿMX?‰sBP§	a-°*ÜĞêÎ\Óg^†v²ˆ˜>ü"|oŠ•ÉÚR¨G*©êİEÒY¨‘B^^UÓn±ò)¹–P¦mòí•Œ^#U·E±¼H¼X
+™¸OS£	cƒ²şG-Ï§7#¢L²kà¸‹Õ4‘¶ğË(×ä¶À)ü7GÉ³ò^mğêpœ[Š&XSİ^r!™«Œ—¡"8)sXÙˆ·à¬f³`èü•Á+ê†Ş¢d€´¡Ö$]Kö
+YXb97MÈâ±R h•‰v:ƒíV”gäÏ!c´†ì_/íƒ”ÀHœ}Û”ĞNøÅ!şóST»9:Y$Êé _ Ô·†7‚¾å	¡÷	ù¨€ª}Î¡ +u.BA\¢yŸ’]gÇñ4;Ú#>…ÜŞŠ=R“&,OLÚC}*À	½©ïhN–JX>è&>ÒE¥lµ'DnÇl‚Ø+.bÙŠF*U»	Ä¢H
+ó+ÚX¤Ó,»tŠõ4¶¸âèVÚŠCèRúg×„¶¨^Gô³©	¾LªôM/äu.ªñQÃŒVj<£pãFÇ"÷×¤ÜˆÊG[×³g)K²Î˜Òf—g‡ÔÃ+É^¥¼¨¬¥0]ğ¡êßÊØ‚´V^­x¤IÜ2…ƒ¢xätÄiĞöÍ‚ÑH¹e¸Õˆ»‰1±%Dó À7ªAx^(Æ%Ü¹Å÷ş†WSÑT]Ïñ2ŞĞhæî·¿WË/TÑ
+ÕMkëo1íU>˜´8×i*`ÍöâlØ{×qähR·AVfS÷‘·¯r¾±ÊSÂõêòQÉ*b˜ ¡6zÊÌÿtƒ‘6y ¬,}j6à!AS¾Ç±+‹ˆ;äĞGÄ«\±ğ{¬Ë~õÚ¨.Lß•?r  ´ñ^ìµ‡|`ú¸eáf{.¯ÃùÓ×‹ô­ª~ÓÙØ3¬¤„*„¤ãO¼Úeü9½\]F”75à§tv™åK&šQø4Çì	Âœ$ÏTxµS²-Ñ”³~û÷çDA"¿¾xA_ÉŠF‘ryDÓ  ";kÔN›0¸„“sñéF[b§At÷"›ÖÃ—ùQÑ¶ ¹€Gµø^r˜y2ââ•êˆ3¹ƒÄ*+É5™!vÛzäS³aµ©“Ó<‰n²Uôi–]úˆ—à£ÔE~\D'h’z"dsàñôUİ°ä(UçÔ™¹f½ô­]§~]¡KáÒ°+áµfók¶˜&¯ufd›€„u‚ĞlO²öDJµºµ10×»¬ú÷…e7’Uàö= $·¾Ñ?ÌL:q‰«”ÍáH<k3Ç>xö@h,:Ç¤ëàü`ºÕÔ¾hJXtˆë‡ßm 0$ÃTê×ğ2<fø$ÎODÕ¯úW?¥¼Äê)’Aúâ!Z×dd*1‰ª‰¶ßaxÅ3¿°.š§`ùŸ0åS$¼ÌnáŠ©nøËÓä—~ïğ R¿Rtp‹Äüæ.kQ6Ü…À”[$»±ò6k„4u£“l—‹3ùHVØZ­<u‰DÃJñØŠ¥x¦9¿…	õöª„6ŞjŠ•şÊRê°yGb: :#SˆƒLMh‰´ÚBy"|GÑ
+œ°ÜÀ§¢:ãe1i±%Ù¢uZÑ·R¾Ğ–dñ‹_0ğš§á_+Æ¦@¸3–l,ˆeó†ì.ÂU”Â"ÜB2¯ƒ„‡rPùµÉ­•NYó>/‚u¯€;¾oœ|İXØo3ƒÎŞ*§b°<H•“åÍ<¡Õ§Ä§“/^ åú"]RÜß ¯Ú^'Ã,á$Ft1$àST`-Mî€µsrHóK;$Xˆ8×r<@&†Ã‘ş ED[DD•™’©-fè,—2Š—Q§·Û‚tÆä/ÒÄh`GÉqIèe·ZD–Íè,u¦«øÇ*,VÈ$›1 ËëŒ:àìàefÙµ:¿_–‚–\Gm˜`¼Ä” ¾Ñ+™;
+ıHzNhù%}„Î2%SE°n›¤â]tªÜÓÇHM`ø»Ğ!<_=M™^Ã-g+†à	6$"ìÕH¡á²¡xrÔàóÇªéòW¾šr‘	S#·EØëòœ¥dO>/Í†qÒè!ªú2lìÚ¬İË^ûİüÛ"9‡­¦6Ï/øèXáé©®øvãa{¡gÜ¿Ô?6céõ¿”0ÿdØĞ#Jk½ıL3·éˆä«+Û{ôº½i…÷Úí³ŒHë³^› Ï]‘ÅU®şşË7ˆğºG…=ã\ÓÃ4Ébû™ã†êM»CV¬Q õı‹m0¼-~4û¾ù5W9•Î¬™ëğ92?ñ ¥WsmêOëÅm94¿¾í©ŒóÜ²#˜²'¬ÃF°€ø©`!Ëj,ªeI· éïgÎ˜äë¢¾¬õ7)\;0z\@,Š›‘sFD›KXYN±|5éóù†…D¹ÿ]K>ó‹x¥ñ®’ÇŠ‡ûR²,0Á
+¨Œ>ı­Ú|¤eĞ„©j]iĞ»§Äwš	DÉ‡CæMt“ôŸ‰%aFiöğƒv¿³?|ÛtÿÖÙ)$rAßztJ¼Eø»C1}‹È;E]'Vª»§cÇkK¢d|häfB¤·íƒ5½u>b™"Ö^5]Dá£9¶¹*öŠÍÌ1Şt;»;ƒ‚9øŞ’Ş¢¢­å¹u†ÎË¿0­m³œğĞˆóÃ p³¦B†vĞM÷\Wà A7´ˆÖáù†îˆ­ø­iDI›«.¶`z„dÃÄ…»‰»â2°aŞi‚Å[s·‚2µÌ}¾l4[^-ğÂC©é¶IÃpgY6×«iï¤ù8^LPÆ¢tĞ$:©È„777Oxñ¼;)öƒóBß‚V¸+µ6ßÀûEVËlšÅ“¸Æ<ˆÂåÑ§öâÙ*F,ÿèé"ÃœhªˆóŒQÎiÂŞ&ÑÙ"»Œ..®.7‚jÑ‰§Óì:‡âwñ„ºñ,Ò³ì‘ÀñHÁ1gç+ˆC_S9™”ˆ\Ëú@ËøŞoÙÏ¯ä5Ğf›DİÂ°`„RD“ò}İ¿•T9 ÔºNıâ%éÕLO0Ç³Ñ)[À(‰	N`ÑÉµ'y¿ÇéÓ£GÏâ|uI­¡òVyÍ¶Û»»£vÿ—CLˆé,ó&AÛˆv’Âœï`ıÎv§ûS³b¡–Vœo6w¹®bùÎ®£Èìäötä5U¼gˆø+&œ¬¢¸ìt¶{DÁ2•×F´úÄ¬s7&W«Qã#;:4µ
+À¬Ëø£Ë‰İ­äÛµkÖ”ÓC‡HxÚxÉJZĞ“Ô¡cwvìĞèşb4SĞc#r@°EÅâÅg¼b
+S$;GÖ°BBz¾9jHûwÎıd›¥ÊùÅ%¼•‹ó…ó­îºBÖUÃËÿEıêW³¥Î~*lÅ6²'Í>>9vê–|óáÔ{ş(€£Ä%Å^[TõÄÇ£,ú!o¿Iş†ßHå£ášB@t©ìo¤\D/­ˆo)ªìÅêö à}ÎÜ`f	E†#ºÈYf¸ ¢õóªˆ…´hŞ›?‹cÂéJç°¾»õöºÑe2xS 6N´›Ÿbñ"'¥Ëcµ™ÅÃt¼a3»ùLŞ-½ıaç·aÑ8¶½Ûö;Zƒûõñ¤Á¿[ï>µá‡ƒÎhpĞÙÆ”¹Pü;À/èKø0šö*¾3lfXéì÷‘€w§¶'€Z¨$
+21r*¦7Ö:ù8IÎâÕt™Ÿè¶¦.{¿CÏxºÄ¨¢V4Ÿ&18©Ï“qzÉ+¢|5¾(ô%†h;_dWPÎ*¦ïXP[b‘¢Ê.Ãî¡@µe§tŞ[—ó¯?°ÂÔÁlœÈ;i&dŸüaÕh\gjô]îØC¥+ƒûÛ²ºÊuœV­Ğòk»;lÚ®›Û)Ïì"Ñ³ £à}ÙÏïZ	³_Jå×„¦‡İ¡ºXÍ\6™Ì°°°xX|şs5™¯ Z’0+ëşL‘8ÄW*o	Kkâ_¤ı
+ªá·pÏ“h}yÔ}Ü‹äèò óˆÎFÓÅêàİÈ®cHşJîï8:Ï²	èƒ“tBFpú}®öºÒ•¾ëEY¢â	}N¢Éaÿ÷>¾£ûx¥¥ıÄ´8©kÊ¦i1yzãª»ÀXòULkM¸oe[zÚĞÿu‘ß%ÚÏãi|É‹=UqíùÜ|{zÕ§sìº-/âŠĞŒ
+ĞEp`›Ä%ª^AJ…­z$aÒœÛ.»\ûâ›ß-[0%gd%Û%¤¯— t‹ÅP•¢–êSÕ£ì©š_ì‰èù=Ö‘ú¡RÔ=>i½·\kõå¡ŠúéŞÏ››öäÄ&Ø{ÜtMF0óG‹[é2jË,8×Œ^°‡%yÑ:ş
+pÒAEÒÊ:×è“¥ê,…Ş/C+@@Ó•ªùiŒ	­ëÛGGõ‚ßWùN 
+±¸GõMÊ|İrš§T(d¢	7{Ãh¥†r[6l”íÍJãË9Šd×½øÙ„}Ís<d~›,p¼Hólö€zö™ó@=ààä•V	à~o8r7K%˜â.ñ‚—Õz°G½>¸‰*AT¯Êe€×›€&•Øæ`¤aşCŞèª¥¨²Ìx›jNØE2ŸB˜	F¼¤ú¦âˆ€åÉ9§ÚX+7G¾á›¬ÿ7~È›š†¦ÆÔ}‰l¯Ë6ÅmPävzÆÖ\'WÉ9Da‘Â^S÷L©HÇ/ |%Ê!“ô*²ôÍJêah ,‘¶}à¼e½iú(”±^oá$•Uø—½XÇ£.— Ã2VQ±÷ññJÆ»Ù$“Ã$¥ùN ßWWøDT³éÎ¢·D÷mE'Ú@‡'Jh?›¥²tü'î¬$‹×*É Ñ=­µŞ¯
+)Èxïg.¸Õ‹+=7¶]à—‹âÁ G¾ª]n-şÛåYXcys<Sò)aŸ‡A¼ü™æ!‰1œKß¹`Â·…ÁÉ«GVu Æ}{;äk/‡ëf6Ò¯sNA¥·'õû [cFæ\äU8t(—V‹’¬y”Bçğ}ßUšÄw¾Y¬šCçğ‚Î ^Ç79«®E­‰¬bJé,9Gã©1µÈÖZ#¶Ò|ğĞï—‚nÅ=Bç°õ-P)
+ÍKš Ï“‹aç§õJ¢‡ÑU`s•9ŠodÕÏ¶k3Ìsı´ÚÙ;G] ¦5Ó-V¯„°ÃVrë¥m)¿«°–ßùó¡l~5wei¾qİ~W¾"Aú2Sa.´œ äËEµZVCÅ?™ûtÓ][”R•:ùÈ |Â2»×¦Üıû2”/…Ù{™…¾7«EL×áVôÄ slê(ù‡§Ç_ğ¼õGÓ”üLôsğÊ¾?«YúÕ·Û÷;DT{BœÕÃôUÅÉ‘IUÏÜÙíàKÎ»Îù€àDôø:	;]#<%t÷‡ıîş »ÍÉCbŠ€ŸÒìXd}ÓeOÓÚ^OJ_Çøüºûİa·½Ûı)ºfl¥‡'Û¹¬¶È¡Çá…t˜{Õ@XM5[îËÊºh%ª
+¹=)>5É(ß?ú¥PÄR£ÒB‘DÒ€ŞÒáµ°õ
+'Úğ-µ¨ñhÀ…Bş\vÃQ¾ËÔ“Xşà§VôÔ~eMãå2™j”Ø¶o?ÛíãTarO/¨3Ö†¡Ä£@-‘G)4Æ¼84›Ú‚•ú"LízA(ÔHËJš’«4[Aå»d3ŠN~ÈOt!ŠnÅ×qÂt_`«‡„Æ¦Óä›rĞ­t±•Ìå¡º‘m‡].Ñ²ø
+(¦7‚¸*Î qƒ, ‘¬Ù’HLDúì^^Ê?à1SÿKùL{nC!Ùfo…Û* ÿê.©¡^ë…«ÓÆë1«RÍ´N„ŠıÆ ü“P ²¯l ü¯xnù]@ùƒ¡@`%¢gÿœÊ?ù"ûÊĞ³¿È¬èÉï½òC§báù¿á¿EX|wykõŸŞ°·ZÎWK£é±”·"k6NnÊ3èîA¶#˜ÅlõKg¿Ó'2ÀönTdÒ¸ñÓÛû‡ÛC¢°¢gm5ØîDDèíâ™à.}Àİİ=8»]¢·wEfv!K±hiuòN_,Héğd8¶´0~?VÄºóü’Fò"ÿ’R_3¶ ŞFæ’šI’Ìµt¦S²,¥ŞöØšç“ŒT
+s©}j†ÈjQI_(ºÚf&O5-§²šSü)²íñpzí¸(ı˜-C<QtQŒlä&Jg+£„»!xîÏ@'õ=N©V¸ ZAéH|)íù“ËÖÔwCà²‰[ßïş$‹ŠÀ«j$ç6êàïñbvVVè{í=›ÎÙZ©ñ‹¦!<Of	Çü—ñ¼éƒ^Íb&ä7È²3½ùªÂUQpª>ò’ÿw’'àè)§ÉgZ¢~P)‰ISŠ9^iòŸÒŸ>ÖáÒœL’	/®Ê¿€RV¹ìeB²ı8\éí~÷`8Úïít\	=i¼d]»&Ol5ÍìÓ<=ì×l¡ÖW¶Ó$J&é’¾ EÚÏã{=IKpb%CÇ0šJ5i‘xß€ŠÒOÎáÔPªMì¡F‹_Î³Õl¢” PjI­eCÛîíôA€¶‡hÅ²EõİÜ •nİ`•¼”fQÜ[æ{áÛŞNwğV"´E–ä0bÃ:Í&7ëM×2”×½Å®J‘{İıCğô;ÃÃş¾#I†kØL‹„'	6ƒÛ@g£Waß>Cœ\zÅ©Ûùºt©»at–l¾4¢5m¦…Ù`€«›ò[N¢€êápscÓ@6~tÉ=Tu/R2ÒúãÿÛ ÿEîö¥yócûÑß×«ÄÎªGªpÊŠëj'á†
+§ÊbbM4…Vµ™ë«LaÃ´]{ù»ÙCÛ:
+´Ş{¶Âv¸æªg2 T›s]yçé#;µşñ…ÒÆ‘½. îu±"ÂØE²Z! kÅ’»Ëˆ‘gt‚5½m¥Ë“–ò(´C(CÓB)Nù²›:ö$J'I_—-/v–\Óe$¢RÒìŒjŸ6ûÊ=[Z˜v+Ø^DEOØ3È¹_˜/
+= WÆLjE§+˜ÛÍi"‚‹ñqøFíÏd™S8‡ëi+º¾È°2qşJİã@×Ø!>bÃl]7ª‘­m»«ïúm½ˆ£4’›vEtzY^\Ä„­²e ~Êù“üe¼øD$ıùjÁSúbµÏÇ'=ï€Æ«¸CHÜ0•šŸÍ¾WúDø€‘­CuJcé’#B,ü‡h")ù‡«3²Q<90ÌiÂO¹äpTlÀÊ7,ª|yª¡ Á…D1`ŒØ#zy™ÍŒc ²È…[Ğ{êŠßCz‘6
+—·t­éhl¹šk…à÷‡ôN_;õ
+xTÏ:MF,qñƒI)Va2TWÄÂxkjl¶¢s´éæc	¨lç®YE@{æ.:s¬”·‹»Óû† -½`ÑL+¹+áÒÑ,‹øöÅ4"‡'‹ïÓ¤éİäîÀABÑ[fÿÊ¼ç›Ëºj²ª4©ÿeC
+´·L“³åètßê]Ö6Ì ğºO~Ôë¡,Òó‹ûÁHCÿ-(ódß"&ë¯:m%ÿ[áï2ŠÓQ5Ç5ı.0âÚEzbÖŠ%)ö#ñ¬ˆğ¹xp;Tš´‹FO†•Í¦7Ÿmª±_»ˆª1 ÆnõÅÜ/5g‰NO+»­	¶kˆµÍVè0”vŸã8~î3Æ‰…Õë°…Åç_Ï4Dï»ºËBóM6“,Éµ4ÓÔPQlémÄÙÜÜäıE+Ğ|Jn®³Å„¸~KO³ëdñ#ß‚äQÅ¡/`.·}ˆ¦Y‹4!äÔ©”ÌX£’ğ«×Ûí´…N@²b ıÃİ]ŠóÂÃşúÍ¢T¦¥Ğ±¼.ùQ-MÌ{M–ç±­üİ_kË2Ñ?l, Ò@[»×Ú\ˆÖÇ‘™ŒŒö—SÊçÉtŠ¶ê›r¦›õ“{0;Õ÷¾ÌB_€-NãËÓIÑ[„áÀ<Jg¢]’óD‚ß¨‚’¶æìdŠâû-FÃpdKşÕRçíô†üÿ´ŒÆS3	bÎÓŞ{½Ó_Lµ¸çíÜLÓÉAĞÎí ƒ‚¶×†70â%a&§«åšN÷¨=ö»¯‡Ëühš6²ŠW·Å‚NËd%ßwö‡ZıU‰‹å‘Ñ:‰·Ä·ÓyÓ>ÜŞ·w­3[ß?E"ÑT$l,åGô»ÛÂïwÚ;½ıİ6X æ–ğÁ?úÖÕT1º¿ì·‡‡ıS"ÊÓs]ÁÉE[ª4]·\‘ö@.ÍÎñ4Ü »1f¤èå­m¤`@•D€ôÿiJ¹Ğ{-‡¹åk%£·•vŒ¼-9™z©´:5ú*ŠÛjsoÁ½GXMKÜ]ğ>`~‡âñå Ñ8â®AÕ¬„gÃ±*B•4¹·,ÚSb(<×3ºÚœ»•t1.YÅ,TÑ±Ã[Îï]zò ÙbI	lîÀşê	¨ßn‘DŠTÅğÄa)ÕQŒÄîb"’E2Ya{|£aïüL,5aølCê8£fWá6dëíÊß§?a¯c”ú’ÏDÂûw–/ÉÎŒX™Q2O3 Îé^æÓ{hFœN®r©¶ãAz#æ©ş"]ûÛ»ìó±H¸M³/¼'w8_œÑ]íıŞş‡½Şá@Ål %YÚ¯w;0Ä¶%TLhJL8Ë·³æÃCÓx\`‡¨9[Úo:eÍ¥Ã0æ¶Å§L»]ªQ¹oj\"Käa¥°Ksxh£á.^æŠ”åPâ"%e‡ífj‹×¥4ÚÉ 6š¦Vˆİ®,YÅ2C¬ß’Æê¡ƒt?Åw§Á’åÒÄ¬ÛèEJ¤eÑ«ùÜ-,ËV-…5e¥Ùˆf‚5Ï’ÌïId“”ŒÔ¡tÈëÉPáRTA"’«ãtgæSg‚àã6ÑÁ¬«"»l“×!¥“lá›i„¥ËEEQ#™ÃÛª •–]nLªš/Áe2]Bª(z-Ò Âş:+èÆKÈó‹Š*ğ†ñğFˆùƒq™«<¥iUµKÚjª°ÄÓkÖ'iïtúƒ¶ú/£ÅëvşO/
+Ck‡Tº^-„k?é?!ºzvŸH\o;ƒîßì¦ß4¯Xx§;°9M!áÿÕğ¡õJ*ƒ˜P¥,	‚ŠWEHè{Óvö¤Ls?6Tà³É]ÁVK¤³Ù­bì\äcYJn(üpOåZĞÙÄ}Ì	½Çğ«Í{ìŞĞR2/£_¸r'ñ4›%#!’­¥l(ÈDğÑÄŒÍ3>wß8?uvò™º ß~}Û%:•«çNÏùéM¯ïüV¦í±ì"JŞ7Ã3O.«ú¢¶öÆÚV×::Wg¡,go§;´}äëíl@İı,»û#,<<–õ{»…olá!²Õ•%GYtúlc*]kÇyºŠ])c°Ï²nã·ü¹`¦Åº*Ïgí´¢:–ËlºÅ&iŞŒ¸Qğ,O‡ÊGş{A;+KÔŠ£VÕ5yO[ªZÈ’i[y¹èôÜT¶éª! 41y—”ßíOê}m^ğÄaşaAcÅÀÓ/V‰ÙW™h+«j«şò`å4†"¼Ş?E
+ò‚ù¦U$î{uòa¨Ö5à3Õ%:Ió5a.ØñWä¸ ï%ôwOQ¥(Ñà1Ãî8,,`PŠ¤ñ¥FõE½’Ñx
+–r‡Ì6¥YK'ó@’A%gşv=ÊçÉ8=#œü6Æí7 €Ÿ½m»m±¼÷vw|-….‡ïæ·r€råOWËeòeÈo!ú&/úyVÂèfƒV»Å
+²WÒõ3Ê®=ÅB&C­,hĞñU‰¢WËì,ıR%eKi?cû¬¥r}ëâ»:ëø¼X8=¨4›Ê~CXï~§Kt¾¾£ÖXGˆ¸›À†Úò>óu`N,µ‹ñx9%‚‘;ø–‹P/MˆuİXç{C	a>;5¾£dt±PòCY}Ùl\*ä¡£0;xá˜M>Ë’övF(–—U®\åä6#£GœbMÒĞÇx_ªÈ¥¶qëZ\ÔqŞ.ôe·ÓŞéîÿbqzf èBló¹YEC¹ğm‘îíé”Ş†y#Lœ#ƒIaÛç>nEOZ¢ºwñY.ÈT/‘0êßŸk5ZlK
+%uÔvØÏº¼Rw«x–7%#ùøÔ·œœfì"GœƒCÇlÄ«‰Aknwê;]2-Tš¥hú¿guÔóm[¿LÕ›ÑÓf3Y (àÑm~÷NHs-yQ‰ù dDüBÁ#;‹äÖFè!šS0È–K	ñ¥ŒNŸÂÃGÌ2$ãJlàĞlÎ:÷.¢‹2¾jföp¥së<ü‚¹C´˜óËBÚéìJ
+ HQ’ß&Jê8r5Õ¥¬œ¡}g:)Øç&]ÏÖ?©w~<1¸‘İÃt¤”¯,1M’şª]?E|BÏÔo°DÏÒ™sòqüK>WÏñ1”'—)zvBò2îMtÿ°‚vB§ó _¨r/T{æå÷Õ‡½wöö‰İ¸úI;Q/
+üÃ¡miŠ7æ…Âu˜çuÔ©Iof%)ğx‚ z:óÖš/ÑwlBî…$5ä¤ş¤4;g¨
+Ë"bo›©â]çÃ¯½¾ò.Zîœæ¨{¼©ù,n7P™ÀÂ‘¼âvà•l·‘P1Õ©ÕvMÓ?ª¶kÉ!Êíø˜ôñ¹=W'Ïü%àÉ†‚f4Ù3E;=)H1‹JÕO³SáÍaúÕk:U_:ÔA)…ÎìÚù…· >rpSO.|S†¦½Š@ºêBÎˆPû·:S#‚DÎ÷QˆWşeíáÊ„ï×~,ß³¸¹‰Î\]g¾Ò%I$$ùİÇ˜å@ÿ(d·P‡eæeÀ‘™Dâ<z$6¹ÂÊä•IŞğû23$Ä„Pñ›K¨,%±D4İ'KÅUW Š=@‰#:‘€ßdÙó¬^eüJPjáå|Y¿ìë
+H{Šæ›Á@Gg+¨C ;Ó~Cåª*ˆ~UföJ4Dm
+‰bnñ@"ïN%÷’’¸ÜÚÔ’ª©bb'ş˜"öeİ÷O)Z[³ƒ^w¨yÊhÃ¡a°ë¥¤PP¡ğXŒÂEøQÄç*]2=k{Å1QœA‹ôß®ñ5EâHÜMÔÊ?ûM^?:ª—ßY'"ÁÀowØWbé Øôé<¦Öky¾QÈ†í“xA®zª.š£È »H‹¦ò4[H€É®.ÅÊK`Ìğ`ãIK
+¿~¢²ôş^)Rƒ£WO¾pBÙPî_şQŞ¢Ï¨8Tº­–ğÊ„øœTo§ƒ“øE˜¡ğ?TÅÜW‰©ŞLˆÄ ·½à ¢OÊóŠÌ¥ gœÀï?ääÿ?×XMU–ÁıjL‹äœæ9¾ÄÄô¢Æ1‘²€$¾ÌQ -Nåá¸WĞ¤İ0ì„Ïª¨É£.°ºô˜Œİı_vÁÇ}Ü;÷dyº`À_¡^+½[j“d¾„Wå'8qÕ˜v%T6„]	‹Ä±!6•7øïÓhˆÆe“­Ã
+ÑLõT÷Å¹6”úN®gn¥%T—úÿßÇòş­ñê¾E×á_ädÑ5¯åÿª5ÿ»®œKÆ³Ù€X¥«’á+=>ÖéY¬:EUWØ=Ût€ßññs>ùÓOô›ÆÕİ5HqñDB|ôÈÒÜx+×ôÿàx4«ïœU³‹Ä$´ßLİÛãOşMìÂIÄi¥QÆ]Çü^ÿÆZ¨ÖÌõø‡ÉJaÃ9Jİó:ğı}r¸åë Ëµ÷vq )¯øQ<™¤ÀãéˆècÓÉZC½‘0ù<'l?]>ÀÁÛÌó–Ê¨óE‘>%BzÙÜé){Y?»3…‚[3·Õàmû€i9D·Øİ	NìLQ«Q:·D/CrL$ZPÎ-±(8&ÈD8ÏÓÛ/dgw·{0èî$B+ÔPwÎ&˜ˆf…wV²ÒçÜ ]«T±ÒC¥ìÛÅÁÊÌÇô­ìKËœ (EóŞîjDO*æCU¹šéÒ#u7Í.Y%;Ü@Ö“P˜4[ÇïŒ<Sp}9×£¥-°ú(şY^pIPŸÕA2‡ Y\·Ö²2¡¢sx@ Anw›)À–…P>>:×	åÁH:$8©óeIî1&ÉÜ8ÓŸŞğp„d¢{°Ê9ˆfB&S¨Æ70x´ÙV"Y€ñ¬fÌÏ.™ˆV*d2¨è­õ'Q|¶Ä‘C´~¾¤Í7#†{’áX¯!_¢/Ì©?©lÛ«à(µÑhš³Fn¤ù=a8yƒñå;ÖJÒ*•i^ÔÍê/5¦“ïW¬D4Ùt	Q[I>†	æÉ?VXş[n&i_¦ç+ÌğP$9´ÓpanŒrÜ$=O—šŒ·æì\B&6¿ñE¼PÒ2ÕpQ:ƒÿYÂÿ,àfğ?+øŸ+øŸÏõãjÅ$Œ¹E{Äÿö ­ì`Ø'óÄÚ…¼ÚË‚¹œÒS&Ù:’Êß1{İl™‹ƒèÌ3BúYn<İöKn½ïëß;›å«3µ™yŠÃå­64øù£œÉ±Š€yº“Ù9XÙy#êôı³`È¿5”"êj•İšŞ}*ù´POµ,=‘zÎZ3³¾Á×–>R’)wd*áÉ‚Ü–‹.zÜ¼pÙÏ˜¬]½=»¦Ü›X[’®iÄY* A°šÍHÅ/ÊBˆg„µiwuìÑqÛğa5®/Òñ…€IÇl nBVØ$¹J¦L˜ÓèD¶I)#>ª£ 4g„%'´ÍvD~#¬ô<!ÃÎtIå*KY';„ğr1ZÖÉ¿'0ÉSrCäSğ†^‚µã+#¨BcËq•æ+,ã8ú‚„›Gg‹ì²¸9ı]ò}H'¢BY£şı&RB:StŸ)Ğ} Âÿ…‡¢MÒãáVÔKaÅSòé4Y¦ÿÄw·‡å2•ÿOWôªRË‹£†E]?·›¹U* 1&T^#t“à+&/öT¬ì´±f¦éš¨—’ªeDfÌŠßaaHjQ©Ú,¹Íá„&Dœw¡ 'îÄ±PÜ•8şq±f_åµ1k JU–¦ó†2.eJø™q§ë‘Cµå
+ŠëÂ<ª8!b/Ã†nQÛĞß [Ã"^*dl£å"N¡@½2Š¿Zx½‚ñ©±yÇŞ„‚5ëËw6—ËD-¤ÍvÏê±W+†½İQÙ·À‚oî‚œ¾c`‹RsÇ›±ÇwÛÀ/…ŒÊî“°ŞiP·‰‡ÁÀ;'›Q…X—¯Q­ôPø/€…‹Ë“ŒQŠË«ck"¸L-ÓöÅ‰o°HqÕ¥ÿGC$’£9;VÎ¹`õs”É/çË›¸èÎŞÁğBài»[;g–{RšáÁ?E‰Kf¾uWÊ2¬~ÈWŠï‘„v"¤•C	k}h’¢4	ûÊÇ*bvP‘Y¥mpàT*Dİ~¬@(Aå•b74 óÎ*Ó4pf ×j2@QP§ªX­'¥ò@—ñFàéÜ±!È¹Q›ÅÓ	¦'R%+ó26+1Få‚¥C¸¬â¦®ˆÈwŒÎÉ£U©İÚÈñ5¢UÖâ–¬¥2¡Ïb½4…f(°½zõÒHÅ`¥8éáZ|ÚÍ³Õ‚ A-H"záû.Å<ÕıM(Ì®6^-à9P»ò,<¼áÏ3´ )}Ã¾nx_[FöğzÙŒ¸_4ç—ª*€M	hSêçÈ”C4ÕèUèì%ódu²E&•:ó×Ïut›Üx>XÄ€šN_¨h¦‚¦øçKçz6÷Í
+3¤ÃÔ½B–Âk²ó,-Xqëµ03ñ;Û=­¤Ã… ÊBwYüL7jÔÀ|šêşÿÒ—ä³ZN#ÒE2æå¸7¼å& ÛTj%®í“$³ø®€GõÒÑiSñĞ!zz¶£ ø$™',îx ùõl5…'‰çä·¢S‘XĞ#êô¾i+Ñ0 Êˆ¾Öw)<l£ƒEzEîï£öá°7êîôúğ²È¥ÜAKİå	J«,aà§±kãñØ‰×R~Â¹ğk„?
+èù)‰¸,P‘|‰St_é³k/©=`¥¹¬²%¼RÀE_¯OÊK;Æoâ¿™ß\fÓ†`È8L¢ÃÏ'€~‘Áœö’ò]O‰æ kŠA¡pì`|ñ
+åİDñdÓ'ÍğƒÅÂh¼(øXâÉùIÄìôéJbÙ¬ì‹’FÆ¦Ã£ùŞƒCtKÊÁŞòûÛ·\¤—(Mÿá6½¨zXöz4å{cÅİ…‡¢Ôr7ƒ*A"€",ç·ªÕïU4>İÚlöÿ=Åù+¼ŞÊÎyşî†p1J	·„gHòGãÉO[J¸#üğs‹3Â_¦>R5ÌP”³Ç<Ukåù	¥:¨=rÜºÚœÂb†ùà@tÇ\±å%IEÎ´2çO¨Šï¶M‡ğyR›–åq*B†]µ=§»m¬ñúE¬ UÅ®ó­õ¢jj+Óì:YŒã¼ğF‹™&%²‡g!¼=x”æT.“eRäˆ#.sù½ˆ¯ˆI?b„¦
+átv}ş®×YdIá÷×"u„wR‡V´YSeÃõx“-"XÆœHŸº,x4£ßZÑ‡Vô·“VtM4àT*QMiõüd£ğÆxíX÷y¶jM#qÃeYßx÷ ¸zî—â*£FmN-TDÆŠ@¢WğUUÖ?%`ŒoP¯&Rêfı9Q|iå<¼‰4=ŸÖ[›“b0uıJâÅ4…¸M(¨ñhšeó]ÃmJ(Ëå<öøñ99K«ÓM2Çgä*8Í²O/.®.§y¾JòÇÿõŸÿşóFq˜äy´ÌF—égXşyİ+:k1D	F”P]ì3ù‹Æ_\‚ë¹„İÂujF[,´Q×-×R!+E6jZ¤=¤ä“ñ
+Ô
+Ô†„®>B#g"ó<½¡L¯+ØPÒ÷`irá×İ¢G¸ÙpæyÄnÚ9˜­t‡º«°ºªöU°«x‘B< "¤]Üğù;lFÎµ“BIgr'ßòù›–BîŞZŸ¿çpÊ]Ş$¶riåşúP&møA àõÒÀ‘eœAŒ,×
+]oU@Á“&GñÙ³®]Ğ»²W¯’K)ö&¬äL
+U?DÙvVaEDf6ây~håÁÊCX_’˜µšÄ*f§hE|•æéi:M—7·Eÿ¾;è¾îîv‡n[\ù}»ßÅ"Ü4ªë‰”ğ=º‚ü &ôt†„vz=,ÙñåKS„çß*¿j(ä(
+y-é8¬¢ƒ-ÈÜ;Š¡»ä€[«R
+F³¢ü¹X>‹>W±V-²\£, Ç_ámVÅ’®¿®ZùŠ¾Œb‹n­ï%%Æ‘,Ñ˜ÓÇ OBjcò¿ÓmB"=N'ËZùùy¡XX;Ô\tùÕ•Íñ·Z	îáˆ©´jt£ãKí(q2/‹z4şÜ|^h©ò0-¸Sçr »ó”Ö4"3º‚ŠÑ%ıK£î(²†µÛØšT³B,gB·OoN ù¼<w3¨YÌe-UÈ®å³øQÔ0î†Ù—ñ}9Á@^LI¸¢Õ|NÙZ4M– #JQú®ı>Y-„ÇÛDb'ëO´‹‹H¶G,Ôş$Üd¶ºŒÄ ØAä6ûÁn»»O“#EQw¿w8Œ°¨Já%´Óİ&ÿ÷ ²—üñç;_!TşÒ<›½]øk,6¹8XzÀWg¿7‰_p‰v‰Ğ7¾mïó5?Œz}Ú–.XıÒï´AH`­ÿbş¦vø÷»^ááá"ëŞ³³CWñ0‡ ¶/»Ú.U
+áİ£$k"âbëPœHØBĞH}šeX6ŞYçYª˜Ñä•Ô±°%å¢ä %N7ì§Ó)ô¶5œÆ—§“Ø×eš–Ä¸…Ÿ	ç½Q¯ã¿Ò‚(ğ‰ÚRà÷Ç?ÈzÁ­şEÈ ‰ñ$»&øæ‰BîİSGv=ÃJFßìNæÉ×â•µd’˜x–óH®r)t8‡7Î÷{ûÊ	»£&kXn†a+"ìqW<
+P²‚×>‚gˆ¹%FôŒ#W~ø•ß`Çw»J!‰¯{x¨k[µN)c{1ÜjĞE$ÿkº¢ş•áœ4l~?ÃCÓD‹á
+¢%`A/?+¿F¯†H £İ¨¥˜|•g£›Ñ#BDi‰¶€< {_*ç°Iô’âc-=V<«Y,‰‡¿ÛıHè»ÂİŞ¡ğ’J”˜ÅyÚ;}]Bèÿ·°í2 Xî~É°_??^,â›OÉM+^!‰¼Kn’ÉpƒO5’´kQº¹ÚÚbWZ®vÛTÚN´5„ñ]|I0 Ú!á•fídå šz¶N„€«Â½Où†>ašŒ«\t53>Dğ¸`ü^-?Ö>ëïÛü×u>Ô)É”Z[»—ép÷ÔI/¶4É¼A– ô~ş6nsáji j£N´ÎÙ44n%vÃXª˜ÓåÒš.ã&tù‹° £-µh7oJİ¿j£ÑÇbIqæ(Œ1XGğ»¤&5Ó‹æT¡ÛkBÕ¾›ğ„örç|^BŠ‰­İW¨A‰Í‹™áÔœ£˜ó=vÜjTw}:’áÔ-ÿ«‹·ë=1é3¸…kŸ¤V&¢*]´«Ÿ·£ZğW¥îÌ §u~d,ŠÆS02OXr!QHH–DøÁÍÎ‡"¥Ó+¥€ ND`~}4Úéô;ÛDßaV ø­7=ŸHò·Ã}wÔí7²Œ	Er,ÜÄ¤o÷Ş¦=Éç6şú¡-í-~B]¬x‰†O©…œÇÔkÍ5i.·˜n›9¸fC´ƒI­B^«[250k» ¾ŠyRPİ.mslÏw ŠÌãÅ2•Wfy½r6ª)),|ÑTj¨jy0Tï>KcmøÏ:˜â¡m¸wlm“eÂGÒráT—ßÄhrƒŠøîş®Ñ®Ñoè®	L(˜_ÄOµ›GÖ)‹"Ì+i£¡ß„	E1¼ ã™L’‰aC©C!áÂ¯Ì²‚Ì^­Ù[ŒƒmÒP¬ÒJ²F¢Y¸UhµPMÖ’€Nu1’áy¬ôl¡ÆlhÙlµn¶à£â5=È¤'šR¨¦¦–ª6zØ’ş¾Š0OŒ·ÄÈS£„#º†`:Ã‰1ØŠ£SŒ(Ğ’çÂ €emÇLMß×µ,OÚSÃ_Y,‚–Ë¬&ÈHÖDÿæg|ŠÅçcÁNíÍêÖÔ°hÍÏOÔ^KG!|A«:ÍK”
+Éãåt·\
+y¤¬ºø­JÅ`cØ~nÄMôûàÊêã +R?¢.¦êSì±—ÊÙb4K§ôğU&×¨®ŸF,+‘ÈÜ!,¬PÉÉñ®¯‚~Aô»Wâ~wW*V¼ÀÏıĞMÊ¤!ÇßoâşÚIÇË`MÉ77½˜
+8€jşıÖFÂïÛh*]ÌèL­]å¶cÌ£¹%ËéQx¥œ%h¿ëÔ)w–Êeí,ßLn4!§/‹ô0r«°–÷z„è+¢D&–Ò6„[‚]xöWŠ[QQÑ£,shIŞôí/æX¬€“5è$øfâ2bqşµ%yƒâùô*Ò_ÁÄ5á:7’Ä½*¾›ißuPÖDÄ\±»–fZA½ZSí†O„Ï0½ı‰IK»¼Aö•Ó7ÆİÒÓ›F‘™÷A¬6vuæ¶Ëq£ŠY á“š°Î–Ëoe*Z€MÍøZÁ­ÍL´èIµšĞŒ:S	»Í‰UÅ¼¼œèÙù±ïã]o®´ª]µøfB²P9,œ}Ø¦ç¦£¤
+µşNé-û`îßƒüKw†æ¡	5<Û¤Äüá£‹©¨äa±¡È–N÷"ÁÊ‚4ßÖSlÀªTÓyĞ*‘ˆë[Õvx Ô·@/v‚ĞGx§DA“^a äË—|áƒ
+û•ÆËJí,¾L§7Ò#ìE„–:0¢‚İ¹fog§/!¢i«½,Oú°1‚CÀ™Z¸³vFı¥q¬â68%İ>
+\êÇâLñ°%VÚ:2›èıîš¨SBl‹oÉæ<X.XŸ6ìõMË¬têÑÉçø“pGß¿xq–Nr˜½şT‹«b‹<&zø÷´X,şBº‡<‡Sóä}ÒgìÉ„CæTöà¥1¨w]ç^éqÄ¬›ä]¤§«%«=Ï"Ì}q£ày¶ ÉfÔ¡Ó|ı³E>s‘<Ã>®ÒŞÈª¥Ô•ñño|@4­D¸²!ƒ3=»'GL×¹uTE¬ÖáÙm0fG=vZnÅÆ*ÿÜİ™iõXcE…ìãFÎöräO6£x>ŸŞ4îÁj«9· :
+‚¢¾µûË2Daò)p»z§±SN±ÆjWò$äiïtúƒ6ù:Û__·ûÖß·á•Öúe§gÿİö›æî¯ıak-C	ä¿líöºû‡ë2S²möñì::ıÏag€Òâ¶Vƒİöà­ıËĞ±†øAÿzççƒpøÑB®‰òîcãé*'ÜëŸ`#ú1êSÃd_K®Á Ì¸út%S–)`5V³e:Å¸%/Ö‚´søÎÁ[<ğ³¥eà³ğ&YB+,]dÓÉ&´ìMàK Tì-},DTcG+A0 éääşS#Ú7O¾ó´9‚şÜŠşÒŠş½ıµıxîş¹V¿½eJßVõşKóy„û®B<–8+ñõÀÌYs?%ğ—òïõ}›™´â›ÊiÂ¦‚
+%ÎD¼L¢W(V<O¦Ï•êñŠc3i\ôjFßĞ{ğÅsR3à ş¢'4ö~À!G!6ƒ%áèoöšøá?²	*+şP€duim£TA¤N8hC‚œ)Ô¸Ši"L¸W”ñ(—~ÇõvC£3kğÚÕPhÏ0‘X…G/-ÿàäJøÇfÂrÍ®82ººecSö dtx®ñ9@òÂß£ñ¬43'‘Î‰¿¹ÉÂG”¥oRJvB"˜M‰¯?wuíít0—vl|Îæ{İT„Æ,â–4emÕYQ©¡³Û%ç©x{{ä†n“dš^¦àé<Î.14é¹«‡ü_ïÆÏÔH¨uiFwŸ7í]¢/¿í÷y«¢=#wÀhy±ÈVçŞİßF{ˆÒ]zğtÙïõÉ¢÷û=ˆ­ÓüE#L+ãîÅ*hÂŒÔÁÁ:N1JR¾*h;¿aWz"ÀíËİã×·dxxRÜ.K–&£ƒ¢[$ç@¾¿tö;}pïŒ¶	QD;=:;„#¾şÁlç;h>¤• 'D{#,I8®CîŸÓtö˜+=8 °vPvüŸOÿ#‰ŸüåÏgI<yòÿùä?ÿ’$ãøÉxò$>}úïOÇı¯øé“'=İpP_{·Û¨ş„0ŸxšÆ¹jSwo{¿·ÿa¯GDB`0ÀÎDÏ¼¹ƒéç]•Ğ/¥·È-@y´ÃIÓ²ìÀ8÷ğ†P~êÛÃa¿ûúpØ>ìÛ¿aO®•‡ô¢Eè·å&ğÎ#–®n\²T÷oPI–—´W!¥ÿoV–ûnáôk»;Ä$"Û jèijŞuœâ5?B%JOšáûº»ßî0@òÆZÃİûä°í˜İäÌMÂºwÚï@‹v8‹@Lëìºİ&TµÛ~İë:ÍËŸ&Sx‹4Ïö¥å`Î–ƒõtĞ³ÑøºåÃcAÀb"Ü~«¤13JÎ2 È.	8±HÛù-Ë»™kÅ{- Á+×K£~„w7.[9ı#°ÑÁ°ï6š/áÀzƒCr«Éd?6 Y¾"7Ì±Q¸d( Şîn‡²PV|Ú¤œl:MÆ¬Æ'–‘¢£ŞŞAïªğòÜ—C¶"WYÀÑëíoöû`‹0@Ìx.ö  äÂ%±Ìj6AùĞéì“Qì•<a
+ŞÈJ¶!?ˆşá6éJNÙî®è)s²Å²ôu> ì¾Óß7ûÏááuQ2…ÂQƒ¦aç¬·RÒ€õ)/kl1XïQ¸¨ÁÁÑUhw% ºqê§	À5jkÑİ?ì(s†Ğåğ·Qw\û²ÿB?Fğ
+?ówßi÷ûít·Ú`d.ŠRCœ,²,›Ğ¥%wf¸¾<ta!Å!¡ô€5" z(@›³KÆî™VçMûpw(ïğIr¯¦Ë’k|7¦€6&k*È<Î=J‘¥‚TmŸ$hË^I ¡ûÕ36)Ø™Îö[£[2¾ê¸‹=È¢¦LxÃßè°™1‘,áÈ„+üÓ3àÎî Ó}£(X•I(ĞÍèTÚeïugg§ã?ùÓÔ(\ yÎı¿x ™3dğû·
+’Áák®à€¯NékGXj<xÓİUğTêér¸×7%¸b%ş:U¦·g˜t‘—a%@¨g°yC…¸¯ *Î„Á	ƒ<È67
+9Rğm“?ĞÉ{À£(µhadîNÃÁyÍ™s0Íğ}A^K®Â5ÙËàP¢k Ÿ"ütwÇäR„N'A<Šv×83í\Îá€ù,pâFUÍä.#òæ…ÿ‘‹rB—±À7=¢:uP[Iö²Œ½~¡kH7nÒ)Ù aÍi9„$0"roL	_w¦-Wƒr=ñ¼.X,ïe9Èƒ‘:ÈãXºy†¯’!«‡FL"»-•Dd	\3rek”@nìrBèîoïâQŞéöáª|ÄËò`q¸§I }1$Œ€UÀÕ°»º¸ô—]Ñ¡ë1tÌ›9Íó$è2î
+=Cº½ë| ¤.‰ôSrø+I£dqM°ÀÕØmï½Şiã¡¹óBFÁºº¿ì·‡‡ıÒœJâåjá¦İî;›Šg¿[0·¡kwÈĞ¡k—œÑ	|Á=ÍÑBC£-Æı¶Ôî¿;<1²Å'¦xñi51J-íxøæM÷7µæ=ğtš7ºÖœs£ë¨İß³tÅ÷Â”ˆÔëHÒÖôó˜%)q °\•ğ:,°`,•dÔn€½Ãİ‚}ù2›¬¦aÆe€¬P¯Oí9¬3Y¨_XÖ‘VwT;²Â‡eé&Şv£§Û”_¤ó*ã¯Ó)>÷¼í=¦øºK´™÷]­ÔïKcE½¦nkí4½ÈŒ­`±Á
+­Ln@;{Ã–©ÉbÚ@¬EëtxÖà ĞúŸ¦[&Ê:+ı!épwßÉ
+O†à¼ËÒ…QT¼‚¤Àk¨÷úÿæçz¹ËNÿÅn«<Ûõv½¯”Ñhªª"dŞµ)l YûOñyØÒsúô8„€iq (îtjwêM—ä¥!êUí!JNü¨0oşì6sxyÛà;¯9x¹Hr|éY….]|Mm:ó”¿,z¬:½Áü:-/ºó,_‚§Ç*ôa—F2£GËNaC1[&I%`oÑ`P—¡’®ö9Ñš]¦d”pŒº•€PË“¥¶…¸Ë'Ù×ã?Vñ+ßùoÈ>˜İw\\dÆ÷I%.Â ëÁ …¬€V¥+šT<øÓŠú^&ßVJŸËúº|È—Ûı_¹T»Hè*"Wç+¯lÛïüÏ!Q^•kk‘ücEôÖ²Kïh<}é0B^Àú¢61ê(  CÎ¹2;Ï’µ,ÖÂH×]¤Åß´7X¸İß¶LÆƒiw‚°`çâ½M^Ú"MƒL­ÛóÂ\‚Œ€eFè8zolz|kñ®‡Jƒ_» ‚ã!ó;D×)è‚àvhz: (z/ë\¦÷òê	á]KOŒõW½/ô:¤+ª…Œ9P-ĞÇDsö¸Î¢'{W÷Ú$ÂWŞìv·M½TB# Î¦¶ šJ°Û²³ÓÙ'òvq€„ÆÉ$™y»d”Œ%%wpÀ‚ìš‡ÃÜCèvîõ‰0 ¼ˆüC³şñÌâI¡²€K‘hvAşÆx–è0™Ù ²®tÌŠlYÛJ`]Ğ€¨7"
+ÁÚU˜û;rOÑûĞt÷Ÿìè¿õdWSş‚dTğØ@ a.@è¢³P ;Š=KÖÛ2â€áRê/
+%î@B9Üã°v‚W30—ŸáÃ‹ãjêÅx®áŠEñõnoû•4P„\¸bZ<fãO´Ü$¨xoqÃo.% Eí>ùÖZª‰‰>Š|+ŠŠ–I·¼N“N’Ø}’Èò½ßéj¤÷.¤«J.Hï;è%çY‚ŞrÕFFAZFFì×·M¸†rcez ë¤±?Ö±œÿıúŞ“µHÃáÊOàooÀ¸óK¯_Pf?_ÌGv-ÂZFÆ²Óïì[±¼7Õé6z£ÁÔM#Ş€ÎÂî%À¡“F¹[¿„uÆ:¸ğ‰ïöÊ˜²Ü?t÷`ås°ú| ½ú»iGû•Ÿè¸K(tèO	•€ãíD¸§ÀCØ¤Ó‹wx¦
+O¼˜’TØT¦#…í*b¡øÊ@U!“YäöeTd©ãI èhb‰o¸Aw“Ğ(
+Fßs
+AÛu%ÂiÈÈk`LÛˆ6>Í1ÿ…2Úò@zhü§ÒVFû€¼^ıO/á’y×Á^ÁÆÙ–F5åîïö·i“›ÙØÙ
+×æ¿İŸ9›ÀX4{ğÙâtD<«Õëöö;º‡–GG¾fÃîö;huân„Ş¿<ßEo#±Eÿzékf”>¬ÿkËÙƒ‹dD‘¿ú„Î"Ì—t³_¯G[g™·M‡š%ñ¬¤¥6Ú£tpÌEğ’«f€Vÿ×ÛBnÃÿ}énÈC€òÄİf¸ıVÄ	yZ¡Á¢ÜàlËnvlË®pg[x¨‡ÚZq+¸	r·¦æ fænÕÛ¥|ò™·…ÒÎÓpo¯MZî<F€ñ´Et‡·„”@K¥z³§==¨¡Î¶ÃßXDƒ«7ÎvDÚŞkïªç…ˆJée<-;/Ìõ_qú÷´dAÑÔÅßÙ®KÜìmzÔŞı}w—²Éš¿‰ÚÒÓ´éùÎÿÛmz[
+°ùÒİì=N²•ªZÛşç°7/rÚbïÑ?VÙR<Ï•n¨&ú@”FGˆµ ÛİÒa–qê;„Lğ@	g›]œàkÓ}#ãœíÀ“ƒºûÏ—ÎÃÕÙßyÃÚ'gj¨½­¸Ë¶àìiÏ9›xÆ¸¿Cmî¬%5¶{Z£6Ë£ëiË£¤Pe‹Y(ô;ÜãñÎ6ü¼ô¶PÚ…4T›µ7å£—/·üİ
+ÜíÑë_®:ıcfg÷tìà¤ïló¹‡÷„ü]@;¹(ß½n®vòô.l¦Ó[¡å°ƒud¡å¨ÔÕÒx²²½U™=9ûH}÷…Ë¾·ÕîÅµßÙr·GåÃ³i/½­–Ø4ã(v¢ğ’Fò¦ßÃ	é_œm”…ÄFÛ_v{¯élÎ§Ù©{æaÙ
+i()oëePû–­Êİœn¤o™
+øo¾¯ÛÔgòÆŠ³ŒÙ¶Óïìô¶-w:%'Ù8ğ6·Ã÷¸˜÷w@äw·¢ïÖ~Ûù­m@/’Ïq J¯A÷ˆ&%ñ†&$ı­Ø3.ÓéÖlI½ÛD°Ã$)i9"Z†Ú|DôOŸŞ!ä˜e«¥»<õmwztğoœdg¾ödÿes²Û¾ÖlüDï”AçÉÂ×²ÿ¦Í€ìéYì›=<¸PbÀÆÖÜ¥›åŞ'ˆá®V4ĞBFV¸Ú©ö×‚íÕlÛy3¤Á­Ğú÷Òfïè >z¢=š5ÜÍXfJhõ¢´•äp/^6.0ÖnaÇ’1{¼¨ĞAbÈy’Lìğª¼½0á½xìnLwÜCìeD{ş0ÚìqcÎ¥Ï˜ƒ¹C¡Õ#o¹(^úš»õhËß^À3‚ßèÁ%¸:[aü€pµã¶#ŸÙˆÈh_;‘<Lø;[w~ÅvÉµ§3¶F{iÇŸX:DgËõ¤)ì¨ »í¯vY`–]‡‹à¯u^M=m÷h§<Hİà¥Ë»³İöP¿Ö³ñ²üBïĞt2ØaNÈ¸Ú2_qÅMÜİ’[÷èc¥³ÍÎ(i#ÏßÎó	}¡ÅO¾ĞO^@š\ŸİÙó…çÖ&­Ş·ékiw»ŸAú½!ÙkzÔç‹lI¶Û}Ü_ïvñ¹f¾:¦Î÷•?¿*kÄŞˆ^¹‰DKa~õ¬´­3¾r³ÆB
+flÿ*¸¹ÜåW¯œÛÏ•½}ªgÂe6s+š¤í.k7u·ÏnéÓíc°Ò\¶w·í¾ùÀ}µ=#Ä—dÅŸº¤åÒtRÒVHÓÜUÛ'MƒïåaŸ·§ùşİm9sö³æ~÷—·Šx÷Gy;&ßû[
+¯éj7èìâE˜'Ó3w›½®8Ï­ÀÃZ¸T;[Ñ4 N[3ËZÉÖ,d®ÇŞòÔ<~éohåÇÎ“éÎ¡Å¾ñ/½í´K›)0½@‡”‰‚_›‰Ê #öÆÚN(ë<öĞPÒµĞCÂáóU_Íİ
+´4ûÍÌÃ·Ta[^¸U6tö.ŞÎVİ]ª~ÿÿœ-úì]£İ­>0ßggğên¼ÎVLüóÉ~è±)ü4­Ğ9Szd:ÛÑ÷Œ•û9ã§?^åyßæn€ÔRX­î“ÅìıñÊûşøŞ7W‰“Òß÷ºx1\e©óR@'>á¹çnÅÂŞÇBÈHÇPÀÕæ··Ì™ÈÓB6ø·ï„i®€\‚… ïâ–qZWô“*í'³:c'3›s±wĞWqqßû2lÅ«»‚.Œ<:í†…¥A*èd6¡Ù o•€7%íÙd;›®.gû+‘¿¯„ü¬
+–‚:ğQv¦Ô•`)ÙáÇ8‚W /#HµİxÒlEãlJş‹å$Úğ04™€+ñ%i„y­±ÊTİáÀÇ«E-ZXbib>½Y& ÖƒÕOsxˆ Ã ·;6TÙ,áˆ§ñâœvÅ*E³	ÿ€ıÖÖ˜eä„Şˆ
+ÓÆy”.s6Ú!í'×0YZ÷‡2³r´Ì¢Ó»CU>´ß¤µ)ài&BÊl›ŠÙë©n‰4øŠg­QÃt¢ˆhPã`µß(ËW²~	–[ùxı%%Ì'ËÇŞÀDüĞ[«Wƒ[ôÑ–¤(
+çƒÕ›%¯c¨ƒ3ú)zZ
+—Î' "m¯ÂHi‡²±vèøá±€6>/`l!«(ˆ'VğÃÖ÷†Âj`-€h)dõN"jY6«YŠI½#+Õ¢áµ“»„‹Êš%kZaæüô–¸GĞœ³-¤:W5°QÜ®pÍ#ßwéŠ…ÜüéVİbõkšj]•LèúØzuo¸º´ZÓ?êuRÜeÆ ²^5ú;İ&",mk…õ°Zº®RCQ‡ôñé±˜RÇÓQ‡Á}rÌKº|»u6Ø¤X¼<ÒÕÓ¨j¡{e¯ÃÑâe8ôì*õæs-B(º?ä…ÌÍA@H3á‡Ç“
+ª¡gA°yÎAæÅó®óáWj^‚ş)¹¹›¢æ^oƒ¿¡P/³	…å¥p!•Õ»_á¡lHxõéz”ÍKö©CA`QMòBS­wA óä2%2q6óÃe&Š hÆpAåa0BÃA	…2-µn†t”…Dä;à%˜ÂN¹ ÂÔöp¨Û—‚eqM,®›?[±`ÓV¡Ş§Av}Óq!ª2#ú¿%$àBDÿ7˜
+X¾hê3¸.Næg¸.Öu6£¬²oÒuiİ‰Jw§ªsUp¯3]q•k.•N“3VÖ<—şØR	Ù"=¿Çfaã~nâçãğğ7ïŞØa/?îˆ¾_‡·‹°ü`²+ßz+¢*û®åxG¡ä(EÁßoå#b8şŞ;bÏåÈÊ)Ø¨
+ùÒç¨µˆ€¾_…“€E8ñ#“PŠù=ªa¨D ôE&<İ„ İ %ƒ§‰'|# Føyô¡¬r<L’ö¡­Dá ‡?onƒ•¿ˆ¹É„±9È=Hc®U\jÓVFÄÕÃbí³‰&‚£ığxİw,º¡¤ë\6B!¸·Í»Ê(ëØR3ÆË€ü_õËœÿË«‹ÙS³ÊßN”jû–³Ş¤G^6½ò¤_²vi¹jU†ªGöX˜vEô^..ÊeòL *"_-Í–ZJ“f(Çá[ÔpdaË)áÙ
+ù­…ÙRüÏ‡ê;¹Q¡ hKFóp%ÖİÎ™<°Ë8ëêáRàAÜªP‹JOÛ¡b2[¶,5SÕÁµ¸ÊqğçpŒº/[e”teKpB«c¤Wiñê±%ò
+ëf·”¹`–ÚÉ°0¬ ,TÛb…bËÁ¸(§«œJ°uùŠĞJNÖ¾m, Ìâº-µ0nœ@õ°Ñ AìSÂy¼³ò<NOÌ¥dÙ½8ªí…å …÷1@v/y(Çü0 A9ùå¸JúDQê+ïødo[)Æ`şÏš´…ÿL[¬Æ5ËdEÄš´,U°G§ñ"GQ Câ‹XŒL•±i™C±V&e†ÍGÉC§¦mäçl±ãå*5v´
+G%"örjæ˜*8ö´’‹ Ÿ> ±tñC­µŞâ¥Ö}O´ƒãLZ`•@èãŞ`Äí…nı°@ÚègÛ¼òÍP
+_”Ä.€¢f¼}c%å[jEù²0p³Úï°Ü¼Ü%ËÑ\İĞ@Tàµ°·<VUlàÄ0]ğ©(ª  ùR“9šŒZb8Tÿ’ÿÊXØH	l/GQÁrçé>´1sçê<ƒKwôã(×u,N}Ñ&@O ¼o¼e;øÂ[@V|OÅä{T0Ê^tË…¿çÚPVŸ\à3® ³Ö¤BgâR(JÀ—«€E›(íÕ%x_ïûS†À(Æ#—`
+’ˆ9şR:Êø€ÂÚ{È?ÛoØƒ BŞë½Kàõ`ü×{¦ĞëÂ)»ŞË°U¸Ş¨uĞx¯÷Şà°o·¼±OÈY¾Z”âàı!áòƒÊ°gº’—÷{K”¢	õ—à€ºûû¾[±(C—ÎfÉ"DÕĞĞ¹U0|!JƒÔ;Şf~ÙjYi~İúó£ø*ÌOÖ+Äì„8ß“+ºë"}ÙÜ9Yè·äWäŞN³
+CéìîvİÁŒ!™NÓ9aüáÈmÂIÉªKt~áÄD¥d¹í<E‚’`ää¯;\è9ù«úb+i&n; ‘¥"¹íöXqÈm"Ü±ÖãÊÂ#++{½¿Â±ùı¿$2¬7è^M"¬J²€%²k	¢Páµ·Ë+ò,Jµ>i±±n+Ì¦¼4"Ïm ù«2§&]}êu¨E©Ù«¡Á¹õúê¨C”}îúà^kÓ7q17‡eeı=óa¨2`PƒpÕğ&ONï`cò»g±/e_ UQ”zœ;]zïÚ»˜İqØ}_ØÙÈ ¯Ù$¥Wí(b>Èez•„ ³i!hüZ…†`ĞùŸÃÎşvg-4³<ùÇ
+j5† S’OUÅDä^P2ì†k X&¹ C¿o€YF°Å
+,„úhı{Å›Ã^V{Îı°]çÏ·üÜ‘.³–j¹A»º^°pË_®±k¡F[p£€›<ïÊM4
+÷šÈôÆ¼ğÊMÕªüVÀl»€CQúï]Hj'(£'Ç€¤A4Ea%C/`¯8È+™ô˜Âê	b3Û
+,+¬ä‡ÚiP[©Ó€1À`¢s›ğ…ØL„Q> Sè¾±"–êond¬±Õ¼)¿UÁ²~ÄÕv‘ã¥Ÿë"¥ñyŒA¤ãÇF@`Òd\×C)ìœ¬Roè½eâµ„ÅWDê“70»õ<—Ÿ+ÎÒlWa	³S Ù|ƒQù}50nÙ#Wˆ,¢€²Ş¨¨JnTŠ[ò	D"	) üF’`¬ÁÖúa¦/âH¹Ô•?%ËRĞfÊÒØRKË5(
+Ëá](•ææøÕPV±¢ZÈ¹§İdä^N:„‘°Œ%ƒRŞiKÎ œ„%/	É0¢àó«^!ÃÔ0‘A]#ƒrVéÇàg“~™ët®p÷i×{Áù±•¸ÀáfÇ~^V, —°a?Š s¤(;÷³ĞyEï)½™uDå‚‡OÀ®t‰äˆ•Qµ’ÀLni6eÈR"5byET­$ê¼Nû2†!XH›íì¡*=»:ûaª¼k–3„¨ìLéXü"GÂ@qƒ–µ¹–°/…×ZnÔïKÂúÚîw÷„½v~;ØínwmV[[i~dØ™/ÒYNxlòy>MÇ©ß Q€i%‘Š˜Kh¥ Í-ÀUD"Û@ZµâŠˆKTã4\YsÈÉ`ÒZäá”õÊK!:©Å5€:\şi%ÀË=Ó §[Z	‚ ‡4ÁãV‚$ÌyßŞ=¬6‡«xºr‘Îh··m4Ò¨Â?5û&£i6.{7Ò8MÛ¡¸Û:(;áb+£`Œ]úÅU*ÿé€,·F "ï-¡Á°G´„â)rÙê+eSËf?öŠäQhKf˜sSÍf?f‹Jˆ]‘ËU0—Ç4³âöÓF?ñ¸fV`¼ìtÑN*·C,¥j¢|¬…±  g…½s°ş®A»`‡Ûes÷ .7²³ÎN+·x€YŠÀÃ;s?T>t´Wp§è™9 ªÊ‰6ØöZoe»hƒê‘×Dühm—!×D™,iƒê“'×E˜\)a»c¸ÍFš@"Q‡r› œBb”£­l³KQ†ï0‚r‹ªp†È­=KÈùQ»Ë3oi-ücÊà0;A@•‘MÏÍş°¸~ÏÃñğB}Ï)%À•Ëƒ=Zİ'tí°PÙ
+v¶ßö¦aĞ>~UÁ&ã‹L{r/Xë8í CFéXI;ÀÒÕäE~ˆB……¸Tˆì“¢¼ XVˆhZÙuÔ‚Bî‡éÑÇyG‹2è‡éÕ;»®¤/øE„¯'Óò/ØÃáViVêG	}ºo\ì†Ua¦gå<‡õsÎÙ3`Ş¤—‹9€–s!ÖÑÉ‰€ØëéÙ+Üòı"ÿ»³ÓÙ©XÌİğà“	Ñ´ÖI5æŒË{İÁ”ûf{ãôÖ^w4~Ü4û»hÈ7[:Ü%Ş>V’ÃgÙ7AŠÒÊ·GËj3‡"¶fê[uI?vpøz°İï —Şéüæ@.[Ù±æ«Ó|¼HçK"ÇO’Ï°º5©5‡hQ°ıÎv§û¾Ó¿5şE2NÒ«¤Êª{ô§u¢;u Ä÷›Ñ›®RKRE+?’Ùd” Şh	å İP÷F„~÷ÜLÕÒ1¬.G„V/C¸§ ñ–Ö®­ş"Î/J »İ3°şTÎ ‡8d`ï×m3!€èiìN €}X‹²ñÒf¬”EøØYûJĞÎÆSÃ"KPERAã•Ù% {š™eÉfT$ğÏµWÿ¾`ğOzCÙ¼¬‹øè­ä÷°ãdJ„UÏ¨„›½Ø”è¾1_‹ÖïÍÈßá,Z{©Ã¨·E«„Ö+ƒY1ºôéJhËõl+î¢»ZŸE[…D“­qviÎ£p–W“
+x¼¯'
+|Ùñ ö†:Öi|šLCÅ C*ÇY*#¨ €ZB°*¢VèÉRá¹TÄ€­P%”rNãÄS…¿x™ŠC +q«°8BÔUã`P6À¥lH2–AHÉqü«í–,@CD/!Z`Ÿì,PÃHÍAdx¥„å')ÄP2rÜ7ˆ¥7‹,¸ŠP8…&ËK»	‰Ùä8À"€°9ƒrpXÕ¶˜Ob0 É~qWB[¯4eƒXF“åÂ’j•é;$nX¿Lİï÷ØÿĞğƒ¨“,°’ğ¿NPC¢òB©bÍU§·»kf×îí Ã’h¼PøXsÓÉ¦Ó¸F§ 5@È±avòßpÌ,Ù†ÙÍÃQ‡pÅ÷mãl zo&@H®bÑì…hç_v€e,ì}Ûí ğ¸ò¾í‰{v€yZ‘;(WÜôki¸äŠG—¶¡vñ«
+˜KyØ›öîîğm¿wø‹#/êà×.$ÃVÚ\gñtº¼Xd«óÒÄ¨*Ç„JQ”Ï¢ÛÙİ±=Óªë‘…¦ÿ0í¤2Üõg[
+[1]TÅS¼òÂĞø.À"Ëe†Æ{uQ®· |Ìö,2.xe‰ch¿¢é‚ç"ñ] jİ5_'ÄZ¨ÊU¥›wH–Cw›Ñ”œEÏ@¬,æ6C)ã>¾ÁàÅ´Ó;Ä¢jE®Û/±I¶ÂJk>·.ï éw?#¤÷aØ÷	gş`q?ã_„»ÁY:#lûÆë…Æ;9HÁ±lŸ‰plˆÌÊyFdfïĞz4°ºßÛ-±¿‹lêƒÅ	w{½ƒrxìqšesÌ7İ¾;y€îYºIğÆg»·Á°ĞC7û6[àì°K’´+#¡—SŠ´!±[ÜªlQ€ëSĞuÚDR²‰#ì“:‰Ç%B‡9¨ 0/…Õ {ïE"(XÏ»tÉ¹Ç~2}d8\™R²zÁŸĞÖãM¨À«¶ºëê9eNĞA§{ûNœ|ØÉÃî6áÖÙ/Òòté>/ÑH7Š\éaŠ…ªKx)›÷-Ë‡¦7ÔÔg(<)š{¬‰R¸§T@§¼-İ«ò†ÜyxBÑœ$”İ1+]™;–Ìyxƒñœd­ÕÙÿe°&BZ­sq—£³\Ö–£7zÛiïP=Q ò^Ú¾­¶C0
+…‰eø›'Ü§ØLS|¶åç Ÿ"8{øiU´ea¨E«Æ;y.Lø÷EO‚]ı»ºœ¥\Ä¦q¼&"*}\p,v¡0^3á+Ğˆ'¬LƒÄØëîÓ^öË›ÙÔ<Kg´:A æàÊ˜bÚpÖè-¸À…$ÎÒ»¦_…›ÆbCâ5ªĞï‚Dõ\8atê®´ˆ4¤àÏ>æ‘/y“óçIÇ‚äJ…JwÅ]+ÅBå9ß®¹£–Ô¨2$`‰tQ¢§ÊÀah•¥@â3	#õû.¸‚ªŠğJn0O,UVù5å¡*Â8ñîÈ©"¸Ò ©îşöî¡÷‘[¶ØéöÁ²ğlšél<]¾lK`ì-Ş¢¶1h(Àì»C%€~çÉ(+Â_$ÿX¥‹ ğ{XÙ•Åğ¦tü‚“Ö¨Àğ:Ì“PáIæ¦Ïp”!„kB¬Í›²´Ë(­…¹»ƒ
+˜ÇdIenÒÍ¸eW”Õå>‹¡¤k[:ÂAgè»¾hv,Ã®-ÚÛÎa]€Ë-ös’»j qcW7U» Ğ0Y è”.ÅÖV¢$‹8+¦I)À´îHEÌ%ûT€ææ«ˆ8$¯ Òš£"â’hğ½Š˜ƒB÷L·Dm 2I†.Äî¡‚p¥9	ASŞD…âL5‚* Åˆ
+Æ—/]X’<£‹øñxÎûn{ïõNÛöZÆ¾hÔ6/O'±ÿ±ŒC|Øß‡˜ßÌÆe=>ĞAo@ñeÁÙ÷¨ÀºY„9öeĞıe¿=<ìw$<¯' Ú¤>˜~›(ëé·Ü¹Á‡Zí×]ìFP~³¾®ºnĞåsY_¯eÇ?Ğ˜Ã‘¸¤	‚rqÂìLÛyz>‹É°ËG‘#¹ÇÀ‡¼ÙıCö³ûğĞîî9düİd¡Óôáét’øáWÀÎ·D¢u‰vmBc?#ŒœÜõDãöÂ°Ÿaø¢ïtZ^ {9O­dÀ‘…V1Ë²DœÂ^îd‡rzºèFtĞ¶èe…mÉ“yìUËŠÕ6MˆøáÑº›å¦½vÿİáÆ+¾&B}d/{/>­æœxJ¤œ ƒÃ7oº¿…ÌWggéç €„œÀ.ù¶½ïp^ÕZ›(uqò"•:³êX‹f!?Ÿ=h¯=T]%ˆô´g“ ,ÍÍr|¡¸ŸÇ‹K¿@eÃV”SÂ‘ùÄ.Vİj]t¬VŒ/*;š<¾ëô•c	9:.+#.GTÂ“M,®rDå¡;V\ˆËËmM\Î¡rdAvlkM-à&qf¢ò§c
+È;åI7ÛŸ\Ê›S*~‰±’zo{;İÁ[©ß™Xxİ?ˆzÙ$Í/¤†WÃãBV'È›Ì‚àY=/* 'Œï	ÍñŒP®ô!A‚ ãÇ°|Ïh3B½İÃ:0€,«l…f‰£­„Ğ\kBª²‹¸×ÛP
+ØÆ=* ösP)à+'¦ŞÎánG{[÷ÙxŠÍi6YMÍG)ÌàcANØW¯ošVB±é [¸í,tİ½[ K/«¢³#èÊD’":§Tˆ1@6)"e?İjªì§ê3¶Ï@”Ş“iAÔùõvSœ%×kÌÏ-¢‘Ê((v½'’}“¨Ø	<‰
+ï‚–¡
+\Lªäh8±	¨lÇœ˜ÂwŠ11/3cß$Æ¼™˜Â»Se¨wŠ£*Ù)'¶àâˆÊvÊ‰)|§˜½ím÷ *Ë´÷”caÖ¹‹t¾>#uŒÎÉS×S §uŒÄ%İj8¡",è¦Ÿ%.˜#h£îƒí{w6öMSå bVê×ÆzÛı_Ì7lĞe¼8w?TcZŸr*,
+›ü¦/9æø™“áÕÓ¬½.€]­ìb^â—~ïğÀQÉÖĞ5§óE¶š‡äZ²uîxuìÄPÀŞİ¿Ôé¬^_{9o·Á=€¿İş9Tşü\·órYo W°ƒ®7†RÆ)ÁÚTörÖá×Ìeÿ’eõ—X‚Q9	8T:-^³ÁSğİ¨H 	&P‰ÎJ©«³w0üPDR€2±ÔµÅ¡ZD¢ zÅRØ(Ö‚œv÷rbzãòß€ÛÎwÖ+İpw[®à£²~^DÁ«ç;•]
+;‘A,¹l.å§çpw·™Y|>Ój+]F\M§1&_	ó¢VÙß,‚P•½Y¨@<ÖA¸‚|¯$û‹¹ø\p:˜ÊË5•¡ûÜZèËÔh»ß)±^™µ%£ÏT£ñ"	6a™ğlOd•púŸÊz]­bº+OÀIØÖNvåOIV§õ‡œÓÉ7º²”Në/<¡aïÚ¿„?NXÚ“±Fù)>_çyÂ†Ã€vL
+ÇŒC7ÅØpºÏp¬år¨oñîÇè» m¸øoV®–ÿVÂ–l#pŠÇáØ¤eæ¢xÒ'›q(J"NïòjŒ—#SÒu.ª‚ÎMAe¸Bè‡ŸEşÿìxk?Œü¡34ÖÆ˜£*c>dáÇ_ +=>|ÎĞ~éÜ ‘‚h¾ÂœEé|l8ªÎÃ©ù(>&’A%èã¡şÙÀdD<¶¿ÔoD‚À8Û½ı÷ı¢ô\	“äWÉÌ'C«€h…zK¢­rl¼œ½7í–ÓÙİíºƒªh’é4çiÀÙ8it?å½{Xşy·*ôl¥¡§å”uÚß©ŠFY¬Ù$ W¿³önË§Âğˆ”ªXxHJ9†¢Xİ§ÊŞï»ƒîëînwXyôWi¦Óté?9áo;ƒîßÂ
+´º:P¼ä¸_$yúÏªÅYÃp¹Ï®3Œr‡Zç0œ¾®ëŒ#Àûõ «d½rï…Ú
+0¦J–«Uï†àéˆõä­½‰>¿,_‚ßÿ
++Î—Øc,¨
+–¦j¸<Ö&útä–ÚBÇ„E“*à)Î©¢Ò
+ÛîíØ^võï<„ÇÙÄÿÀë²&ª úÓ@Q¹’HGÃîö»5qR9“ˆTËtü)­í1ŸÿiQÃ„ÚÛM	¹¡3@ü/6yDo¡âÉ!0şÜ/ğÉª‚'ÿqC‡³4üà7ñFÆİ·€£´¼	5™P
+ÀÊğpõŞSL€pfÂ¶CÅ[@p¤Ş+›FiÎ=ÀFKŞÑû	‰uu<¬”»ô9E °ˆg%°}Â/@¸ãt4Ò[¸¼Úà$Àİ¨ßÙ&Z©—şY}ì‹dLÓ@Úg„%ßCÄl©ñ'†SØüC2ˆ˜ ­‘­•°–Ä»š°<ÙC*¡ÊbB,’b%œ>ºd€xéQ«yÃG9¼êh‰‰Ã@C”Òê(ˆFZ^–±BÇÏ®,,¶ÈÆ|`}<L|,,°¯ °N’±‚ ì7ß5\v¼*“[™¹>ÈåGÖ›ß—á ùUYØI`V æ4ŠúàEATÛ§!,pÙ–„¥Ø
+‘œ¥3ÒÉ‚–ı)Y,¨ÄëøzèØk¥o7
+(íÙ¤C1–e‘îwèµÏ³éÒäoìW¥¥)b¥‚O¥KsÁ±_«áµ1*Hı¬S;‚™x Ñm®ømÑºRÉæˆ=ş"NËƒ¹-XmG­Jÿé+à³«úq–©ü¼!¹"âR™Ù‚yø¶;¸ÒåEš—á x ™ÏÜ=~f¼S©)àBˆ*hG˜{	—œÆöYÍ§¹–¬5¬¯c—\pK·‰vt­ƒléBÚo:î$êWG4~Ÿñ(ïVª lSQù]¦4dV.T]	l÷ G ˆZ¶­¥ÙDG6Î O`’gÓU©¯I”cÕ0V#×İo‡–+ü¼ıîÁĞMC ìE:_…ĞŞ¶4¯›¤o6ñ\óéğKü4ö2¯xJD‘ëE(WùPóå'_ÀKƒÂ˜ı%Ti z’R\(¬•½‚*ÜÄàCB
+îÌ¨åğƒH@¦Eun†GèÖ+9Q×Â²åİ½ˆPUŠçZt[¢ôr±¬Jù\on*‹‡E(*¯¢¯Oqù(*\¿R…nĞƒÌ¸æ%?áfwé…TT<°|ÚĞàğ5cèHÇxP’u†±:e¬ˆÉçrĞnm)†»¬b¯@SŠ¤¬æŒ‚Àm-Çbueõ¿]’0û¬Š–ùu
+iªÊ%aÖ×WÙÜ·ŒËÑ.c—n¹©Kmcj~Ğ~^Fû:mSnØ–)x¥‡paÖ™IÈJx;‘À‘¡à…”’ò¨°~à ,˜"R‰HĞˆhº,,ü¯Î£J¿ª`a½¯*íi=§. %§”u³««.˜¥Ê*Í%Â%1K*ıgÇfH¶5d˜DJObÚ[úÏÄo`v£·;TÆ_æO`€}Û* .ÛJRÇóy´¥OéØvoÿÍnw[Mf õvÑBMÓñRÕDK¢Bıã)Ù†uÆ¼1¶ñ¸.ÈÛ©üõ
+#@ïr@6ºŞXœ—ñíFpaK~ªÑpSƒo5ˆkw BîNg»ÄpŒæÆ9¾“d6N*²s>f[e aÜÖÄŞïìõŞ³+gpÃX$—Ù»}vÄu¯Zw9àVı0ÚÆ\´úA¿«7£1&ª-å— €ÉAï„{á7+ğìr­f“òpĞûMwŸˆ¤¬UşlĞÏÒ‘DoJJıAOA–QñáæœŒä`.²Ñ ÃWÕJ”’#±> MÕÙ¸Ô¥\åŠSSË	Á ïP0şI¬QèlzıÑá>šíÒr]–JÜjáìì\¶­fhæ_Œ´ŠtÉ”e!/1¢·GŞÜóØËÂvÑ»ãlîyü!A:†ğEÇî3öQÔ%GÖ8ø¬ºMêÊwQí®ˆ(Ä¶®@r•«€¬¼ò˜ÌYx¬Â€úc
+4K…Ë
+¸¼.%œARğƒTtîíÑšhÕ'Ù‘{_J0…l†Ê¶^%H–Ìã5­WKĞƒü¥±/ú¹”£ Ít<D…€«#´¼…àñ¾) ìL& Aw‘ \†• $å	Ä¢?`ğjK²¿K=	ÀP®¬H òŸèPU™ü':_UG9¸5Î<éÚ¤t»È\uÒ‚ñ•WL3Q:Bƒ1–¾‡JHm^nÆ"*©4,1¯4ãw4ô‚¨Š„ŞáXUÄüHJKŠzáz¥êî¾êDìG¢µåˆR(|.×Cëº)–ß:*÷Ñ@rrutÖ€«”½ëˆ”€¨”º‹ˆü<)g(_r,aâK{Ğÿ:B8>ú¿y9`\¿À+Ûi(p	BE^—w¼¸W^Áå—¯½ÈB%ì CZ$¬ŠÇSÁâ|”)Eğğbà²–#*‰4±¸QJ1…<”Ø,Ç‹¦”ÙXcNìç³$¶;aØÌşvÁ ™™{şÔbã2FÒ¯™škÊ‘´»Ó8ã…`œ‘ı {õÖÃ}(In=ªô“j™_Í NyÉ¥İÜl²¶ĞÓ³¶vÀAËŠ]í*–n©ZE;òˆ¯ATâåŞ¯ƒí6/ókÍ/ÂhFûÕ|ób¿%‰EXw»÷»v™§;ëêÉÀë”w÷]F^ïö¶ßÚ¿Â³ª4m¯%I; ƒ=D³®Ğcätš?âkxğ+#wm1;Jl¾ü(*¹@ƒµqÉ÷›<¥ó0‡c8ß
+B÷)Çrğ”ôß·%úï ’Å
++«èc •
++¬€år~«Œ¼Ü+ÎÀìb¹U—óbo…½.Å´ã¥ù´DƒÁ‡ıa*\WH¦%:ûÃŒÍf*’Ğc„±ÓİÍ×XlÏ±NÒñ¨rÖFzûãb(Ş²BÂ¢ÀŠÌ'6ı6äé¬EK¼	YñÚÊ;“ ^Ä¹²åd „€¦é8]VÃo=1—Ÿ
+š;Æ "âˆƒH«vWq‰ªW€æ‰E¨ˆ9(2ÁôímA‰`˜ÂöÒe9)^n6a œŒæ¡ßîîÂ°İÛÛkWB&Ó)Üãìò2.Ãã:ÖNè¾ÓÛÙR'„ îai«ĞU2^R·„JÜÃ„i§°j˜Ë(Î„æáÕq¤{TC\Æ=Lh>îQs÷ 0İgj‚)ºw3„“™ 	à(
+7[	@Â[0^€.Ë¨]<ÀÇsŞ}Û±%à0¨_mE€__$Q—*à‰ICb¥7‚:c]eÇó¥ÙN¢‘FJ1Èìæ•\ev–*×“i²ò‡Ó_ßvwmYaéïª}ëú"ú“ÀÒ>dD;İ¢"áH MRŸÊ@;:ÈÇ³”tºwVĞríé4}¸ Ø9~{{ 8¹
+A+r–¥­î!ğùb®8•—5Òñ,w"RöFÈB’’Ô‚·øşŒĞ÷$iÁÄ2èì¬‰åÛ™TÀX<ÜÁØ|g[Çd=AUI¦ädéÖ¡ª8KC °ÈÁàWMf¨>ö…ã"‡ó—ş€t­gŒ7*z/“óŒFƒÀ?RÿÙÜ›€+`Sß 
+Ú‹mÂèvûsË´Fl„-N7°œiÜ‹€+d9˜İîÀı@¦µÔsüC?ï4ÍCÏŠø÷Ì:¼ƒô¨¿Ü~ê/Acğ‘rÀ†‡‘ònoĞ	à+ãi–'¥€œ
+‘h¡‚P$d×õhÂ,»)4§:e @áªíî¹)~…›Nf«ËS‰ı\N$NÀå¾#v÷]0ÔôS9<§{ˆl€Wˆè‹9z€1+÷†Ú%—ˆ|…´9êGrJn	î<ys4NRpÁ ¢˜íœW¢…ÍÊÀxålh À
+”¥¬	˜`ÃX ‚µs `ÙùGPŞãoB<ü\ª¶ÿÈàrº„H'!¹àK8%ET‹w¬­CÅòRI)Öë!kGè‘‚±IPÔvZ
+EZFc©Øµ {cõxç¹2€2¥hp 5½B—ÚhÌQÏ¡¾Wõ¥6Qûn®PÔa—Yµ÷"
+Åx7³ì†´*`?”ÙÕ>`2ü×æ;ú¿:Fõ³j¢¹Á¬ø§Å'ú¿!ğ­ü(C	_Ò@Ø¥ß,¥’/â™…vŸRĞAC·ú9A*şbGÿ–ÌˆÜ~NÎ×ù“ü¿èŠü’-_$‹ü"™>Z^$ù;y4o–Ùìñ<[,ÁâÑE<şô(Î—óÅøñ~6I:Óø4#Ô’L~Yd«ù&4ˆæf›˜bŞw.b‚ûÇ£¬(Í£½î0š¦ãd–'“V”'Iôx·»İÙt6£ol€ˆYğ=‹ÒÙ2ú}#Š¨³Y'ÏÉ_ÃŞ;^âıîûîáùógøÔ&òï?Ã¿÷ºpr!şåùÆ·^/³kÎüvÓ#cï|'	_3\åIN$0=ß hÑÑğ"‰şs„½fÑY¶ˆâé”ü™DŸfğ9•ã@%‹ùŠI>òM€Ğ=‹âYFš.@dTÖ"»Œ A:"áÁ‹›tÂÈÿ£ÓÕ9é?‰n²UtßL0Ç(]Fqå«ñ y¼Aìg°êŠáF1™)bµWÔYFÑ|uJ–&â¾TÑy²Ü#w`|4šŸE´`×mw±Ÿ,ãt6\¤Wi|¯tª"’¤ºßéß¢µiu—ÜJôô1j¥¯ü ¾îßÒƒz»IÈ0<îBzOï´xÛ[R±øíÑnzzôûv+zŸŒÿxn~æË½™c"”¿"è‹áŒv .8ô­h™ñáÏwä¿[¸x6"B¦ÿUQzb%D–“¡'“èô&‚n-8"3ø+ÏV‚—Ü/ä\§„¾gœl¶©C#WÆ9GU[„Ú çi±lEÓdv¾¼h²öN
+ANi6"ô,mcƒ9HKq¬Èy$Çbš’Æ«9a,ï±å8ŒØ[Üj¼l@£hN÷):ˆy²”Ÿ—Qm¼üÜÒ?“=<3ªÃôWÉ˜®ô[>ıó$/_tÙŒ8¡¸[­¨AfÚ‚é6·øbAgr^£ß	É*ûëCsæ“™ÊM"k¯î‡{ú„¼¾}oP*¨Áÿ"_P†ÿ;œ&{Œ5XãG[8ã&ûEã87åÙ3z<c-¢¨&6ğ%6ÍofËø3f—Ä5èD§(úYŠ“ìAœ,Ø†7š¶(ØŞb/şÜ¨ÕšÏE_”¥{Fˆ—š{€Ëì˜+oıîbxôšõøàêr!ÒşA"­EŒÀ¢tò™o>£I9Õğ ®Èõù
+¨ˆí3`QG907Òøã“cüÏÓcDª“÷6!æ³Õ´ )N"HÄJy&Ñ	¥ƒø+NşAnæ65òpÇ_vMÁÀÚpN‘ÀAV]“k—€LfäŞ'gFÈ8¹ÛjÒVb$¢1l¹ğ§«I‚‚Êp“sáçÈ Pq]F‹Ã'Âı9ùÙ‹Æ1%*€r‚'rtR8¼ z¨gKÇ%ô°$[ñb4ê0Ç²­-ÊåG‚ÍSfç`rnæ&¸ÂHåjÈ0”»eÄ.•çéYÔØ>JóQr9_Ş4hÏ¦äŒÂfÉµLÇÆGB©ª…,ôã±N«5v?½¤$Gşr„-Ü‘Yqš{tçŸ^l1 üVzÉà²_§£;ıÜ>Ğí£³t‘/ÉI¡irèxÁSğg"záÊª¥@^@ªHJÓ,›Gãl(ZQ—,Á"İg«å4½JD³M§R+Ş¸7l6ü’mU3ºÎVÓ	œœËÅEj¹JğDp8oßn“{s¶ÜÅ	’³±˜‘Kå4£g&Ê/âIvMn+"¢dD|½Œg+"_œüôS-=1’³³I¸©@ÙÇFGÅ‰ ¾Ê´'g@]²ów/_»&Qˆ]ş¨·8ê®ºOÀß¢GÚÖ)ÜÛØÑZª|2‰FŒ·ùƒıVM§ßÛ/ú)zÚ|®±íĞCÅ6¦Å‡ÀØñ‰Èª¤3X]û<ùz"ó9â„cË_uÉX“îÈÁÂì†Ï7¹nˆÒù|6Mçsºí¼è,5¨ÿ¼Š8ú)¹É“%¢Œówø‡.O68Œ•‘'›„«“µzC¾		’Ò½†qø„¸ÈtøÍÌÁsÆEe!MaéàÏ†
+CoÓ#M·‡"±›sçˆ©^*'ü»JÍÆ =ÀÿoI–®‰–ØB+ ª8e4Ly}K‘€p½5œ¯)h>
+~Æ
+e/38ä’}5A†â+Æ÷®Ée2ëißÆ8ØúâPµ¹›ã@á‘üH6ô-ÿÈ —€
+w6
+ÎÜ¥ÔÉÔâZÑ^û7šp_#oÒcálŞ;0 4Ú`TÆÉ£F˜%Íf‹£?Í²©•d(}¿T(\v¼S¶©
+h_‡[’sÚlv5øMU/á{¤†§»ÕdÏß«ğÂş–#À?tFhgãRe$»œKı1¤¯Pç@‹ª]PO©eA_EçÒõy‹ZÎ&IYŸ±•é7'½›úrñXÚÖÈŠI‚ñaSµ_72eQm¸ä:{QiZ¬™ºVt
+ 'ÂÕü|O’îÙ>ÇÉm€pğ¾—+‡ÊÉú°²ÅŠRfQ¿ÜÂ‚†ÒŞ`´ÓÈ[*Š¿TÁ
+G*g„Ğ½Dü(P8J}§#F÷f3}“"Aá…vÚêÒ¦l1G3\KÒö,æ	û
+ıw|èäêTYvaI=²•€H¸Ğ­¬Åü„ÊÆêˆÅ¹Nh„ú41N@Y4Û$”ÏásĞ7‚
+÷şóÕz‰•È¸ÆoZ»è¥øb‹·²ÎPİpëÕfi’gÊÙ0gje®Ã™¶œ[è£fM_áğÔÃ×W“NC-mÿZÆ<¹í=7Òö8ú7ú¬í‘»fùX'’|¤/¹Ì"ş¾ÓguöÏúsÑöëhÿ|ùk¥ƒˆQ‡ÛfTgÿ¬Û e«ïÒ†ÊßÅÖhe••?-m©ÉSi­şPÎÖƒ0Ød°Ód£F|OˆÆñLDâX€™a¼Èˆ°qÏn"Z_-r`c0¶¶¯dúR¿óõÅÌzL’KÑ+i(FQj³{öl™Ì@¢W¾ùˆüÒ¢\°‰OìaNÁ}OÚ=Ìo7Œ%WQ+ºL?'æŠÖ26>MA‡[æOŒòZFAt[Æ5UXÓBO·,7pkTÍ®]n/5wGH·l÷œÑùØ”*L+®:Iûª×ñ5n
+î;»Ş¯ˆ^İ_RE‰4i™KŞŠ=eÜ-e¼Êì»#Ù4¾aSö¦¼:K>[ßF“"Ú•	Ğ2^Ø£à5!hm#'ÔâÍÇRß r„¯b|ôkF¯^EOš²I]yìãm•*ÀìóS mF²978Âd“ø(é3@süj>¡¿Ãa_$›uûM±\ÜØÌÚt ÕyıÑ ~Tı™Tòì™Jµp$‹Q+m5[@Êa8Ößâ|D$ÓQv6R.$…	±fTâ,şî¼€‘kY_óøê¬rüœc•·å]Õ%é8Gªw÷X•»üNGë”Uš&	FXá&jh."µÄ<ÏµÄhïi,F[`³Ï­äÖ|kÜÎ&À¸6?*æCzáÌÆÙnÖI–Ğ||öXfü'r·İ¢ç _Î€5,ùS|yš¯²mû{©’ ^2š¯	ğŸY´»ŠÓ)zñ¤³è/›OŸüŒ¯yv™€ÃÂ9ùyšÎÊ®²YÂÀm_Ä³søŒ\ŸmÉâñ§ëxAÄS¨üCå4¦ËÊ×¿yù3¶"DlòÙ0ìÊf5”¢kğ£àİş0ñ-*
+Ñ^–…ºN§SxúÅÁ½$ó‚ğœ>e‘)­’xegÑ?VÙ:Qâ¡ò0ø!%7Î)LßfNòÔcëÅéÍ2É·N6é°ÍÇùRXDÜÀU$kšÎÆ	¼¬ÂH"aÆ‰ğ¥‚v!­	õu“YRÌ‹Q™ğ"ŒjøŸ¢(†—m’rñ©ğÄXÏë›ä˜ÑÉ±öÍMú_~*"ƒàğ2`qK{ig…qKÔˆ|û{+=ò‰Œv„²O(]\i/XĞqó¥U¤üÔÜ¬?«oÚ>]‘O­ºùşÄÕÿ¨3Õ[Š´ä“gN`æ°Íç£w>Á3)îqÕá¶g7m¨œÛğêÛØ‡WŞ`ª÷Œ&`]®ÒlSf|8#Lj2†y3OE?ä„3û+'s©V0+5Õ-¥×îY­É­_ïœñ@Ÿ81ØjFhî#A_±uc0cK5½TF"g(éOt ñ¥ynèÙEn$r‡]ÄğúLŞ"·FJ(õ2‰g9eåäVm(†$“MénDñâ——èè
+~9€dJ.
+ø/H»<
+2IæèZŠüPx¯‰Š	E`=±,\Ëà[CÇo7r=)mî«dSppX¡4]Ò™³—~å¼2$u_–õÙ3æZ0YyÀ€>äıéO“ÇØĞèkS™ÂWYk"')ºÓæñKçS Ñ8bàé%ùQ~ ‡6YnªjM^ÅŒ0Qwç2“”•¤†‰«ª8?<ºqLo@xÈ>¡Fó£F¬ÇBø4¥:ó-³>$¶nĞ Õ¨a¯qå³z—Û¶Ú·G
+•PïGáœ]„K‰ú­Á†ÑŠ¿4aÿUô7uÚb©Ğà5äÇ9B„oLW—³Ñl…ù¦DjUãPW~f¦ÁJL…"³É“$ó;ÁşÉq3z)'D–Rp<RûàyÛÒs¯’áD„OÈõ“›+«|r-¬ê…nÈ/#mìÂ¤
+T³Éç†¢-©¨[Úï„.¶
+Ç“Üwú“Ò,ÒKÕ41JÒšÍ|Úé°óÛP¢2´tR|Nd`úŒøjŠ)Á„Fà×ó€f…;x‚ä®ª–Mõ|,’«$‚üñÉ±²pø€*À¬@ëp‘ÍTu¬¢Hš*¸Ãão=ü…£×¾Dğ$Ë¯*¤U‰^à.8b){fRù}m–é¸Üvš€0ëîÇau¬RÎ¨|wMôG<ô”$cu{
+í¡TËüÚ™Mø7<ó¶N„	=!çü©¸Iº"¼HÏ¤óìd‘Í–é´"nN®Œ2š‰”vùgêèÁAóƒ%u,	,;x—W„,jğ›"øqÙP;pD¶\Lãy}pº}dMÖ_ı©©*oeví(²Ilğÿ¾ú,›NÑ	6Z^gÑè2;-«şìh="¢ÛÑşOüóûVmk“aØÌ©4õnâ3g£³°Pñ½Uù£©«­N/Ï§7»…Fu/RJÑ'œ5’GRw—eê{ûpCœ1¿³ˆÍr6A»W~PkÙê9”àÑ6ƒ0¹>õŞlzC=³5"] „úX<‹ CD˜váñ@Z €îh¤„)š\É‘ü‘Q ØíF|áf¨Ì´ÈšàL\Ø	>ÆJ5Ï7ŠËdi¬0ª5@EÁÿ<óÍ¤VtG0·‡À(’“iLQ~ß”k_\ruVnçÂq|ó:ÙÎ.O‰0ù•°¶†¸´j"ê÷+”ø(Ç.&ñ»œ¡^‹V¥ïÔa •+/—®´ÚEh®ß¿w)°„†
+ßƒĞâsyÔ…õé¥‘a6Êy` …X^x£ï‘[mA$S§gB1~×º—´İî²û_k´å6M•ìw»ä”¶g“mÕ÷©¤Õ¦–_u+Ş Ù^¥,ZÂoÿó:zd9&W¥Ûé–mƒm#õh…ó®Wt¯	w¥?Û3N³DÕò0*p «²lNL^?Võ¶’o;'Ş	1Ô¥`¥wtÎ˜À×iE,Ò¤‚’¦º*ÛC^ÅÉPßËmp¤¯¨°•8ß.âkú‡]G3£Tds=šESt.ã¹Ú¾Å°hBGHJÁgt_l·'¤Ò…ËtûÀ÷@†îŠI¶T;†Ë{£,œï#±>±õañ½GDÂo9-˜\xgäŒ°YÂ‰®§6'ÕØY_´°°ÄÀƒT\ákÅ˜\*Êü¿ o¨,ÀPgÿ¬[ìWô$CÜÂƒz6…ªK3'õE¿¼/î“—ä"v¦Å? şùå	#òïx	ô	¹>¿J.{üÜ©._ŒŒ7,^ôê¼‰‘´oÎ\·XTš´%›"—Ä†æÿÅœEŒê;•Á'§î‡³ôk™}›¯W—2FŒ'€ò£Ao¯3Úm÷éŒşÏáŞ9fıåDŠtaJ‡[T¶ş[ª(b”=·¥À¡Òc'£!€¦Á'€î$j<ÙÜœ=zÚ4Rİäé)¼åZ—ıÑİì p‘ÀƒûôF£ñ(§¿Ÿ¡±4~ş÷GbO³«d<7°Pû4K2Ã–³›%™]ù,¦`W(®aÑAÂ–‘B‘Üğ}…yà½¤‰ øCX‰,	Ğ¨3Ÿ¦ *H¤Ñ÷G³ïÑ!A*OÇ
+†ÇòÁHµAñ0Õâ”v/ÁOÔ†ÇÌ(ôŸh&*i·”
+Ük>³M-C¸Dè¶D­–¹ŸtÏ©Ö`ü-í¦ÆÓfƒàb™Üv¶øè·Á’3¤!ÁÏBbV YšªŸYÆ}bTjdC6À?b#ú‰=Hø×*¢EÕ½¨ÚÑW‰“¼àˆÍ÷C®Dª¹!ø*yl—Æ‚	øâ^ÿµŠYTîs]¬´ÀoÓÓ§zVè€Å3qy[cİøNyµˆ]q¤­±ÈÁ]fÉÔÆ„e˜@üõ›3m*;o¨y§ëõMwÒàGÖ~:E7eá–fKÂ¤ó qh­h¿»4Ïö‘FPÄşÑ…ü¸¯¸
+òRä—LµÕàS${KQ]1œÏ¾‘9W‡æ£0ŞÒ
+]ñ½:Zr=”z!X9¼s‹=©¹ˆşr‚;~"|Ã£È…u‚Ù¸X2¬“$¸¬öEÆı}5ûä–U€ÿş’ ôĞ j:7Ö"¯e+œQ5mĞf§}Ê­'Ô»½ˆŞ`zÛ§£½öààˆz+ÓGFˆ7eª¢‰@çŞWä›Œ r²¨û	šÊXDÏoK/ùã£UK v‡OÖ~JpP‹w¸QJ_÷'b!Ğ€•Hzı#…Ñ°ıË¨ıêüŞvßåŠË¥åÛÏá˜ËÏD"¡/¢P¤Ú¡	¤T‡İüZ¶½Ãşv‡,Ì6¨«[Bn»¯!‡)·eÿ.¶Â¥†*.ØNşUwaW09üYl»İÛ‡£.¤…®Ë¿‚?ı$Ü³ÿ•ù€j4”_Äsñè]§îRu0ã¨f¡5CJ¨¨¶à[6gé#–}ËäíÅÆêêo8…s@tŒñèïü¼‡º…œÖˆeC¸ëÖÇô©›¶¼ıè‚À«WCÛ¬b]“é4¬&¶–;c!Í½d1|£†8rO˜;àŠÃÒ«£5²Áÿ²ÜšÂùÍK<ÌM1ÇIº—t<TL³@şf›d¸êF’M>4îĞR%TWçÎÇºA.÷[fÎ§Û+üš÷€óÀ»¨Wº™ÂÁe¤ÒLä÷,Œú¢E=ş&N§<DÓJàj‚ªül!˜{M"#Œó<É¿šó<A a>ÏğÏçôWVşNÿ`_D2öQüÍ¿ËÄ¼…ü…µ‘¢k"x~7kËÎøWÎS&î–«|NÀòLÍõŸÎ>E'Ò³oss³ÉòC$Ô‰Jæ'<x“üÒ	´.“gjÿæ	5Ğ&…
+ :©Q·K–Ç·/Îó Bş±¢¾?¨4!.ªœfşà Ê8¯–øg<”Ÿçd¨¹îÇ&~BSò¨äGd‚ÑÚLoˆRx2¾BÊ®p"Áø1 +ø§3`¦[:9hBã#	œâUX²t‚¤8šOá›Õàà#„YY¼#>p¾ˆ//ÏÇÓÑlyqï4+Õpq¾™i„$óÛÆH>L	»Kİ{èN`V`ÂíbLcÍ5ŒÍ£ùc—×¹AÎSj<E?DOŸP¯XWlHîŞ§O£ıËóùgÿç?oÈ8®sÏ6ëË‹ºiGì$‡&F¦}ˆhù’BS¢}^?[zÍ&e½şléµ˜È‘›º#‚¼È§E€Ğ×a¡Û’Sˆ<:C"VóÁ7;rÓŸ€íßDlÔØÓT²@{(ÚÂçÏÚ|‘á…“pX 	LäZHzAÔôô2‰À‡ÿ‚å( `i¦|vŠ0›¶Á·dËÊ“ñŠÁ s’	q‡Í#æiÑTÆÕ"‹ˆDÊ/"ƒ+\L_-œ/”‰>Š>‡ÔË[ğØ=zTK9ÉÔ’)¾Òğ¶ké±¢\DÒĞâêLHJk¤÷ù³5‹Ùa°¸ZKÂ/“%ÍÉ7F£7‡ûÛPVu4jŞ™rÿUVqË©ü¤äÒ@I†ı/5mğ¹Âd…Ê
+ñ]•™­jFåëæÓ?,pØ;OHÁ kBº¯%Ç„Ş{qşé‹-ºÀ72WĞA«i+/ëË—¼â@Weº^å;¦òÈ5ùQ3GJ`üó=ïêåö7Bs®ûi¸U¶#Ëfd¥|¯ZüÍ]Óq-’1Êv\pnë1€„Díã• ¨ô
++¢»/2­;!—oº¼ùbD¦"õ“zŒ¦¬©ãÌkĞ¼¤Cc¥u¯iM¬»£µ¸×½ùz9NöâåÙ8Wr5%“Æ^|sš°|Í­-¥`Ü0>?Ç¤W¿ÿ¡vhÏnxúf Å/hbĞ~ ù“ÑnÔB o‰ØöÛc$XŠñêhô.©ÑQü¾ÕB°>|˜şs1/†ø ¡ˆ#	ë˜LØ
+óEİÛìÓü¬),‡fü‘Ÿä„U“ü.f£˜”r¨¬‰öJ/ÚÉ1Û™C2wÂloŒĞXõBksÀ…&=XTcDûİ]êFæú:R+cêè ¡¯—YlÂF†DMÑŒ¡l÷»ÃÑ~o
+ÿÂi?êîÿú—Ñ^w_“tá~¯ã›Ñ,¾§¯¡ÏÏ)+æÛ§_ŸFc³•'ÇÎŒsk4AóåØ6M8aÉÅò†?-/ãÊpr(: 
+H/c%@¦<¬Qœ’ùòÚWˆm wT øàX(¬âZQ`|¹p¸åÓ¤KgJ3eÚ'Jiİ;O¥»ošEHÅYÒ´S•æˆ`Ë§H“áTLpèÕ¥kı#ğ¯ 
+Â»†hbïSşéN¾˜TÊÔ¼ò((‹'×:æ]3Œ¬;),iıDşiáih¾:]è#'ĞIzv& Æ-á“{j‚42Ôb°@ÕNéóYı‡ßÆX\M<4ĞJ‰X”ü®©S0Á‡ü2NÙj-Â'õçª­3†áŸÚ‡ÏY½ÅyĞÆçÉ7;ı˜>ˆöU½WâÆÈı/FÛˆMZ,¡JÔ˜I‚¾3“ÏYX“Ÿ˜E
+À¨K%èë®Àdæ-Ú—vÀ
+7>~¿ÿ•ÿo´ÚÚcéG­¡¸øàÛ+×:ˆr±’Ü²öX§ì+DuåIßK%#òtGDvÏÜ×ò›ŞZ÷¾ìÑ¼M z1úB‚êZæÉ‚U¼<A+Í	+Ù á]ÙO´Ì^.éSjtMø%…3'êW¶ ‰'µ¬ÌÑåMLÏè;ğÉÑÙé3:—£Õ,—Qø„Y›©kI#œ§Æ¦™föâÍä™fæìFñ%¤×¼â/6Í‰œWsàM¶j1Gy±=knD¢H}.İƒ¤$—9¥K““á• ¡µRù—¶>·˜ëÊÚgÑ$™¬ÀG}w²ªJ@ÈL^¯ÚÂ®À¬iÅ‰Äôƒ§V0—l%'“~¤½^øøiNhVŸ¯Ö†ÍõLú´@‘Ñ&×{ş…*BÃ¡Ğ‹ïö£º¯£É¼j¾cëh8×=×$Tñ‰œ—”qIÓ¯¶\QFz~
+åseŠ¼@Æ$-‰Cm>ÂÉ›İ+£$ñb|_Ö2+Ë¹ÊzÏ´€»(VúR-úÊ¾n_j`³ü¨¥¾ Š=³0ë¼1*Ñ¨ğ,c{å¡û[>
+m$á£¸7ªàNı_î˜Š0¯j¤D€vdkÑÔÙB;X¢±ES*F¸£gLõ@~vÂt˜\¬ãäºô½í³;öå¶ÛZ+î´'.M_9[ü›ÛlåŒ;,À©ÑïÖ}¦ŸJA§ùhšäùhy£Ïi&L/ş|ÊXH­!ÕØ5¶ñ([Œ’aíÎFğ’á~éC\¿0IöYİ9´Š¹¦šzU’ò‚O‘ËšaJfvÀÌR¸P2	Cì¥ÚA‡Æô.v¼ï	£^—É$%?~ØÔUKÁ¦öüRgğZôZ+Ê¯&–É’$³e×ø„Î5_Hşş
+û€à¾+ÂEöN£¾*‘–Ì¨*Ø,ïàMè†SQr;i3´ÅYâ¤}q›Ø’ğ»ó0é‰ûDŞ˜Óî¤áÍÈ”NJ"VqCü0ø¶…U,n(!ÿÿö¾½¹‘Éó}Šrm‘6¥ÖÃ·q!µØ#·åiÍöë$ùö&Ú
+²D–¤‘,ºŠlIkû»ò B‹jõc.Î»Óbá™H$ÈÇ—öµ`vV9EôãP„ìv&€äÛ"p‡D]Ñ·…\ğ_FegÎÒ8¹”İ)£*ûg/œiKã…5ÂTn[ƒÉÇR-”_˜>[#ZØĞ†¶4}|4=Èû¥)RB{kD#Ö8µcÕæ³ò¯Yswş^®"­¬åÔÈ@Ëö·EG{ªã#‹G-+±W'`ÃYÅú2‚+­ŞMsB†ŸDE+*eÆbc )´Jér|BM÷ÉÕdªhV–fÑ >Ogâ`võ'fö1.!;ğ—vşÀ oëäñã£kƒÿ•Ç³Y2ú*AËj:`E¼o:O&K4¾ZìXÕoœwPë6ªNu¡<Q£x™X!-)xy:ù«ŞåƒØÊìÇÔßš®–Y,ğêÛº%cg,±Ç>ï„ÌÀ©¹lü¤êáw¥JˆÚ~ı„Ö,ˆ©3­j-‘zñ§À}-+móÀ·š&Vq7zqÃø.õÕ(N:°ıQÉQöìx*×¨%	yê”
+ù·>>–qDRJäÁ“êCR…/ãxû¿“¡ãW18X
+-]£kœëGúEA.¥‰åŒO‰9ô0:N£sXÛç\%”^à@ã@ÊAºšé2\¬"‚á’!Æ]GÆ[`¨b<@u£â÷X_/rE"¥p ÌXÙ$W">¢ñï§o‘‹TÅã%—ñbÌ´¿9 ÿfL)+w~|	fÅò@²¥¥//g}Ì7 }öá…ëCB»VëtD­aÖ„Áo0ÆşÏG/@<¾<|ñŸıÃ““Ã p}„ë¬ˆT H!†J&cƒÓƒ$¿®¡@ú:œëY¿Ş’«m×G _±äòèäè·jÒFëÆ».v@9@yéá³‹õ‚¨ãøã0bUêğé«³ÿ9v 4~¾ÀÙšA´İÕqÆ…H,š>iİ>õèàË©muD¥±=Š +´wP„Õî£S3
+¡RÔd*×éœŞ¯Ã™£cıÙä~äÜ¡ˆ‡‹€¿`@ëÁíHHJüùà ¢Nl'¸¤ÓEâ&ùÔ½aÑ›Ü1şö9^ø¾Zß:>k%lu6–¿h^süÏÊï×ñqœ]Qÿ\3o¡&|¿Î¿RL	“÷©"ÕÒÀ‘^5ıs¸Ş²ı$TRg;ù/pz7q§ÁÍÙ°h1CgŸÁW}7Ö…ÔßÁuBì6©ÛX±ëPORlñ‡ƒp×Ô+ìßëdiíûè¥37‘ auyÙK`‹ìÜ4°2ı‚°šNâP^=xò
+H¥(úájœæ`—W –d˜n†¡‘mŠd+çÒsÁÁNQbéo6iƒüXGl¯?3§U;¬•ƒsKû9¤ öõ…3Û¬.‰Y¤Äãn–b¤ü3gXrùàF’‹„Àb3æÁÊEW›²$2©As`6½İºO÷å-ë<K„ŸÙà£/•¢ÏÛİºtp›GT»Ç½,"G÷éø	-ªáßV¼‚3ér8Ï“„x¸p	ĞÍ4»2xCÇb«Ş PÎ3ó<cŠÛã1PÚÚlyÁWEıÆIGú-¹şÆã„ W^Úú}‘,şÅÑÅäQoÅû³yn /G™Ùo]§AÈb¹÷¶8g()Ôõ™¶-—utœÒf°ªo¬šehÏfu»¥ÁRH•œıG9Ö±–åUgª.f\VWÖ;[òß´•B>ŒçÊõz9—'†EÖ4Ëk-´´öV[3ZúAh}Åí ›ÈVĞÙ(ÀT|î™lo™5‘¨z>‚ıÄJs’vÓ}Q«n^;»í{s‹‚[À9×½Ê9Ú! Â¾Ã\À,‚·ˆwàÿw=>«â Ím¹ê†‹_Vàú`OuŞ˜«Æ£ßà~ÏÑ J$ûô¢Š‰õ¨yX‘zTë¼ÑæqD²~4 ˜áâo%@ÃÂ*ˆ·g@0şYY® ˆèßgi¼ô‹ï˜Ö¿ü—‡„\/ €PÁğ@½5ÃÏ‡gİu†PFJØÌş~2ÏÎ&•4_Õù9]"yR¾hâf•jc’}{c5‡AÊà.ÿÀ‚È_2‹9%I¨ÈRÎ»‹ w¶#4r¶I:i!gÒoE·×é8¼j—e±FWœ¶îÓ¬z·†=ƒ/½­”¸øùSé}Ó/”Ä×é0lyÍUÜ‰Şæ>ÂŞ˜§ÚOGwæÙ¥ôO`ıëRÚczëôÕ`bhR×°!áàËj™	lTpª&x‘*JÉb”m`ûbs”1Œ½k7çwó5¡&Áø­ãDÛˆ'<*ÍŠZ*·8S~?®ô}¿¸N/I¤‚%ß-¼í  ™}Z´;=ÊH$FåˆN‰³]…£Øêxİíbw–ÊŒ“ê>UÓÅ'‘³å§“úÉu,<W¡­}ÄT}Äè§‹SÏ*$¡[j¢PÉ¥d±]a¤Ê÷¤›Ç»âß@Ú‹N¥óØ
+äW†´	 IèNÔF[´IG„ı‹fÅ;0BŞlì4òTÛî¢{ßÖf‰È†V˜zeÎZm	Òu·Æö9DÈ»›ÅàR=Úâ)‘#mF·e_ûXöB~‚àşØâÁG$ÊrjHBJË)æÙc0˜\e©ãyä0´ûË¥áN`5œªÏ™.ŞşòËéÑÙÃ%È’Ñ÷Q€U?ËDD–‰¨±C$õ&7åĞZ-{ÿÉmV~f1|h(S¨r6~+»¶•İR+m3SèG]ˆò?2çÃ~QKœ~Ì+ixş(uR^÷ÕËÕôl.$š*t¹Êp_XB¾ÌŠ6;‘]Yocpò”c£"UOh’Îu8ÙÃ1‘ÜÅ8ßlçİ·w@uc½Rß¾i—ğÚj?VŞÚÕœÉVÜ¯"Ë xP}ÌñŞ l½üKÅØìLèM‚Å	…xõgh¾7%:ÕRê|_*_,#WÆ(™£«ˆ_ƒ÷ÑÅ«r98Üèñ2ÛU“‰¶:ÿ€ìn›¥#ó ¾İ–úï3—Æó°ÕÂVêdúm¹ô…/[}‚‘= t¥óG›GÎ!€¶ã/opJ]~ÙzjTL4ŞË½;déÅÉØwBWÈ¦¤µK^¦en–>v
+]*İ¥„•ÁS¹Ô+BUÁ' ¹ØCúãYBçY°z*Ó}©B`áŞƒƒçh–cŞ—Ò5•ÏLªJ»š…ÉjnA‘­Wãù÷?[İïè…X#°ªwv—œû)¬Ö´ó¯w„¦*EOWÎ¶ëM”øûÑzÕtÙfhŸ|¹ÜÿÄ±Âáãëd„Sk¡&Îc#kKÙ‡ÇJl…aöµ¸ØòLÇºaz¡¼1~OZÖÌ ÷eB†ÙÜ"k¿õ•2¶eÕp¨~wµ»¢ÉswóFjŠ|S®wä}!íÀíîÇÉšşû¯ñ¨SÂHûÏ)ú¡ë2î-L"ôK–G`pi•Â©
+nÇÉ&£=(­¨O)!7zÑ!ä+b³¤'J~_@bçx¬²'ÁÓˆ8¡ÒËøC‚ˆ(Ü§Qú/UÕÜ]»2ú¦Z³Nx\“¼×qÁ'|%¤‘¦K~fÁíQípfö€QEæÈ»U-ƒ‡d¡¥£8èä©´fŞ…Z­úàÙèÏ?kÊÀ)Fgaôİwz V.£õdeó÷¬õ†eâ‹9 ‡°œ÷ğ€öä”¡X§KTÎTüŞùdTœ_îŠÄt®g!õ·9ÃVø-Ğ¾Á”ºÖ×Ó[L·Íº…uÜˆ<Îİ:ïúÌ¼}~®c £*¶¡¥C)p¢Áé\ôÙYo €¸SE¦[áD¥kƒ÷·Š%’ş,ÏfÅù@ÆBLâ¥ÏÅ5z¬AÄ|¬*cØ$V£%À¹ Ö¬%É¸¨şÑÁ¦èO‡Xu´[sòo¬Ÿ†ùeÍÊtO2¹Fùíbp:|ğoŞÛFù=Qz:]ÜYµ®HbŠD´ÎJ¥VÍ…z[>_£?6k¶ƒŸÍ»'¸C;%Í¨qü¢ÏÆœ«¦ŠØ]UÈ[TàD¥í‘Í‹ûÇ–y¥Õ3·¶L­!›5ë‰årtd"»s`Ö`jÚU•ŒRLT¥Ñm±*íÖİØğ‡í˜0ÅèA ol»É]Uo¡ÿ¥´¢Z_ÒYåxf¡šõë oB ¯IÅn?î.ÿ(^s Üår;º‘íÊn#ÛÎ¶u#ÿ³ümËŒ28?z®”¹æåÌW¯ø}ªkºCw¿…¦ëõ·ë÷·[ÑßN¨¿µ¨f4?T­SˆºŞ°vüaíTkË¯¹í×Üæš•û6¤MÚ–¯ËPš°Æ4ÔØ]^Ã]£reÇ`lg'ÔóN]Ï;KzŞiØóv¨çíº·B5¶d5{æ7 gàVâ ÍàˆlœfÓÿ‡Ëü¡ãÿùSê|»ÿîäˆ îyà¿àŒLÊØ"ÇÊ0lìmÁ±2Øík[9;Ø½"?ÚÁŠ¾¬_C ÑÂ3 ¡ÍÿØq>[Ó¸/ÊFÏRO0hnµjtıÃ_ÎNˆ;FÔëy·WßÎ§¾º—ß€˜qmù»Mq
+ŸFFE«¯ÕäùNŞıÜ?UƒÁ¤’7ì£À¥d^.Æ]Â·79ÔËn¾‚D*d ¥È©‹Êººê„aMÛN Ù5háÌÉ‚ä·aÔ…0›“+“ôyédâR	MEa~è>{pH¶€àòwˆÖÀjĞdğÅT|eæ&Oåì¨ê? ôUßtÕî¾Ây6¯Ëƒ>Â»Iaª_Â- 4‘ŒóLõ}›åcÆ“ŸÄwü’Ò…xEÈœM©›uı˜y¤C²?g—Ñœ#ÀO±åkğ¨›n>Ù”‰$‹ªb™²ü°b2ç¼¼‚_‘X'ÖWKc>$ËXí<õ6~®èÚ¼¶ÔM¦<¡5û„ò§k&ùWÀ¤Š.áõ<]Ê&féÇ¥]ÈëQIgæC)ÇÎæKh'’†}Nê]¶—~v36¤ Kï×J¶H¯¦MVø÷Q‘Eƒí-%§Ò|{{ dŠ×I4ØÜÜÜ¦ÿ¶ñÜş²) 
+@%I?$c_~ã-ñ
+’Ó’§GC¼(‰0Å½#¬„1b;Ú~„Œ~OdÿÎ;hO¶ÿ¶*ÆØKÇÀÅì(vÂ£Ø	Œ‚JhôÖNA(K‡@¥6Ş˜Á1ğÉfâZ–CÇ¿”F"îb_|WuY²V»¶V»aJí6X«İÇY«UFPZ«İÇ\«İFkµ[¿VŞ®şñá»ú;ç*^ÑKJ€R¢á20QiHÜšWÙpîJ_Ww†Ò¤;[9¨,ÿk1½©«Ùy…™läÕÄ)ßñ”*ã=‰ñÙ[	\Ø°o$\:(ìúUâ(Ÿõ>ÃŒÜ_Í
+|İeZ~£h¬*à½àûI|ÿ}^•ÅQu Û¹º8À?qêbêÕõá>šŠü”'ïIø½˜³«“ K÷Ä¦á×å*ME‚°ÒW:Ämæ&ˆ˜pÓ{süªãf_ "CÂ¢®èçR.”'¯•½#I1¤ÃûÀ`?İ–ÖÜùµN˜ïO÷Ç6¬6|Ø´0TÓòê¹c04‰;@¦{ÀBj³B¨²ü¨Ú‚[»•—ôE*ê8—W¼£h—i}«®%-¤¦˜¸ê#ôÔã÷àA_ŠöKŠ˜iã8½¦Jh¡¶­€jinÍe½¢‘Ìo“Qâyÿ"[LGq~oå$_åèö¦ıÈ5Bü˜»’oàğ(7eî3^ æa:ñ{¥ïØ/±bPüïÉtÔ©Ñİrµ™ÈÌháCÚZ…³ «!ä€(( #)İDE.ƒ/×!C+Ê¥«tD·‹eb€ı¨lµèuĞ@ıî!]¾jå<2°f¥ù”µ®²º¬Uß:½+8Õ2Hx¾uÀ)!İÙêÀÀC5ğ,æ }k¬Oœr@~Ü¿I’™ÎÙÙW÷ô¾NËóåÓĞ5(È)Ò	?#¯°–SYûZhê¢€ê8Gˆ[Ú99ü–÷ö~z{öÒëèB0Ï!ş¿<Ê¼9:>{ytlã2C0=şO}+¯1K‘4häìäğøUU+<3¡GËá
+à0ı¸(’|ş&OÂWzx•7
+ÔÖÃéı!¤¡ÜDˆ—»È?¤Tii@»Ğ9ÌcfR„vLú€
+¹¬%¹Z(²ŞQªUÂ;› %¿Kİ ĞvÜaÿ¸<MÕ¨è·õİuşuSì«¸ÀÌN¬×;>Ñ…\Âo­ç.	VôKzíJİ6Te´yA&J¨pƒşºŒ£.¡‘µĞZ	Åsø÷Æ»èÓükr†{á¬[–Şª1ò0ÿ 5ÒšœJ’˜çê’Óø³y‚–ä´ª¶ğ‡r/¹Umrú£6ÙåğãÙ TŸàåL?Õ”8¨[HCèB“ÛË	÷3K¹ÒpmB£¶6G{ıºˆ%Xe26Ph."/Õ£O¥*äƒg"rıç"³f=şl*óº5šÏGœyl}ÒÀu§İ#¦CjcW‡LÊ+Yré³õ7Ç<eBbÌçSÄg(Ú$ïY‚8%Ü·³Óy–ÇWI›Ò¡½?ïFÛâYï!…ómU°·f®¢¦Aƒñ`t “órÑëÚRÀØGd¹$ØqG—d%>
+³ÍSm'C‹3}R!º\a7IÑg]æ
+•|ÎREM–ÖÇ¶·G“bÙ.1 zíÖ°‹WCÅ¡UnÌBß.1¿×S¥ò''¤hJ™3Ê¨gŸ.ñ`²È}TM*õéIÃÉp’†FÕ•¦ÿ2y8“hS}„H˜¨&ù2ğÉ…Á(½™CC†ØãÂU!·‹¥$!õâAšbvcÏ%ªz«µÑsÓ6™ÌÊ¸êPX­ókSyæ¥ú,0ªşªœ&±EˆA+ğâCÓ\Î¬ŞtÜ…È^‘ÒÔigTu ó½=9¿¥†‡Yv/Á$ÍòìC
+pÜÑ‡x¼P÷ÏëxİâM»¦)Åîâ^]?4 Ï´ƒ¡}ÓÙ¸ñ-Ôş¹L±brH³Ü3åV¯:¬;Kà‡@Êˆš•­c`SÈ‹®%tXh”è±äÇ
+1Ÿ*Ø¬‹Şµnnæ£¿©ò7½ˆö½K°6éDzQ1×òÙÙ+›%9¤†SŒ0 ‘<ĞöÁéÛ1aô$QÊÃ¨€bĞ ï"¸%b÷§Ù$‰-gè]$q¤:¼¢JÅ£2i4(¦ñÚ¦qØ5›ÑàôåÛ_Ïú/Oà(	ëP}cãéœB[Uk¿¸ó@Ë£Ñà"±³Ôm–ß €¤ú÷ƒÅúQQeóRY*VT:;#Eül}'¬ãºÑ€ôõ/°2ëÓz zßëşu§¬Œ±¢]k‡Ú¶3pMÒÜ#¾’|¦º-:%¯.!­„©eğ/ÔC´×Ÿ»$"È‘Zî)§	ôÑëÑ’«ÿN’ÙX1áòÄhûE4ÒHDªàÚUÔ5Õ8Òb°Ø´y§ÖÒ~ŠÍ§ØÿôÜı620ÄvxõX|à÷7Ç¯”qa ïU@ßè2NÇ‹œÓfÌ¯óì¶PRõ’í¦j3¨ÚÜSıÁÓW:~†ÎFv¨{/:1Xq_]%£gæï×ñı…Òlz=Çšíg‡Jƒ6Ò»*^ÇGwÃÁ¢ÚğPôçm „t0ªöz×?í”nÕVÒ,ÛòÌ	R	¨KŒT&ç¤­ğ÷a#*9fB1Uô¢ê1hª@±o‚VşªIä‰x­Z€kº3¹ƒ«‘¾Î`ƒ-[F–5öUŠ±±Ì3ÁKl§ô$ãNº‚\Û¾¥Ÿé¢#ºİA´k™Ò”neØÎsK«
+7Ûƒ¾1Êš2¯PöğŠ¹“qÑå¡_%£ğíîÑùÄ™ò6±$ûd\‚wTŸIÂ–G„¥§X÷#WØ¦Š[„wà>e¿NÑ—ŞÇçwÚË¸FîÓñ]ŞKœSáì#yGûqy.n4Ô¢t 8qj¾REu%M5±áu2¼!CšğØıg7{âU“Ÿ1æ‡Q)ã› ş0Tñq–Í6U·ªIuMRÅ¨M¥_ªûÒTİœXã|—«Ïy´Àl'¦¢sp,ğ³MJ£AxÅ‹d˜¡–)Äşdè¼§UæÁ •¡¸	©Ã¾júºOJy–ÛT\Üc›4'ë]á#¾ø·‰z÷ê×Ó®—zãü}zvx"ÿ|uxúò¼Ô&ì
+j4f2iû©ÑmnnÂgN¿œC»T|Ç &Ìk
+”ÌìŒ>…¾­©%^\]@‹x"%›H+„!ÒÖcr6šñÂêhHôÛL}ät@é­µòq T§g¬ÊwøñÅ4è¢_„Ûóâ™jš[`Y—6Üºó#Ûç§"ç¡:S·ñß|§ ƒíù¢Ğ%Âd+ÛEÊWÈøF75u…@¹Å‚épŸ'ô&'ÜÒ¹7ì²t£­.%` "Û¡"ÛN‘P‘§Èn¨Èn×dz€<)jq>¡	$¿/õÆª,È ¼DkÏC¸œM\„×{WœBnHUaI†9§gÎ»¯£–ëaÆæS4•;Ì–E¯Ğ9›Z}İ.Å±(>ÕÅ[Sÿáœ®`‚á¨
+—ëÊ“HäÕvs(!¬pÈ;{ò¯]ç¯¿ÚéˆôOÄ¾îß;Şß»¡é{N®_Å-Êƒ»‰¬§µ˜&WÑ¦êÔ¾é+¬Ï`Í²%WĞºqÄ´yMm¶„-o@[Ó,€ßª§w*êÚM©Ÿü7QŞÙoLªT_ñ;&}OÉy;QÇWdÄJ,ˆè· œnG¦` C¼œCıyYÀƒm1íls%¾µ•´‚Ğšv¼D=%O.*5ÍCxû5b\ƒˆÕ/zì®d3|äÑ0 PÊ_Á”¤°ªÙóÃ*©sÌjÅÁ(Xíx	±TÏEÍÒáÊó'yzu=Q0”dŠÌ²ñı$Ëgª¯‰~y½¤§?©;ÂúÇ³´
+#ù9ÅÃaR™˜:’gí_¾;|qÔÿõô`¼_ÂEBPêõÑëŸN¼rª”úŸÓnec?yûë»ÆMÚÒ²ás«šñ¾š*è’tk‚?F‰"@Ni–­VÚ²T‘Dj7l	{f*+æñXíºB)%cxU"äÔ<ìş•1K°FÇ‹_SÿŒŸƒİÚ¨¿Â	üêÉä`ié‚…¯ÛZ·ø7¨‡bjä8£º²`­EÀLY ØßE¢QO1Ï=&²›-ÆcN·hÌ©y{H)*eµjIb½ÈJï\“óŒş.´ÇãÆáÄ·ˆÿ$ê[©*€©0z
+¡¢ÛzSJÉMù­_ü‘Y„jÄ-h¡ØÌPQpâuÕSã¬èµÅI©^—=d˜Fü¶i3zÀ¡ÌZJÁÁãFôÌº šc¦,§ß>Êë%Go ¼beB‹k‹šjÍ¡Ä?k*³ìöµ¤k‘a])ğoùÉm`ô
+0™À¶Uãš—ÉOs?=ªl‹ÄäWHa5ŠcîD™psúx.õı½i‚3ıUk!kM5;uÎ¢‚hG÷çŸ63Şz³®ú²Æ|ø&3ynY*DÚªd¶olôŸ3y’K6é”v‹QEsŠuÎlÉO¹_¡zH‚³ [#¯T·	İİ,ç,	1ğº®FÕå4ítD¸©	IÌ‘zA(­›Õ=
+ÉlC¸i¼áÌ“b¾ÂãÏÁ{’2÷AO±WH
+İt8Á§ÍóYéòV;-‘pÆÌÊşöø“âA7š[½ÃZı´d.;1ñë'›Z£ºÆÒ™Ò	' _Á»«hJèîf¬îú/µ{bc{§ùÚXGH$?
+O£hOá#8<¡FÿâBğÏğµ;.PmëFgË"Âğ(ÀXuh…êpÙÏé~ãçäÁ'Ò©‰BğÍ'4(­â_¤àıtÈg-V${¤…ÁX­°\˜àÖeqàæzLàÍ½Äø½Öìb\
+o^gKèYÁR>~V¸D˜jv/¿4¾x›€ÉERYN—Ùù?ÿ
+Õ.KçÑ›a¹xhUÂh_åÉxÔªµtÿ+ÄI!TÉå´]•€õæß¯Ÿ„MÈUGİ ½œİiŒ£|ƒ9Iç‡€@kæ"Ÿeğ‚VRğ4y>àµüÄt²Rhv§''uÇ÷ÍìšcØ›­Íèx¡§Xİb>DÈ§2b¸É>Gÿä™®…í°Ùáé¾í€’™ÜÅ€’Eã„C6Qz±îUµaXE'7…
+“ÇºƒöÔå”_tÓi1++;Bê6àõŞæà%æ6VJøè	ã	W}‚}š„ÚH	ö(§1İÀ!â#1œölñÅË¥.¶‘Î“Iáêxƒyà#qéµ­O£"Ó)ˆ£ÚÆ.Û(“ê‹ò óW8ÁÎ»÷Lü ÛëÃA˜["oXİŠÄ¥¨ìÒQ{UÒö¶Äxš)œ}Œkc¨uïTÀ2ÁNT	øË}5ãç²ªašZæ†l¨è`á‰¶£áÛ/fº=>;zİ­¥+zĞšn
+B¸„Ä(H`-' „¼‚:uİşÅƒOÅM^¤&¹«™é_VR›	””›gyQ¸ÙLÉTU·$y£S2ïbŸ‘vbù– ¦{L”˜é/W¹Âús2jE·4ãÖØ‹N_œ¿;CsFuÏ•è¹šfÉt,åİµáJÓË´€é”ŞÉ¡ÿA¶ù @×›¸àôOêX ©«3GI3)×†…œcsfš)zg1­fUÖ(İváŠt£
+5à3ˆ¸@Pl)]”—BÉßv^¼¹··¨ÆıJ©‚pÀ°¾ÇƒOÎ£çÏ#í]r¼£{ê3Ä¦.€÷Ó<sCÄ» î²œY‰ğCŞú„öeˆ–¸|aá£›ï¶QIÎ|ˆÇ)¸…a¡öˆrÊèœw|lÍ²oYˆAaó­OKö€ue#Ë¸À: áşÌ*|ˆ÷×ÜGáp­š”QN67²G¤‚ÒÉ×xµœòn6“qÊø™×T9ÄJc</¯kĞ	OÎ[l[Èö+~ì§ÎAŒ)¼dA÷@Q·“0J©"ï[plOŸª»JZöüz/zO1:ÉM©h2öÑÎ€À2ÁiKĞØˆZ¸bqÑv‰Ğõ†O=ïµËV/­ŒšC1VúÍá{P¡—&iZ·Ø <VˆU"¥šMDh)\UŠŠı=™¿€Ş_‡s‰ôÜav¥oşLäsVyÅƒû¢”‘0ú¡ÁÆh¶#À¿å™°PpÎÇí–€—pˆÿ+Y»:aZ¨&Ì-{_ûÃåÿ`y™6Ğà7òä\B_—çÕÔÀbû¯ÅdF¬¯ºíF@8øäéå=ÜGáÍ¶†oÜsíÈ>)æDºN"‚U‡Ñ÷!Ç²Káğâ¬Ş2ùEÄI%ä}:Ú÷ÍìnÂœ%`CH¥ó@ÂB^€}@ÿJ¨0Ñ|xÓè]ƒBê"©•6® JÛ:MB+(ÖPtV{œØıJú/WTˆœùJïLMÆãş¯Ã¼Ë%Y³·ìğŞ¨Qôß²Ò;…¤9é)×8­şPk7Ô…ï*”áeJ°V~[^{’ë}µ»ädÆÛ*~c«Eµxµ)Âey- !^`SpÍş¶ĞT'F†øb6ÀÛ«¯Äšbª_NZşÛ^] 'j°é0÷Õ‚·¥ ±4:Wô’WTÜ™âÊ/_Õıõÿñû„£ŠAüü© ö^ªš^2ÄSR½†ç?25Uæïô#`Qû:aÀıh?újÏ:3ö¯êÄk2*8m$4ªSì€bçSwƒdj*s(ÛV#³¾î;.™9o.&ˆ·¹>Fpy>RB—ábNé}O¨#7AÊ	{X›¨:¼Çé””K!º/ğª§FFš6CÙ„²¨mr{ÎÉë·£ŸWÁ¢†ÉK¤&š3öA†ê–p‡€OsT!•Ô‡l
+çŞ!)Ô3é§³İtæ5Û7=Óª£f”A©"Ãğ9Á$û ÂBœnâlkÄYxñÎ38ë@#Çí	Op^ºİ}Pà{=ş{w?fç°¦JÍˆ›\1‰ÿÃ˜ìKX¸M£¤&Ó$ñUySøïp¡Ö¶şg½R)ŒÇƒ‡¨9ÚYDrmğ{6]˜¸øÖ¼Óqmë_Š°•õõÎ
+vø¥}¡Ù)¦±ükµÛ²\àÏîlaCiNn^x%{r®jqö+UÊH“íN§´Îr“ÑZ§0ûº½Eî`®\Ã«B¥Ø2™ÌÀM´ÕQDG6ø|®¨Ôj¡VHí{N}‚×9¹¦j”‚r"xÇÉS\IØâãº ¦°$®šÎïcE‚»‡c-øğUB"±uÈ¾=­i~«Z–Vø‘mIÒz[mƒ ‚¹ÍJO^HĞĞ¡Ù¨7çu\Ö”óŠá×A:xÃãÍ?[]ê”:~$‡U—)`S1:©¾{ŸÊ¦+&è·Ñd„å«ë•Ôa8¤ê`©ñÛÉ²(7t“„áÃñ¢€à8ïâRîõaCò:gxì-ğ
+‘tİqTÁÙ”n¬Ä0Oıvà	Ê¢¤êÆ¦yj„ySwCØµÚ å¦úÒj1Œ±Ü¤IªY’SE9á…Æ_q¾×İ„Äñ^ùrPsêKSòÃp¨\óõãZ{ÿ=gy+Üj£ªµLİ	ÓÔç{o.ç/’/šy)ÙUXÊ–²²D¢·bQ«BdW.²îjÏÂ¢æc%=šGJÓ—¹i¢íM”ıˆ®ê[–~üíT •bÿóûÇñeÁÂ¥{oy¦áÑòö©¸¨×?­t_'××õæ·ãuÊY_Åñzƒvê.˜M@IË|&Ş|ƒ­"×/õÇWuš°æ²°o	ş¾¿L‹p¡F„ó¥Ó…zßèÁ}J#4;9œgús ì+NA¦†ÄxÏ7Mæà@¡¯:'‡ûãÍ# Q¸y[æ.S·Ôìf¼Îü½±ÑN˜Á®ÎëT'0ä=5¶ÍEÑöµÏY
+¹¨|İö9;ö¯ËB·l\ÍW´Ñ}¼ºì±Ô·ÜŸb&{Ã»ÿF×Kõn9ÎR…oıÚC®8¶bóÎZ8Ê*ˆ ğo:á0¡®.R±âòë;»¾°w‰øHÎ­1ûU,HE2¾tL«5Õ#
+n€Ï"–2–™wÓİ^:òVe‚æúHÓ¬u¥ğ^°‡‡&.íËYã•ø®Iã®¿Bz=™ñYäP¬Xôtš "Ø0/&SÎjS,w…Äµ¥jN•JußPÕ FyØ™DlBÔL6¬yV94wÚ£íåâºJGAunSJG±#÷Cé7Y—¡ßp¤NcçØ'Ü$ğˆØ­A]t†–…«U¶±7>Oœmåè³ª<Ó1ë¥91d<[Å	-Ã?Êšv)dmÙË0ŸFA×wŒ@ŸÜë…0îûìÏŸA®¡×ÎÃGÍA†Füˆ ˜€³‰k›Ù~¼H 63š ß˜Ş0!/s1¡”v@Ff.{ËëuäÑ‹@ä™PQ™ÿ‹üëb‚©®7è1oréâ¨ˆò;cfc…y\Ö#®•k¹±ÑJY²è ÇªyªV0FFşÜñB#¡§o´SˆI(eŠçtcì£µ(hY>çä:€Ï„ˆÍà;E‹Ù•‡ñ$©ÚÎĞ½=~ß!ÁfØ8hğĞ€Ë­*eÎ‘‹KÄ€°Å“4hîb¢MÃ©ïÃ³böşÆÎ–¿“é¨Æ‚P®œ3ao{wàÙºê¬ÚŞÇQ<‰”bRkOâ+%¾•Ô¦VÈ÷®CÀC3íš´÷-Œ5öúƒ¦áÕü*KŠ=ı%ÚŞŒğdá”ío¨ ½ÖI‚¡çNÁyM+;ªA„pPè˜€2IÑÓQƒÙP¾ÉÂõw7!ñè\Ë.qÃˆtØ¶u~ÜŒşI©5¦J°r/|´‰ÌŒ`ëıMäTî‚#Â9qÚSşˆ®>ğ8¹1÷¨ı‡ßÒk…³0ëújFŠ6²Ë;#ÿµøRˆ¨º]Óœú³~h¬ˆ‰Ú=côQ™-8³%ôEQ,-Ğ½2Ş¬Ißÿ©Œ`Êªô=„ûÅ„¤ª)~ÔwD‘Ù6pP{Û‹=ÄiHoÇ¾bGãàAûSxG=·÷·^5Vô<’½’äT»Ş :K›<­ïLd,h˜¬sĞŸÚ@Œ“‘“ŒAéò/Q$‰çò“t)6=ÛqNÂ„³É‚ãé½(„‚‡qÚ0û—# „›t6Kp%
+.'TOá‚sG\«A‚ÛcÃÔüúe34¬ö°`‘9>m6š‡¤f0ºÆ76Í™ña][å%°”,¢œõa-ªOúà_Ä«¬˜[¢"¾Æ­rµuuòp}SR j“q5¦[óŸ_JTÁ|úğT¶ÌR/ä–ğ@vi6ƒ´‘Ô`)îÍã­ÜB%âÏˆ½û|<‹G÷$FĞO¿ïÿ´£ÖgFh’\£ÃÔ}]Ö@È«¯ox<mÄGdºx¯Ç‚‰Bä`ööŞŸ½<:	ƒ°ÛÙå¬}8Fá% #Í³…Õ%† iÏØÿÊRî,QÃA\µ¤ÿq (—°$Kœg'G’.Ìd™¹6b–ú¶<ëlôæ™¹@;„*¯Ì©:ù*×å†³0Dà<‹~<›ïÛzÒ%„Ë†¿Ólëf–\q£G-vJ—ªÃwÇ¤­rŞ†Ç©RSá`èñ¨OJk6‚}8£ŸMsùrœçôI)âåÏ„úA˜Wd :ÿÆcà/PÇà.‡Øå=ewÓ5/>jòj¢W„‡
+yŒ”ÆÚ¥G@NşÜö•n}Oš¾Ò:°'P"•Rz¹+½qLqEˆ]…á6~ò·ÇâuÙ ¨Š<¸ğoúÔîö3»J¦	4âN£Qzy™à+9 øÂ[L¯‰’Ğ”í[Ê¶&‹GĞª´ÿÂ)z¾‘Ñ	šïÉzŞi‚È¨)Ü0ğIƒÏV9Œñ1,£r,Ğ]Uì3½Zº&ºE5ÈÀ&8~&“{Ï¤æØxúù¥*™Íd£7ŒïJ^Ğş+…`æ™Åk—„ÓûÅ¬Å=á†Áë;êFë:Ã:PˆËPyºğÒ3>^âµÎ2IbkÇrien.N†ùá((aò3ùË»Çó9¼Qµ–VMÈ,Œ¯mgèÌ²’0Õ(ëS%(E€Zğº”Ğš(b®›Ç"å‚»òæğWª;¾1¥S&pl2SFƒ0,Ç`3Â]Íi.}Ø÷,’Ê2 b¸õÅá«WıÃ“¿ÿúúèÍáQƒêP@«õ¶$¸IØä—“ùFz5UvE†[óÙf–¶É¸ÏJæÄ±I	CïLà;Ùº[w%Û­;Ü·±;Ô¯zUÙL`6>h:~sxòÏşÛwG'‡goOÊ+Çá|«/E-~ìºQĞŞòeã”zMYÜ0KŠ^ğúø‘a%ày(ÂJ\äÄv2{÷1U<\{Ï(MÏ®üL†6,ğÿİ¼¾Ğäµ\ouÀØA/ªÅ3°ÖY>š²Š’×]Å&È‘Ÿ™KœàÒM´1‹p jÕÄè®ú¹§F½'‡Ã­Ÿœ|Ÿc÷i¨hÉş­7…	ù‚ÇBçF6m¦+›3w~|UôsÖ–ß)­=æıÖ¹Q­Z-ĞÄÛ“ôô&´ô¼aKÛçû”z‘^‹„r½ÂgÕâúûõMš¯Ò­”Š¶®.·çë×ì}€z›ëçë5ÄÖw—Üq×±µ.ÜGœV¼”Â1=_,-xÁztÜ'O+V´ ºú—üÅ’C#|õ%Yşü³–ÒŠEÇêøì+¥W/jåºÜ¬GcV¶¹×µS«ØB§ÃkÜÂĞ4r-°‰e±ñ£ÃŠt ‡ÖÂo­´Óä{û²…¦Í0<~àI›£éè-™˜9ĞØ,ÍÎ4VFÓE3–@´}:m¾tzNÔ.X©;Âä÷¿éğFi~œ˜ş*ËF”ÁßĞN”Æ˜…CzÏ¯ÕïîCÜŞ€"58Äc×ãWµêè{ûú¨ÿJißGıüúúµçğLt³ÏôL™_›Î,¤ÉïÜpfŠİÈšôl!ñoL^Oh[Ä3'ø $ñ¨ãhc­©°ÕÃ¶C:ïì
+i.¥r×**aâ%¨°-!]bD@CÂy»nuêa;G\ŸCÒ„éj©Ş•?ĞÈù'İ°øÓ~wna¯-`±r5aê`[véÉW‚½ˆ:í}6|Êå™òÇ‡€$5‰
+’±UÉ|Xåğ=<šlRŸWiAï‘¯­5kpÕqôdœÄ@ß':7~·ñ½xmä$¶·ğ´)t¾å{œØ|åt%KÔÒÕáB1acVà^àšq“š:+®æ]ÃkLİš'—I+º‚Nä¦Âß¤û´úÏ…ù¨Òb5
+NVÈÏ¸èù•N?dÃØk¡b(hÎ&³Å<±M1	¼ºqÆ'Ô{McP!ÎÓ"›ámÂpÄukĞÕûQ#RºŞ‚)eH]#ß\œV;°ı%Š@!eÁHĞ§MJ±U€ş("M]¨@»éÃ‘lÚ÷oğ v;º|ËïÊä£¯Ÿ2‰Ö£’®­l-’ÛŠ<k>ù®
+å_UòX•V®‘¸í¶d.öFÕÏÕ4Y±”¡
+Ÿ½8ÕñÇ]Å=ƒµyÛpƒ>„ÔóZãk¥ËOİR—z•¦Î3µMÄx ûLó$Óá?uìLGYşTZÅu2ŞPÇW¦şN6Æñı<›>eùXoŞ77§<-òáStÈÚ„Ÿ"leÍÀxG/Ï^ŒØ‡##*Õ†ÃáõñY)C§ÜîáDyúêøÅÑ›Ó£Mºk‹"‰D{/÷¬ê¸­Mÿ¤Şt#Ö”¶:'ôl&©ùÂHÚ——³>%TÜóòåoæï>µ¨3Pâ:û³~7ê÷´×vxš	úhÙ–Ş¯Û/ëçåŠ¼`TJ¶E{];œÀ£,íêS-“‡Ç)è“-®®çì`
+Ò ’\B#æİ´Æo¡ÅéP9~ìƒíàC¢Ê”Ì¬.İÁ_	Ö'Îóøş&¹ïFøÊÔ“Ş%|	 &‚Ÿ%§éçù0¯©÷}4’‰ÚU…ÕoÅ—Ï>Rğ:$©ÇÓìvÊ¢ÌŸëe¸üF/.ş3¹ç[“ÅR¹®¦îÖ6°ñœ¸¾pfLª™óİøƒHRC
+oğàrfê|(M.ôUN@¥ih:‹ÙU’ãË7¨ô·%¹ì¶ªÃ%]¹‡’AàuÏ¦¶K±®ËbZ¬9Á­ôšZ}Ü‘‰u¾ètËGß Õ,‹%úóûYR|*©›]&¨É?íSÇ7N”’¿{EY…¦/^ñ3Î¿Y*üÂ|`‡ŠÓ']Á¯'å-ñ>ø3y^xfyùÑİ}ü`C|§_øó‰ºİŸe§Ibİ ı+ŠT4Pî/\BO¼ÉÊ1ÚŸuÁÒ":‹G ¼²,c1—µ›½ÈcÂUKë-×ÙJ‡›eßz›ZD×+ó…Ë–º¢iû!3~(ù ¶·ÚPX:I$ÊD5½mĞ2’õ ,µª`Ÿl‹^ù¾ÎxäV#ºÂwŒÍô+qJ%¯“PĞe©NêÔPåñÕ$&!†ÿ¬_ø%ş{5ehx+.ÆàDªŞŞÜÜTªË(Í!°"(@‰yöŒ:*ğs¯‡>ñ\-êŠœàC^LètŞ/à1™æ”J{	¯çœ}›Ÿùâi<¾ÿoE	L†hK äše7ä9x}İ¿Lï&4õ¹,ô“<WÍ8©•—/OÏœºp[”5ºîoñxÜå†áWêÈmGøEmœŞ’XÌa:‹;½‚§‚dãU Ã_5Jç§„Ş8Âc<W”¾ïrpõw
+­±„‡ñÙ$ÁöÔ UÓù ©8!@vò,gÈ[œJ4‚m	İ½TëE:VÇ÷“‚ÙÊİg;M¥Cä¾8!Š¹¹·:hüÈfÑ¢p2–ã3L¾Ä8FxDQ”É‰iÇéEç)¿şŞ&ctUíÅ£lÆA·465U€†ÅùHÄHäÄmóÛ,Â ğÎœ~PÛ‚gi³àÙ†ÃÔëìÓWİƒ}ôåá¼?QgÖÁöºäw§¶e{xî\Ï¦	TÎnTó.>®«ğoèº¾~»ÃnİÁûSl­!¼LøË‰°ìÕj÷Å6<ôF˜f •†÷&¤)Úã”ú¿bqQ$¿/ĞQâœ´Û**_m¬›UÌ:İ’ËK@_ÖÑğ_P¬#´‘MM/g	Ÿå¤¬€Æü¹(©½‘pšyp=zCCÅ0›ah†ÜŠf3â³E®˜WÍ}ˆà[1p Ú>ã¸ ZFÌeëª„_ö"OzE1Î™¶§¢VÕ;Ô$¦­³ ²Óêaô\®hœæ••LÒ9Î'V¥˜§C$$&¨SÕY
+†µÎ{D^F€ÍwÁ!d#–ƒuœ"(¥…˜Á½6ÜE–XØš! ö0Ğ/Î)WOBÎ0¦ÄVla	ğo”o(•,~€Ï½²'Û¯¸J1S[¼Š@Q`fK/S57º!2lún3k¼{Ê+?7ş›8­ğg½UT4.l×Ü´m³ÜT„q›ó>ıE.æã"ó‡GìA5_Ç3„Ó…<Ã#2aßQ6ÔnÊãbÀœ«%+zÒ¦0N–k“'¼ä¦Şğ:Ş ˆÍÇ1Æ^ÁOç,÷éÂ)úJFï·Îqã"g—ÎğÀ	Å´*˜ÌÉ8ha{só<:Ôòf9[´å¿Ğºóƒ‡iŠl}Y:ŠşÌ¨ 6	šœpØLõ¶G±ƒ£Ã`ÙÚµ4 _A`ö/¹BEâ¦S8œAiqİZşßË—¿½€‡zßtõÏGJh†­¨ğS¤üåµR²Q †’pæW|ö¡+2ÚHáÿˆ¨½^ÔBoØ/ö\Æ,@¿ê/hymQ	—‚ª©µĞ®ípœoôègŠykëB:‘Ìÿõæšpy 

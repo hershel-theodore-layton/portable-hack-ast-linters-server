@@ -21,6 +21,7 @@ async function build_async()[defaults]: Awaitable<void> {
     $resource,
     HackCompiler\CompileMode::SERVER_OBSOLETE,
     true,
+    true,
   );
   await HackCompiler\write_source_async(
     $resource,
