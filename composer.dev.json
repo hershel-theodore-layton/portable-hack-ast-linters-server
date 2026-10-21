@@ -4,11 +4,11 @@
   "license": "MIT",
   "require": {
     "hhvm": ">=4.153",
-    "hershel-theodore-layton/hack-compiler": "0.0.2",
-    "hershel-theodore-layton/portable-hack-ast": "dev-master",
-    "hershel-theodore-layton/portable-hack-ast-extras": "dev-master",
-    "hershel-theodore-layton/portable-hack-ast-linters": "dev-master",
-    "hershel-theodore-layton/hhvm-four-shim": "<1"
+    "hershel-theodore-layton/hack-compiler": "0.0.3",
+    "hershel-theodore-layton/portable-hack-ast": "0.4.8",
+    "hershel-theodore-layton/portable-hack-ast-extras": "0.3.4",
+    "hershel-theodore-layton/portable-hack-ast-linters": "0.5.5",
+    "hershel-theodore-layton/hhvm-four-shim": "0.6.6"
   },
   "bin": ["bin/pha-linters-server.sh", "bin/pha-sign-hack-source.sh"]
 }
