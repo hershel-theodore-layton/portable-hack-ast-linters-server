@@ -8,7 +8,7 @@
     "hershel-theodore-layton/portable-hack-ast": "0.4.8",
     "hershel-theodore-layton/portable-hack-ast-extras": "0.3.4",
     "hershel-theodore-layton/portable-hack-ast-linters": "0.5.5",
-    "hershel-theodore-layton/hhvm-four-shim": "0.6.6"
+    "hershel-theodore-layton/hhvm-four-shim": "<1"
   },
   "bin": ["bin/pha-linters-server.sh", "bin/pha-sign-hack-source.sh"]
 }
